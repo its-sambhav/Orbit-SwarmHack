@@ -1,0 +1,11 @@
+# routed_to lookup by a finding's `stage` field (recommendation/sanction/execution/payment).
+# Keyed by stage, not by detector - two different detectors firing at the
+# same lifecycle point route to the same desk.
+
+routes:
+  recommendation: "MPLADS Cell — Recommendation Desk"
+  sanction:       "District IDA — Sanction Desk"
+  execution:      "District IDA — Execution Monitoring"
+  payment:        "District IDA — Finance / Payment Audit"
+
+default: "MPLADS Cell — General Review"   # fallback for any unmapped stage

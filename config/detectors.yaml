@@ -1,0 +1,106 @@
+# Thresholds, severity buckets, and scoring weights for Group A detectors.
+# Day-counts are calendar days, computed against one frozen `as_of_date` so
+# a pipeline run is reproducible between rehearsal and demo (see docs/SCHEMA.md,
+# "Severity bucket calibration" for how these edges were chosen).
+
+as_of_date: "2026-09-10"   # frozen — matches README snapshot date
+
+detectors:
+  STALLED_AT_SANCTION:
+    tag: "TIME DELAY"
+    guideline_days: 45
+    guideline_source: "MPLADS guideline: sanction expected within 45 days of recommendation"
+    severity_buckets:   # edges = p50/p90 of real hit distribution, 26,960 hits all-scope
+      - {max_days: 214, severity: low}
+      - {max_days: 917, severity: medium}
+      - {max_days: null, severity: high}
+
+  SANCTION_DELAY:
+    tag: "TIME DELAY"
+    guideline_days: 45
+    guideline_source: "MPLADS guideline: sanction expected within 45 days of recommendation"
+    severity_buckets:   # edges = p50/p90 of real hit distribution, 146,778 hits all-scope
+      - {max_days: 127, severity: low}
+      - {max_days: 387, severity: medium}
+      - {max_days: null, severity: high}
+
+  STALLED_AT_EXECUTION:
+    tag: "TIME DELAY"
+    guideline_days: 365
+    guideline_source: "MPLADS guideline: work expected complete within 1 year of sanction"
+    severity_buckets:   # edges = p50/p90 of real hit distribution, 37,201 hits all-scope
+      - {max_days: 695, severity: low}
+      - {max_days: 969, severity: medium}
+      - {max_days: null, severity: high}
+
+  EXECUTION_DELAY:
+    tag: "TIME DELAY"
+    guideline_days: 365
+    guideline_source: "MPLADS guideline: work expected complete within 1 year of sanction"
+    severity_buckets:   # edges = p50/p90 of real hit distribution, 37,219 hits all-scope
+      - {max_days: 537, severity: low}
+      - {max_days: 786, severity: medium}
+      - {max_days: null, severity: high}
+
+  TEMPORAL_SANCTION_BEFORE_RECOMMENDATION:
+    tag: "DATA INTEGRITY"
+    severity: high
+    guideline_source: "logical constraint: SANCTION_DATE must not precede RECOMMENDATION_DATE"
+
+  TEMPORAL_COMPLETION_BEFORE_SANCTION:
+    tag: "DATA INTEGRITY"
+    severity: high
+    guideline_source: "logical constraint: ACTUAL_END_DATE must not precede SANCTION_DATE"
+
+  TEMPORAL_PAYMENT_BEFORE_SANCTION:
+    tag: "DATA INTEGRITY"
+    severity: high
+    guideline_source: "logical constraint: earliest EXPENDITURE_DATE must not precede SANCTION_DATE"
+
+  GHOST_ASSET:
+    tag: "GHOST ASSET"
+    severity: high
+    guideline_source: >-
+      MPLADS record-keeping norm: a completed, paid work should have a supporting
+      file attached. CAVEAT: presence of ATTACH_ID/FILE_STATUS only confirms some
+      file was attached, not verified to be photographic completion evidence -
+      no field in this dataset distinguishes file type.
+
+  PAID_NOT_COMPLETE:
+    tag: "GHOST ASSET"
+    guideline_days: 365
+    guideline_source: "MPLADS guideline: work expected complete within 1 year of sanction"
+    severity_buckets:   # edges = p50/p90 of real hit distribution, 25,519 hits all-scope
+      - {max_days: 716, severity: low}
+      - {max_days: 976, severity: medium}
+      - {max_days: null, severity: high}
+
+  STUCK_STATUS:
+    tag: "TIME DELAY"
+    guideline_days: 730
+    early_stages: ["Time Estimation", "Pending for Sanction", "Physical Inspection", "Vendor Identification"]
+    guideline_source: >-
+      Narrowed: a work parked in an early, pre-execution WORK_STAGE for over
+      2 years is a distinct signal from STALLED_AT_SANCTION (fires at 45 days
+      on any not-yet-sanctioned work) and STALLED_AT_EXECUTION (doesn't care
+      which stage a sanctioned work is parked in) - this catches works that
+      never progressed past early triage, sanctioned or not.
+    severity_buckets:   # edges = p50/p90 of real hit distribution, 93,761 hits all-scope
+      - {max_days: 994, severity: low}
+      - {max_days: 1121, severity: medium}
+      - {max_days: null, severity: high}
+
+queue:
+  demo_scopes: ["18th Lok Sabha", "Sitting"]
+  materiality_floor: 500000
+  max_queue_size: 2000
+  # Verified: 133,484 in-scope works; 101,740 (76.2%) carry >=1 finding;
+  # 41,686 clear the floor; the 2,000 cap selects the top ~1.50% of the
+  # in-scope universe by priority - lands inside the 1-2% target band
+  # without further tuning. Re-verify this after a real data refresh.
+
+scoring:
+  # priority_score = severity_weight + confidence_weight + exposure_weight * log10(max(financial_exposure,1))
+  severity_weight:    {low: 1, medium: 2, high: 3}
+  confidence_weight:  {rule: 1, statistical: 0.6, llm: 0.3}   # only 'rule' fires in this slice
+  exposure_weight:    0.5

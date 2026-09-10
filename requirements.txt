@@ -1,0 +1,8 @@
+pandas
+numpy
+rapidfuzz
+pyarrow
+duckdb
+pyyaml
+fastapi
+uvicorn
