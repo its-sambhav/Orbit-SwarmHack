@@ -1,5 +1,6 @@
 """Stage 7: persist findings.jsonl / findings.parquet / work_risk.parquet /
-constituency_risk.parquet / mplads.duckdb (one table per parquet file).
+constituency_risk.parquet / district_risk.parquet / state_risk.parquet /
+mplads.duckdb (one table per parquet file).
 """
 import json
 
@@ -49,12 +50,16 @@ def write_duckdb(tables: dict[str, str]) -> None:
     print(f"  wrote mplads.duckdb ({', '.join(tables)})")
 
 
-def run(findings: list[dict], work_risk: pd.DataFrame, constituency_risk: pd.DataFrame) -> None:
+def run(findings: list[dict], work_risk: pd.DataFrame, constituency_risk: pd.DataFrame,
+        district_risk: pd.DataFrame, state_risk: pd.DataFrame) -> None:
     write_findings(findings)
     write_parquet(work_risk, "work_risk")
     write_parquet(constituency_risk, "constituency_risk")
+    write_parquet(district_risk, "district_risk")
+    write_parquet(state_risk, "state_risk")
     write_duckdb({"findings": "findings.parquet", "work_risk": "work_risk.parquet",
-                  "constituency_risk": "constituency_risk.parquet"})
+                  "constituency_risk": "constituency_risk.parquet",
+                  "district_risk": "district_risk.parquet", "state_risk": "state_risk.parquet"})
 
 
 def demo():
@@ -66,8 +71,8 @@ def demo():
     link_run()
     cfg = load_detector_config()
     findings = score_run(detectors_run(), cfg)
-    work_risk, constituency_risk = rollup_run(findings, cfg)
-    run(findings, work_risk, constituency_risk)
+    work_risk, constituency_risk, district_risk, state_risk = rollup_run(findings, cfg)
+    run(findings, work_risk, constituency_risk, district_risk, state_risk)
 
     # round-trip checks
     jsonl_lines = sum(1 for _ in open(DATA_FINDINGS / "findings.jsonl"))
@@ -76,15 +81,14 @@ def demo():
         f"row-count mismatch: jsonl={jsonl_lines} parquet={len(findings_pq)} source={len(findings)}"
     )
 
-    work_risk_pq = pd.read_parquet(DATA_FINDINGS / "work_risk.parquet")
-    assert len(work_risk_pq) == len(work_risk), "work_risk.parquet round-trip row count mismatch"
-
-    constituency_risk_pq = pd.read_parquet(DATA_FINDINGS / "constituency_risk.parquet")
-    assert len(constituency_risk_pq) == len(constituency_risk), "constituency_risk.parquet round-trip row count mismatch"
+    tables = {"work_risk": work_risk, "constituency_risk": constituency_risk,
+              "district_risk": district_risk, "state_risk": state_risk}
+    for name, df in tables.items():
+        pq = pd.read_parquet(DATA_FINDINGS / f"{name}.parquet")
+        assert len(pq) == len(df), f"{name}.parquet round-trip row count mismatch"
 
     con = duckdb.connect(str(DATA_FINDINGS / "mplads.duckdb"))
-    for table, expected in [("findings", len(findings)), ("work_risk", len(work_risk)),
-                             ("constituency_risk", len(constituency_risk))]:
+    for table, expected in [("findings", len(findings)), *[(n, len(d)) for n, d in tables.items()]]:
         n = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         assert n == expected, f"duckdb.{table} has {n} rows, expected {expected}"
     con.close()

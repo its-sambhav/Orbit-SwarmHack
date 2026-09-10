@@ -21,10 +21,10 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else "."
 BASE = "https://mplads.mospi.gov.in/rest/PreLoginDashboardData"
 
 # The dashboard shows ONE of these at a time; default view is 18th Lok Sabha.
+# Rajya Sabha (combo house=1) intentionally excluded - this project only
+# covers 17th and 18th Lok Sabha.
 SCOPES = [("0,0,0,2,7", "Lok Sabha",   "18th Lok Sabha"),
-          ("0,0,0,2,5", "Lok Sabha",   "17th Lok Sabha"),
-          ("0,0,0,1,1", "Rajya Sabha", "Sitting"),
-          ("0,0,0,1,2", "Rajya Sabha", "Retired")]
+          ("0,0,0,2,5", "Lok Sabha",   "17th Lok Sabha")]
 
 TILES = ["Allocated Limit for Hon'ble MPs",
          "Expenditure on Completed and On-going Works as on Date",

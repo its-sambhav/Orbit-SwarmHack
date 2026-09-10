@@ -19,9 +19,15 @@ SOURCES = {
     "calamity": ("amount_consented_for_calamity.csv", "CONSENTED_AMOUNT"),
 }
 
+# Lok-Sabha-only counts (17th + 18th). This project covers only 17th/18th
+# Lok Sabha - Rajya Sabha rows are filtered out below, right after read, so
+# every stage downstream of ingest never sees them. Raw CSVs still contain
+# Rajya Sabha rows (they're the original fetch's full record, see README) -
+# filtering here rather than re-fetching is what keeps this correct
+# regardless of whether the source files get refreshed later.
 EXPECTED_ROWS = {
-    "recommended": 254534, "sanctioned": 216310, "completed": 133046,
-    "expenditure": 279739, "allocated": 1566, "calamity": 33,
+    "recommended": 202341, "sanctioned": 172049, "completed": 106755,
+    "expenditure": 223414, "allocated": 1086, "calamity": 12,
 }
 
 TOLERANCE = 1.0  # rupees; README notes JSON floats are re-serialised, not exact
@@ -30,10 +36,12 @@ TOLERANCE = 1.0  # rupees; README notes JSON floats are re-serialised, not exact
 def _load_totals() -> pd.DataFrame:
     totals = pd.read_csv(ROOT / "_totals.csv", encoding="utf-8-sig")
     # _totals.csv itself has known exact-duplicate rows (8 of 32) plus one pair
-    # that ISN'T an exact duplicate: expenditure/Rajya Sabha/Sitting disagrees
-    # by ~Rs 80,060 between its two copies (see docs/SCHEMA.md). Exact-dedup
-    # first; any (TABLE,HOUSE,TENURE) group still >1 after that is the
-    # divergent case, handled explicitly in validate_table below.
+    # that ISN'T an exact duplicate: expenditure/Rajya Sabha/Sitting disagreed
+    # by ~Rs 80,060 between its two copies (see docs/SCHEMA.md) - moot now
+    # that Rajya Sabha rows are filtered before validate_table ever runs, but
+    # dedup stays as a general defence in case a similar LS-side divergence
+    # ever shows up. Exact-dedup first; any (TABLE,HOUSE,TENURE) group still
+    # >1 after that is a divergent case, handled explicitly in validate_table.
     return totals.drop_duplicates()
 
 
@@ -78,6 +86,16 @@ def run() -> list[dict]:
             f"grand-total rows may not have been stripped"
         )
         df = df.drop(columns=["Total_Amt"])
+
+        # Rajya Sabha out of scope for this project - dropped here so nothing
+        # downstream of ingest ever has to think about it. Every table
+        # (including allocated/calamity) carries SCOPE_HOUSE, so this is safe
+        # to apply uniformly.
+        before = len(df)
+        df = df[df["SCOPE_HOUSE"] == "Lok Sabha"].reset_index(drop=True)
+        dropped = before - len(df)
+        if dropped:
+            print(f"  {key}: dropped {dropped:,} Rajya Sabha row(s), {len(df):,} Lok Sabha remain")
 
         all_results += validate_table(key, df, amount_col, totals)
 

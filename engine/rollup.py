@@ -28,7 +28,8 @@ def build_work_risk(findings_df: pd.DataFrame, spine: pd.DataFrame, demo_scopes:
     ).reset_index()
 
     spine_subset = spine[["WORK_RECOMMENDATION_DTL_ID", "SCOPE_HOUSE", "SCOPE_TENURE",
-                           "STATE_NAME", "CONSTITUENCY", "CONSTITUENCY_ID", "MP_NAME"]].copy()
+                           "STATE_NAME", "CONSTITUENCY", "CONSTITUENCY_ID", "MP_NAME",
+                           "DISTRICT", "IDA_NAME_CLEAN"]].copy()
     spine_subset["work_number"] = spine_subset["WORK_RECOMMENDATION_DTL_ID"].astype("int64").astype(str)
     spine_subset = spine_subset.rename(columns={"SCOPE_HOUSE": "scope_house", "SCOPE_TENURE": "scope_tenure"})
     spine_subset = spine_subset.drop(columns=["WORK_RECOMMENDATION_DTL_ID"])
@@ -55,25 +56,83 @@ def build_constituency_risk(work_risk: pd.DataFrame, spine: pd.DataFrame, demo_s
         risk_score=("priority", "sum"),   # drives choropleth shading
     ).reset_index()
 
-    tag_rows = flagged[["CONSTITUENCY_ID", "tags"]].explode("tags")
-    tag_counts = (tag_rows.groupby(["CONSTITUENCY_ID", "tags"]).size()
-                  .reset_index(name="n")
-                  .groupby("CONSTITUENCY_ID")
-                  .apply(lambda g: dict(zip(g["tags"], g["n"].astype(int))), include_groups=False)
-                  .to_dict())
-
     constituency_risk = constituency_risk.merge(flagged_agg, on="CONSTITUENCY_ID", how="left")
     constituency_risk["works_flagged"] = constituency_risk["works_flagged"].fillna(0).astype(int)
     constituency_risk["total_exposure"] = constituency_risk["total_exposure"].fillna(0.0)
     constituency_risk["mean_priority"] = constituency_risk["mean_priority"].fillna(0.0)
     constituency_risk["risk_score"] = constituency_risk["risk_score"].fillna(0.0)
     constituency_risk["breach_rate"] = constituency_risk["works_flagged"] / constituency_risk["works_total"]
-    # dict-per-row with heterogeneous keys across rows doesn't survive pyarrow's
-    # schema inference cleanly - store as a JSON string, same defensive move as
-    # export.py's nested-struct fallback for findings.parquet.
+
+    tag_counts = _tag_counts_json(flagged, ["CONSTITUENCY_ID"])
     constituency_risk["tag_counts"] = constituency_risk["CONSTITUENCY_ID"].map(
-        lambda cid: json.dumps(tag_counts.get(cid, {})))
+        lambda cid: tag_counts.get((cid,), json.dumps({})))
     return constituency_risk
+
+
+def _tag_counts_json(flagged: pd.DataFrame, group_cols: list[str]) -> dict:
+    """dict keyed by the group tuple (or bare value for a single group_col),
+    value a JSON string of {tag: count} - dict-per-row with heterogeneous
+    keys doesn't survive pyarrow's schema inference cleanly (same defensive
+    move as export.py's nested-struct fallback for findings.parquet)."""
+    tag_rows = flagged[[*group_cols, "tags"]].explode("tags")
+    counts = tag_rows.groupby([*group_cols, "tags"]).size().reset_index(name="n")
+    grouped = counts.groupby(group_cols).apply(
+        lambda g: json.dumps(dict(zip(g["tags"], g["n"].astype(int)))), include_groups=False)
+    return grouped.to_dict()
+
+
+def build_district_risk(work_risk: pd.DataFrame, spine: pd.DataFrame, demo_scopes: list[str]) -> pd.DataFrame:
+    """One row per (state, district) - the District Authority dashboard's
+    unit. DISTRICT is derived from IDA_NAME text (see normalise.py) since no
+    district field exists in the source data; grouping by (state, district)
+    together avoids any cross-state same-name collision."""
+    scoped_spine = spine[spine["SCOPE_TENURE"].isin(demo_scopes)]
+    flagged = work_risk[work_risk["in_demo_scope"]]
+    group = ["STATE_NAME", "DISTRICT"]
+
+    district_risk = scoped_spine.groupby(group).agg(
+        works_total=("WORK_RECOMMENDATION_DTL_ID", "size"),
+    ).reset_index()
+    flagged_agg = flagged.groupby(group).agg(
+        works_flagged=("work_number", "size"), total_exposure=("total_exposure", "sum"),
+        mean_priority=("priority", "mean"), risk_score=("priority", "sum"),
+    ).reset_index()
+
+    district_risk = district_risk.merge(flagged_agg, on=group, how="left")
+    for col, default in [("works_flagged", 0), ("total_exposure", 0.0), ("mean_priority", 0.0), ("risk_score", 0.0)]:
+        district_risk[col] = district_risk[col].fillna(default)
+    district_risk["works_flagged"] = district_risk["works_flagged"].astype(int)
+    district_risk["breach_rate"] = district_risk["works_flagged"] / district_risk["works_total"]
+
+    tag_map = _tag_counts_json(flagged, group)
+    district_risk["tag_counts"] = district_risk.apply(
+        lambda r: tag_map.get((r["STATE_NAME"], r["DISTRICT"]), json.dumps({})), axis=1)
+    return district_risk.rename(columns={"STATE_NAME": "state", "DISTRICT": "district"})
+
+
+def build_state_risk(work_risk: pd.DataFrame, spine: pd.DataFrame, demo_scopes: list[str]) -> pd.DataFrame:
+    """One row per state - the State Nodal Authority dashboard's unit."""
+    scoped_spine = spine[spine["SCOPE_TENURE"].isin(demo_scopes)]
+    flagged = work_risk[work_risk["in_demo_scope"]]
+
+    state_risk = scoped_spine.groupby("STATE_NAME").agg(
+        works_total=("WORK_RECOMMENDATION_DTL_ID", "size"),
+        districts=("DISTRICT", "nunique"),
+    ).reset_index()
+    flagged_agg = flagged.groupby("STATE_NAME").agg(
+        works_flagged=("work_number", "size"), total_exposure=("total_exposure", "sum"),
+        mean_priority=("priority", "mean"), risk_score=("priority", "sum"),
+    ).reset_index()
+
+    state_risk = state_risk.merge(flagged_agg, on="STATE_NAME", how="left")
+    for col, default in [("works_flagged", 0), ("total_exposure", 0.0), ("mean_priority", 0.0), ("risk_score", 0.0)]:
+        state_risk[col] = state_risk[col].fillna(default)
+    state_risk["works_flagged"] = state_risk["works_flagged"].astype(int)
+    state_risk["breach_rate"] = state_risk["works_flagged"] / state_risk["works_total"]
+
+    tag_map = _tag_counts_json(flagged, ["STATE_NAME"])
+    state_risk["tag_counts"] = state_risk["STATE_NAME"].map(lambda s: tag_map.get((s,), json.dumps({})))
+    return state_risk.rename(columns={"STATE_NAME": "state"})
 
 
 def build_queue(work_risk: pd.DataFrame, queue_cfg: dict) -> pd.DataFrame:
@@ -81,7 +140,7 @@ def build_queue(work_risk: pd.DataFrame, queue_cfg: dict) -> pd.DataFrame:
     return eligible.nlargest(queue_cfg["max_queue_size"], "priority")
 
 
-def run(findings: list[dict], cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+def run(findings: list[dict], cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     spine = pd.read_parquet(DATA_PROCESSED / "spine.parquet")
     demo_scopes = cfg["queue"]["demo_scopes"]
 
@@ -91,6 +150,8 @@ def run(findings: list[dict], cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     work_risk = build_work_risk(findings_df, spine, demo_scopes)
     constituency_risk = build_constituency_risk(work_risk, spine, demo_scopes)
+    district_risk = build_district_risk(work_risk, spine, demo_scopes)
+    state_risk = build_state_risk(work_risk, spine, demo_scopes)
 
     queue = build_queue(work_risk, cfg["queue"])
     in_scope_universe = int((spine["SCOPE_TENURE"].isin(demo_scopes)).sum())
@@ -101,7 +162,7 @@ def run(findings: list[dict], cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     in_scope_breach = work_risk["in_demo_scope"].sum() / in_scope_universe * 100
     print(f"  breach rate: all-scope {all_scope_breach:.1f}%  in-scope {in_scope_breach:.1f}%")
 
-    return work_risk, constituency_risk
+    return work_risk, constituency_risk, district_risk, state_risk
 
 
 def demo():
@@ -112,10 +173,9 @@ def demo():
     link_run()
     cfg = load_detector_config()
     findings = score_run(detectors_run(), cfg)
-    work_risk, constituency_risk = run(findings, cfg)
+    work_risk, constituency_risk, district_risk, state_risk = run(findings, cfg)
 
     spine = pd.read_parquet(DATA_PROCESSED / "spine.parquet")
-    distinct_flagged_keys = pd.DataFrame(findings)["work_number"].nunique()
     # work_risk is grouped by (work_number, scope_house, scope_tenure), not
     # work_number alone - compare against the same composite grouping.
     findings_df = pd.DataFrame(findings)
@@ -128,14 +188,18 @@ def demo():
 
     demo_scopes = cfg["queue"]["demo_scopes"]
     scoped_spine_len = int((spine["SCOPE_TENURE"].isin(demo_scopes)).sum())
-    assert constituency_risk["works_total"].sum() == scoped_spine_len, (
-        f"constituency_risk.works_total sums to {constituency_risk['works_total'].sum():,}, "
-        f"expected in-scope spine count {scoped_spine_len:,}"
-    )
+    for name, df, col in [("constituency_risk", constituency_risk, "works_total"),
+                           ("district_risk", district_risk, "works_total"),
+                           ("state_risk", state_risk, "works_total")]:
+        total = int(df[col].sum())
+        assert total == scoped_spine_len, (
+            f"{name}.{col} sums to {total:,}, expected in-scope spine count {scoped_spine_len:,}"
+        )
 
     print(f"\nrollup self-check: PASS  ({len(work_risk):,} flagged works, "
-          f"{len(constituency_risk):,} constituencies)")
-    return findings, work_risk, constituency_risk
+          f"{len(constituency_risk):,} constituencies, {len(district_risk):,} districts, "
+          f"{len(state_risk):,} states)")
+    return findings, work_risk, constituency_risk, district_risk, state_risk
 
 
 if __name__ == "__main__":

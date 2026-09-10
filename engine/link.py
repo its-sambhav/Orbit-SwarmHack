@@ -45,12 +45,16 @@ def aggregate_expenditure(exp: pd.DataFrame) -> pd.DataFrame:
         exp_vendor_count=("VENDOR_NAME_CLEAN", "nunique"),
     ).reset_index()
 
-    # top vendor = the single largest disbursement row's vendor, not an arbitrary
-    # alphabetical pick from the set of vendors on a multi-vendor work.
+    # top vendor/implementing-agency = whichever the single largest disbursement
+    # row names, not an arbitrary alphabetical pick from a multi-vendor work.
+    # IA_NAME_CLEAN is the specific engineering office that executed the work -
+    # a real, distinct entity from the district IDA that sanctioned it (see
+    # docs/SCHEMA.md) - carried through here so "who completed this work" has
+    # an honest answer instead of repeating the sanctioning authority's name.
     top_idx = exp.groupby(WORK_KEY)["FUND_DISBURSED_AMT"].idxmax()
-    exp_top_vendor = (exp.loc[top_idx, WORK_KEY + ["VENDOR_NAME_CLEAN"]]
-                         .rename(columns={"VENDOR_NAME_CLEAN": "exp_top_vendor"}))
-    return agg.merge(exp_top_vendor, on=WORK_KEY, how="left")
+    exp_top = (exp.loc[top_idx, WORK_KEY + ["VENDOR_NAME_CLEAN", "IA_NAME_CLEAN"]]
+                  .rename(columns={"VENDOR_NAME_CLEAN": "exp_top_vendor", "IA_NAME_CLEAN": "exp_top_ia"}))
+    return agg.merge(exp_top, on=WORK_KEY, how="left")
 
 
 def coverage(numerator_mask: pd.Series, denominator_mask: pd.Series) -> tuple[float, int, int]:
@@ -99,6 +103,7 @@ def run() -> pd.DataFrame:
     spine["CONSTITUENCY"] = spine["rec_CONSTITUENCY"].fillna(spine["san_CONSTITUENCY"])
     spine["MP_NAME"] = spine["rec_MP_NAME"].fillna(spine["san_MP_NAME"])
     spine["IDA_NAME_CLEAN"] = spine["rec_IDA_NAME_CLEAN"].fillna(spine["san_IDA_NAME_CLEAN"])
+    spine["DISTRICT"] = spine["rec_DISTRICT"].fillna(spine["san_DISTRICT"])
 
     spine.to_parquet(DATA_PROCESSED / "spine.parquet", engine="pyarrow", index=False)
 
@@ -139,8 +144,13 @@ def demo():
           f"have STATE_NAME via the sanctioned-table fallback (expect = orphan count)")
     assert orphans_with_state == int(orphans.sum()), "sanctioned-table fallback isn't covering all orphans"
 
+    null_district = int(spine["DISTRICT"].isna().sum())
+    n_districts = spine["DISTRICT"].nunique()
+    print(f"  DISTRICT: {null_district:,} null / {len(spine):,} rows, {n_districts:,} distinct districts")
+    assert null_district == 0, f"{null_district} spine row(s) with null DISTRICT"
+
     print(f"\nlink self-check: PASS  (0 duplicate keys, 0 orphan completions, "
-          f"0 null constituency_id, {len(spine):,} total works)")
+          f"0 null constituency_id, 0 null district, {len(spine):,} total works)")
 
 
 if __name__ == "__main__":

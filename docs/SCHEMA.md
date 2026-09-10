@@ -4,6 +4,18 @@ This documents what ingest/normalise/link found by direct profiling of the
 six source CSVs, and the decisions that follow. For data provenance and the
 two added `SCOPE_*` columns, read `README.md` first — not repeated here.
 
+**Scope note: this project covers 17th and 18th Lok Sabha only.** Rajya
+Sabha rows are filtered out in `engine/ingest.py`, immediately after read -
+no stage past ingest (normalise/link/detectors/rollup/export/API/dashboard)
+ever sees them. The investigation below predates that decision and profiled
+all four original scopes (both Lok Sabha terms and both Rajya Sabha
+groupings) - RS-specific findings are kept here as the historical record of
+that investigation (e.g. why `entities.district`/`lgd_code` are handled the
+way they are, or why `CONSTITUENCY_ID` needed a coalesce), not as a
+description of what the pipeline processes today. Where a number below was
+computed across all four scopes, it will not match a current pipeline run,
+which only ever sees two.
+
 ## The join key is a composite, not a single column
 
 `WORK_RECOMMENDATION_DTL_ID` is the only cross-table identifier, but it is
@@ -227,3 +239,97 @@ rate; 101,740 / 133,484 = 76.2% in-scope. This is why the rollup layer
 (`work_risk.parquet`, `constituency_risk.parquet`) and the demo-scoped,
 materiality-floored, capped queue exist — raw per-finding output is a
 correct detection result and an unusable review queue at this volume.
+
+**Superseded by the recalibration below** — this table is kept for the
+historical record of what the first slice measured, not as current numbers.
+
+## Flag-rate recalibration (after review)
+
+The table above measured a real problem: gating on the fixed MPLADS
+guideline (45 days to sanction, 365 to complete) flags 28-69% of the
+*relevant population itself* — most real works miss those SLAs, so hitting
+the guideline is the norm in this system, not a deviation from it. Verified
+directly against the full population (not just prior hits):
+
+| Metric | Population | Guideline gate catches |
+|---|---:|---:|
+| sanction delay | all sanctioned works | 68.2% |
+| age since sanction, uncompleted | uncompleted sanctioned works | 44.7% |
+| execution delay | all completed works | 28.0% |
+| age since recommendation, unsanctioned | unsanctioned recommendations | 68.9% |
+| age since recommendation, early-stage | early-stage works | 49.7% |
+| age since sanction, paid-uncompleted | paid-but-uncompleted works | 55.3% |
+
+**Fix**: the 6 delay detectors (`STALLED_AT_SANCTION`, `SANCTION_DELAY`,
+`STALLED_AT_EXECUTION`, `EXECUTION_DELAY`, `PAID_NOT_COMPLETE`,
+`STUCK_STATUS`) now gate on the **90th percentile of their own real
+population, recomputed fresh every pipeline run** (`engine/detectors.py`'s
+`dynamic_gate()`), not a hardcoded day-count. Severity buckets are p90/p95/p99
+of that same live population. `confidence` moved from `rule` to `statistical`
+for these — they're peer-relative outlier calls now, not guideline-breach
+facts, and every finding carries a populated `evidence.peer_benchmark`
+(population median, p90, n_peers) so a reviewer sees what "normal" looked
+like on this run, not just the fixed guideline number. The MPLADS guideline
+day-count is kept as informational context in `evidence.threshold`, not the
+trigger.
+
+**Three detectors added** (previously zero coverage in Slice 1):
+
+- **`OVER_ALLOCATION`** — hard compliance check: sum(RECOMMENDED_AMOUNT) per
+  MP per tenure vs `ALLOCATED_AMT` from `allocated_limit_for_hon_ble_mps.csv`.
+  LS matched by `CONSTITUENCY` (one MP per seat); RS matched by `MP_NAME`
+  (RS rows share a placeholder `CONSTITUENCY`, see above — `MP_NAME` already
+  carries a stable per-member+tenure format there). `confidence: rule`.
+  Flags the MP's single largest work as the representative finding, not
+  every one of their works. **1 hit nationally** — MPs essentially never
+  exceed their allocation in this data; a small, genuine, high-confidence
+  number, not tuned to be small.
+- **`COST_OUTLIER`** — robust (median+MAD) modified z-score of
+  `SANCTION_AMOUNT` against peer works sharing `(ACTIVITY_NAME_CLEAN,
+  STATE_NAME)`, n≥30 peers required or the group is skipped. Threshold 3.5
+  is the standard modified-z outlier cutoff (Iglewicz & Hoaglin).
+  **Positive-direction only** (actual overruns) — flagging unusually *cheap*
+  works too would conflate a different, weaker signal under the same tag and
+  double the count for no clear benefit; the problem statement's own
+  language is "cost overruns," not "unusual cost." 16,256 hits, 10.5% of the
+  206,639-work eligible population (peer group ≥30) — real examples include
+  a ₹37.5L "Street lights" work against a ₹39,710 peer median (z=126).
+  `confidence: statistical`.
+- **`DUPLICATE_WORK`** — went through two rejected designs before this one,
+  hand-checking real hits at every step (the brief's own instruction, and
+  worth doing literally): (1) fuzzy similarity (rapidfuzz token_sort_ratio)
+  on `WORK_DESCRIPTION`, even at ≥95%, mostly matched an MP legitimately
+  recommending the *same type* of work at different real villages via a
+  shared template — the place name is too small a fraction of a long
+  templated sentence to move a similarity score much (verified: "LED
+  streetlight at Huljanti" vs "...at Bathan," different real villages, 92%
+  similar). (2) Switching to an exact text match (after normalising
+  case/whitespace) removed that failure mode but exposed a second one:
+  normal **bulk procurement** (e.g. 22 identical benches bought in one
+  order, each correctly getting its own work entry) produces many rows with
+  identical descriptions by design — that's correct system usage, not
+  duplication. The signal that actually discriminates a likely accidental
+  double-entry from either legitimate pattern is **group size**: capping
+  exact-match groups at 2-3 works (`max_group_size`) dropped the count 92%
+  (40,650 → 3,045) while the survivors read as genuinely worth a
+  side-by-side look on manual re-inspection. Also requires description
+  length ≥40 chars and that the description isn't just a restatement of the
+  activity category (filters bare category-label descriptions like "table
+  of kitchen, private school"). `confidence: statistical`.
+
+**Net effect**, full pipeline re-run from raw CSVs:
+
+| | Before | After |
+|---|---:|---:|
+| Total findings | 407,005 | 128,828 |
+| Works with ≥1 finding | 220,905 | 98,611 |
+| Breach rate (all-scope) | 86.5% | 38.6% |
+| Breach rate (in-scope) | 76.2% | 20.1% |
+
+The reviewable queue (materiality floor + top-2,000 rank cap) was already
+at a reasonable ~1.5% of the in-scope universe before this — floors and caps
+can always force a small *queue*. What was actually broken, and what this
+fixes, is that the underlying *detection layer* itself no longer calls a
+majority of all works anomalous - every remaining flag is a real, hand-
+verified minority-population signal, not an artifact of a threshold that
+happened to match the median case.

@@ -6,3 +6,6 @@ duckdb
 pyyaml
 fastapi
 uvicorn
+httpx
+python-dotenv
+shapely

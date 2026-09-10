@@ -1,64 +1,89 @@
-# Thresholds, severity buckets, and scoring weights for Group A detectors.
-# Day-counts are calendar days, computed against one frozen `as_of_date` so
-# a pipeline run is reproducible between rehearsal and demo (see docs/SCHEMA.md,
-# "Severity bucket calibration" for how these edges were chosen).
+# Thresholds and scoring weights for all detectors.
+#
+# TIME DELAY / GHOST ASSET delay-style detectors no longer use a fixed
+# guideline day-count as their trigger. Measured against the real
+# population (see docs/SCHEMA.md "Flag-rate recalibration"), the MPLADS
+# guidelines themselves (45 days to sanction, 365 to complete) are missed
+# by 28-69% of all real works - hitting the guideline is the norm in this
+# system, not a deviation from it, so gating on it flagged most of the
+# dataset. Each of these now gates on a PERCENTILE of its own real, current
+# population instead (computed fresh every pipeline run - "the norm" is
+# whatever the data actually shows this run, never a hardcoded number) -
+# this is what "deviations from established norms" in the problem
+# statement actually calls for, and it naturally yields a small, meaningful
+# flag rate by construction. `guideline_days` is kept as informational
+# context only (still shown in evidence for reference), not the trigger.
+# confidence is "statistical" for these (peer-relative outlier), not "rule".
 
 as_of_date: "2026-09-10"   # frozen — matches README snapshot date
 
 detectors:
   STALLED_AT_SANCTION:
     tag: "TIME DELAY"
+    confidence: statistical
     guideline_days: 45
-    guideline_source: "MPLADS guideline: sanction expected within 45 days of recommendation"
-    severity_buckets:   # edges = p50/p90 of real hit distribution, 26,960 hits all-scope
-      - {max_days: 214, severity: low}
-      - {max_days: 917, severity: medium}
-      - {max_days: null, severity: high}
+    gate_percentile: 90
+    bucket_percentiles: [90, 95, 99]
+    guideline_source: >-
+      MPLADS guideline: sanction expected within 45 days of recommendation.
+      Flagged here for sitting in the slowest 10% of currently-unsanctioned
+      recommendations, not merely for missing the 45-day guideline (69% of
+      this population does).
 
   SANCTION_DELAY:
     tag: "TIME DELAY"
+    confidence: statistical
     guideline_days: 45
-    guideline_source: "MPLADS guideline: sanction expected within 45 days of recommendation"
-    severity_buckets:   # edges = p50/p90 of real hit distribution, 146,778 hits all-scope
-      - {max_days: 127, severity: low}
-      - {max_days: 387, severity: medium}
-      - {max_days: null, severity: high}
+    gate_percentile: 90
+    bucket_percentiles: [90, 95, 99]
+    guideline_source: >-
+      MPLADS guideline: sanction expected within 45 days of recommendation.
+      Flagged here for being in the slowest 10% of actual sanction delays,
+      not merely for missing the 45-day guideline (68% of sanctioned works do).
 
   STALLED_AT_EXECUTION:
     tag: "TIME DELAY"
+    confidence: statistical
     guideline_days: 365
-    guideline_source: "MPLADS guideline: work expected complete within 1 year of sanction"
-    severity_buckets:   # edges = p50/p90 of real hit distribution, 37,201 hits all-scope
-      - {max_days: 695, severity: low}
-      - {max_days: 969, severity: medium}
-      - {max_days: null, severity: high}
+    gate_percentile: 90
+    bucket_percentiles: [90, 95, 99]
+    guideline_source: >-
+      MPLADS guideline: work expected complete within 1 year of sanction.
+      Flagged here for sitting in the slowest 10% of currently-uncompleted
+      sanctioned works, not merely for missing the 1-year guideline (45% do).
 
   EXECUTION_DELAY:
     tag: "TIME DELAY"
+    confidence: statistical
     guideline_days: 365
-    guideline_source: "MPLADS guideline: work expected complete within 1 year of sanction"
-    severity_buckets:   # edges = p50/p90 of real hit distribution, 37,219 hits all-scope
-      - {max_days: 537, severity: low}
-      - {max_days: 786, severity: medium}
-      - {max_days: null, severity: high}
+    gate_percentile: 90
+    bucket_percentiles: [90, 95, 99]
+    guideline_source: >-
+      MPLADS guideline: work expected complete within 1 year of sanction.
+      Flagged here for being in the slowest 10% of actual completion times,
+      not merely for missing the 1-year guideline (28% of completions do).
 
   TEMPORAL_SANCTION_BEFORE_RECOMMENDATION:
     tag: "DATA INTEGRITY"
+    confidence: rule
     severity: high
     guideline_source: "logical constraint: SANCTION_DATE must not precede RECOMMENDATION_DATE"
 
   TEMPORAL_COMPLETION_BEFORE_SANCTION:
     tag: "DATA INTEGRITY"
+    confidence: rule
     severity: high
     guideline_source: "logical constraint: ACTUAL_END_DATE must not precede SANCTION_DATE"
 
   TEMPORAL_PAYMENT_BEFORE_SANCTION:
     tag: "DATA INTEGRITY"
+    confidence: rule
     severity: high
     guideline_source: "logical constraint: earliest EXPENDITURE_DATE must not precede SANCTION_DATE"
 
   GHOST_ASSET:
     tag: "GHOST ASSET"
+    confidence: rule
     severity: high
     guideline_source: >-
       MPLADS record-keeping norm: a completed, paid work should have a supporting
@@ -68,39 +93,95 @@ detectors:
 
   PAID_NOT_COMPLETE:
     tag: "GHOST ASSET"
+    confidence: statistical
     guideline_days: 365
-    guideline_source: "MPLADS guideline: work expected complete within 1 year of sanction"
-    severity_buckets:   # edges = p50/p90 of real hit distribution, 25,519 hits all-scope
-      - {max_days: 716, severity: low}
-      - {max_days: 976, severity: medium}
-      - {max_days: null, severity: high}
+    gate_percentile: 90
+    bucket_percentiles: [90, 95, 99]
+    guideline_source: >-
+      MPLADS guideline: work expected complete within 1 year of sanction.
+      Flagged here for being in the slowest 10% of paid-but-uncompleted
+      works, not merely for missing the 1-year guideline (55% do).
 
   STUCK_STATUS:
     tag: "TIME DELAY"
+    confidence: statistical
     guideline_days: 730
+    gate_percentile: 90
+    bucket_percentiles: [90, 95, 99]
     early_stages: ["Time Estimation", "Pending for Sanction", "Physical Inspection", "Vendor Identification"]
     guideline_source: >-
-      Narrowed: a work parked in an early, pre-execution WORK_STAGE for over
-      2 years is a distinct signal from STALLED_AT_SANCTION (fires at 45 days
-      on any not-yet-sanctioned work) and STALLED_AT_EXECUTION (doesn't care
-      which stage a sanctioned work is parked in) - this catches works that
-      never progressed past early triage, sanctioned or not.
-    severity_buckets:   # edges = p50/p90 of real hit distribution, 93,761 hits all-scope
-      - {max_days: 994, severity: low}
-      - {max_days: 1121, severity: medium}
-      - {max_days: null, severity: high}
+      A work parked in an early, pre-execution WORK_STAGE for an unusually
+      long time relative to its peers - distinct from STALLED_AT_SANCTION
+      (any not-yet-sanctioned work) and STALLED_AT_EXECUTION (doesn't care
+      which stage a sanctioned work is parked in). Flagged for sitting in the
+      slowest 10% of this early-stage population, not a fixed day count.
+
+  OVER_ALLOCATION:
+    tag: "OVER ALLOCATION"
+    confidence: rule
+    severity: high
+    guideline_source: >-
+      MPLADS guideline: an MP's recommendations may not exceed their allocated
+      limit for the tenure, matched by constituency + tenure. This is a
+      hard compliance check against ALLOCATED_AMT, not a percentile judgement.
+
+  COST_OUTLIER:
+    tag: "COST OUTLIER"
+    confidence: statistical
+    peer_key: ["ACTIVITY_NAME_CLEAN", "STATE_NAME"]
+    min_peers: 30
+    modified_z_threshold: 3.5
+    severity_z: [3.5, 5, 8]   # low/medium/high edges on modified z-score (positive/overrun side only)
+    guideline_source: >-
+      Robust (median + MAD) modified z-score of SANCTION_AMOUNT against peer
+      works of the same cleaned activity type in the same state (n>=30 peers
+      required, or the work is skipped - not enough peers to judge "unusual").
+      Positive-direction only: the problem statement's concern is cost
+      OVERRUNS, not unusually cheap works - a different and differently-
+      actionable signal that flagging both directions conflated. Threshold
+      3.5 is the standard modified-z outlier cutoff (Iglewicz & Hoaglin).
+      A high cost is not evidence of wrongdoing on its own - it
+      says a human should look at why this one differs from its peers.
+
+  DUPLICATE_WORK:
+    tag: "DUPLICATION"
+    confidence: statistical
+    min_description_length: 40   # chars - excludes bare category restatements like "table of kitchen"
+    max_group_size: 3            # a real accidental duplicate is a pair (or small handful), not a
+                                  # batch - this is what separates it from normal bulk procurement
+                                  # (e.g. 22 identical benches bought in one order)
+    block_keys: ["CONSTITUENCY_ID", "ACTIVITY_NAME_CLEAN"]
+    guideline_source: >-
+      Exact text match (after normalising case/whitespace) on WORK_DESCRIPTION
+      within the same constituency and cleaned activity category, longer than
+      a bare category restatement, confined to small groups (2-3 works) only.
+      Went through two rejected designs before this one, hand-checking real
+      hits at every step (see docs/SCHEMA.md): fuzzy similarity mostly caught
+      an MP legitimately recommending the same type of work at different real
+      villages via a shared template (the place name is too small a fraction
+      of a long templated sentence to move a similarity score much); exact
+      match alone then caught normal bulk procurement instead (many identical
+      rows is the *correct* way to record buying many identical items). The
+      group-size cap is what's left once both of those are ruled out - a real
+      duplicate is a pair, not a batch. Flags every work in the small group -
+      not proof any of them is fake, but a real description match a human
+      should compare side by side.
 
 queue:
-  demo_scopes: ["18th Lok Sabha", "Sitting"]
+  # 18th LS only - the reasoning that always excluded 17th LS from the
+  # actionable queue (its MPs' terms ended in 2024; routing a finding to
+  # "MP office" has no real recipient) didn't depend on Rajya Sabha and
+  # still applies now that Rajya Sabha itself is out of scope entirely.
+  # 17th LS stays fully analysed and visible via the scope toggle - just
+  # not in the capped, actionable review queue.
+  demo_scopes: ["18th Lok Sabha"]
   materiality_floor: 500000
   max_queue_size: 2000
-  # Verified: 133,484 in-scope works; 101,740 (76.2%) carry >=1 finding;
-  # 41,686 clear the floor; the 2,000 cap selects the top ~1.50% of the
-  # in-scope universe by priority - lands inside the 1-2% target band
-  # without further tuning. Re-verify this after a real data refresh.
+  # Re-verify the achieved queue % after recalibration - see the pipeline's
+  # printed summary, not a hardcoded expectation here anymore.
 
 scoring:
   # priority_score = severity_weight + confidence_weight + exposure_weight * log10(max(financial_exposure,1))
   severity_weight:    {low: 1, medium: 2, high: 3}
-  confidence_weight:  {rule: 1, statistical: 0.6, llm: 0.3}   # only 'rule' fires in this slice
+  confidence_weight:  {rule: 1, statistical: 0.6, llm: 0.3}
   exposure_weight:    0.5

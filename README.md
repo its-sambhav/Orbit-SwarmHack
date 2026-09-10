@@ -6,6 +6,13 @@ and Programme Implementation, Government of India.
 
 **Snapshot taken:** 2026-09-10, ~00:15–01:20 IST.
 
+**Project scope note:** the CSVs below are the full original fetch (all four
+scopes, Lok Sabha and Rajya Sabha both) and are kept as-is for provenance.
+The processing pipeline (`engine/`) and dashboards only cover **17th and
+18th Lok Sabha** — Rajya Sabha rows are filtered out at the ingest stage
+(`engine/ingest.py`) before any other stage sees them. See `docs/SCHEMA.md`
+for the pipeline's own documentation of this.
+
 ## Why this exists
 
 The dashboard's own CSV export fails in-browser: each table is served as one

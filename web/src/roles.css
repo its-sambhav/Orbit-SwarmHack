@@ -1,0 +1,72 @@
+/* ---------- role selector (landing page) ---------- */
+.role-selector {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--bg); padding: 40px 20px;
+}
+.role-selector-inner { max-width: 640px; width: 100%; }
+.role-selector-inner h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.01em; }
+.role-selector-sub { color: var(--ink-muted); font-size: 13.5px; line-height: 1.6; margin: 0 0 32px; max-width: 520px; }
+.role-selector-inner h2 { font-size: 13px; font-weight: 600; color: var(--ink-muted); margin: 0 0 14px; }
+
+.role-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.role-card {
+  text-align: left; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface); cursor: pointer; font-family: inherit;
+}
+.role-card:hover { border-color: var(--accent); background: var(--accent-wash); }
+.role-card-label { font-size: 14.5px; font-weight: 600; margin-bottom: 4px; }
+.role-card-desc { font-size: 12.5px; color: var(--ink-muted); line-height: 1.5; }
+
+.role-selector-note { font-size: 12px; color: var(--ink-faint); margin-top: 24px; line-height: 1.6; }
+
+.picker-list { display: flex; flex-direction: column; gap: 2px; max-height: 480px; overflow-y: auto; }
+.picker-item {
+  display: flex; justify-content: space-between; align-items: center; text-align: left;
+  padding: 10px 14px; border: none; border-bottom: 1px solid var(--border);
+  background: var(--surface); cursor: pointer; font-family: inherit; font-size: 13.5px;
+}
+.picker-item:hover { background: var(--surface-sunken); }
+.picker-item-meta { font-size: 12px; color: var(--ink-muted); }
+
+/* ---------- state / district dashboards ---------- */
+.role-dashboard { max-width: 1100px; margin: 0 auto; padding: 24px 28px; height: 100%; overflow-y: auto; }
+.role-dashboard-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; gap: 16px; }
+.role-dashboard-header h1 { font-size: 20px; margin: 2px 0 2px; font-weight: 600; }
+.role-dashboard-header .meta { color: var(--ink-muted); font-size: 13px; }
+
+.scope-select {
+  font-family: inherit; font-size: 12.5px; padding: 6px 10px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink); flex: none;
+}
+
+.role-dashboard-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+.stat-tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; }
+.stat-tile-label { font-size: 11.5px; color: var(--ink-muted); margin-bottom: 4px; }
+.stat-tile-value { font-size: 19px; font-weight: 600; }
+
+.role-dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 820px) { .role-dashboard-grid { grid-template-columns: 1fr; } .role-dashboard-stats { grid-template-columns: 1fr 1fr; } }
+
+.rank-list { display: flex; flex-direction: column; gap: 1px; max-height: 340px; overflow-y: auto; }
+.rank-item {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; text-align: left; padding: 8px 4px;
+  border: none; border-bottom: 1px solid var(--border); background: none; cursor: pointer; font-family: inherit;
+}
+.rank-item:hover { background: var(--surface-sunken); }
+.rank-item:disabled { cursor: default; }
+.rank-item:disabled:hover { background: none; }
+.rank-item-name { font-size: 13px; font-weight: 500; }
+.rank-item-meta { font-size: 11.5px; color: var(--ink-muted); text-align: right; }
+.rank-item-bar { grid-column: 1 / -1; height: 4px; background: var(--surface-sunken); border-radius: 2px; overflow: hidden; }
+.rank-item-bar span { display: block; height: 100%; background: var(--accent); }
+
+.panel-note { font-size: 12px; color: var(--ink-muted); margin: -6px 0 12px; line-height: 1.5; }
+/* a factual value that can run long (an authority name, an address) - unlike
+   a chip, it needs to wrap rather than clip or overflow its container */
+.fact-line { font-size: 13px; color: var(--ink); margin: 0 0 6px; line-height: 1.4; word-break: break-word; }
+.sub-heading { font-size: 11.5px; font-weight: 600; color: var(--ink-muted); margin: 16px 0 8px; }
+.chip-cloud { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-breakdown { display: flex; flex-direction: column; gap: 6px; }
+.tag-breakdown-row { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; }
+.tag-breakdown-row-btn { width: 100%; background: none; border: none; padding: 4px 0; font-family: inherit; cursor: pointer; color: var(--ink); border-radius: var(--radius-sm); }
+.tag-breakdown-row-btn:hover { color: var(--accent); }

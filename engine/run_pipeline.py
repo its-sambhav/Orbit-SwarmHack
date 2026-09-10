@@ -32,10 +32,10 @@ def main():
     findings = score.run(findings, cfg)
 
     print("\n=== 6/7 rollup ===")
-    work_risk, constituency_risk = rollup.run(findings, cfg)
+    work_risk, constituency_risk, district_risk, state_risk = rollup.run(findings, cfg)
 
     print("\n=== 7/7 export ===")
-    export.run(findings, work_risk, constituency_risk)
+    export.run(findings, work_risk, constituency_risk, district_risk, state_risk)
 
     elapsed = time.time() - t0
     print(f"\n{'=' * 60}")
@@ -50,6 +50,8 @@ def main():
     in_scope_flagged = int(work_risk["in_demo_scope"].sum())
     print(f"  breach rate (in-scope {demo_scopes}): {in_scope_flagged / in_scope_n * 100:.1f}%")
     print(f"  constituencies covered:        {len(constituency_risk):,}")
+    print(f"  districts covered:             {len(district_risk):,}")
+    print(f"  states covered:                {len(state_risk):,}")
     print(f"  run time:                      {elapsed:.1f}s")
     print(f"{'=' * 60}")
 
