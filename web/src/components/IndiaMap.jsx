@@ -87,8 +87,11 @@ function usePercentileRanks(dataByKey) {
  * focusKey: when set, zoom to just this one feature and highlight it (constituency focus view); otherwise fit the whole collection
  * onSelect(risk, key, feature): click handler - receives the full risk-data object so the caller decides what to navigate to
  * selectedKey: highlight one feature without focusing/zooming to it
+ * tooltipRenderer(risk, name): optional override for the hover tooltip's HTML string, for callers whose dataByKey isn't the works_flagged/works_total/breach_rate shape (falls back to that default when omitted)
+ * overlayGeojson: an optional second FeatureCollection drawn on top, non-interactive, styled as one dominant unfilled boundary (the same focus-boundary look used everywhere else in the app) - e.g. a district's own boundary over its constituency-level choropleth
+ * backdropGeojson: an optional FeatureCollection drawn *underneath* the main layer, filled solid - for when the main layer's own features (e.g. a district's individual constituencies) are simplified/sourced slightly differently than this true outline and don't tile it edge-to-edge; the backdrop shows through any sliver gap instead of the page background, so the composite still reads as one correctly-shaped region
  */
-export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSelect, selectedKey }) {
+export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSelect, selectedKey, tooltipRenderer, overlayGeojson, backdropGeojson }) {
   const layerRef = useRef(null)
   const ranks = usePercentileRanks(dataByKey)
 
@@ -111,14 +114,18 @@ export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSe
     // focus mode (single boundary) has no onSelect and no risk data passed
     // in by design - a "no data" tooltip there would be misleading, since
     // the rail beside it does show real figures for this seat.
-    if (!onSelect) return
-    layer.bindTooltip(
-      risk
-        ? `<strong>${name}</strong><br/>${risk.works_flagged.toLocaleString('en-IN')} / ${risk.works_total.toLocaleString('en-IN')} works flagged &middot; ${(risk.breach_rate * 100).toFixed(0)}%`
-        : `<strong>${name}</strong><br/>No data for this scope`,
-      { sticky: true, className: 'map-tooltip' }
-    )
-    if (risk) layer.on('click', () => onSelect(risk, key, feature))
+    if (!risk && !onSelect) return
+    if (risk) {
+      layer.bindTooltip(
+        tooltipRenderer
+          ? tooltipRenderer(risk, name)
+          : `<strong>${name}</strong><br/>${risk.works_flagged.toLocaleString('en-IN')} / ${risk.works_total.toLocaleString('en-IN')} works flagged &middot; ${(risk.breach_rate * 100).toFixed(0)}%`,
+        { sticky: true, className: 'map-tooltip' }
+      )
+      if (onSelect) layer.on('click', () => onSelect(risk, key, feature))
+    } else {
+      layer.bindTooltip(`<strong>${name}</strong><br/>No data for this scope`, { sticky: true, className: 'map-tooltip' })
+    }
   }
 
   const dataKey = useMemo(
@@ -141,7 +148,21 @@ export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSe
       <ZoomControl position="bottomright" />
       {geojson && (
         <>
+          {backdropGeojson && (
+            <GeoJSON
+              data={backdropGeojson}
+              interactive={false}
+              style={{ fillColor: NO_DATA_FILL, fillOpacity: 0.9, color: NO_DATA_FILL, weight: 0 }}
+            />
+          )}
           <GeoJSON ref={layerRef} key={dataKey} data={geojson} style={style} onEachFeature={onEachFeature} />
+          {overlayGeojson && (
+            <GeoJSON
+              data={overlayGeojson}
+              interactive={false}
+              style={{ fillOpacity: 0, color: '#2C4A66', weight: 2.5 }}
+            />
+          )}
           <FitBounds geojson={geojson} keyProp={keyProp} focusKey={focusKey} />
         </>
       )}

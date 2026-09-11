@@ -33,6 +33,7 @@ export function MpDashboardView() {
   const [error, setError] = useState(null)
   const [districtFilter, setDistrictFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [valueMode, setValueMode] = useState('amount')
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}) }, [])
   useEffect(() => { fetch('/static/geo/india_pc_2019_simplified.geojson').then((r) => r.json()).then(setGeojson) }, [])
@@ -106,12 +107,18 @@ export function MpDashboardView() {
 
           <div className="map-drill-row">
             <div className="map-drill-details">
-              <h3>Constituency overview</h3>
+              <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
+                <h3 style={{ margin: 0 }}>Constituency overview</h3>
+                <ScopeToggle
+                  scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
+                  value={valueMode} onChange={setValueMode} includeAll={false}
+                />
+              </div>
               <div className="scorecard-grid">
-                <ScorecardCell label="Recommended" value={scorecard.recommended} />
-                <ScorecardCell label="Sanctioned" value={scorecard.sanctioned} />
-                <ScorecardCell label="Completed" value={scorecard.completed} />
-                <ScorecardCell label="Paid" value={scorecard.paid} />
+                <ScorecardCell label="Recommended" value={scorecard.recommended} count={scorecard.recommended_count} mode={valueMode} />
+                <ScorecardCell label="Sanctioned" value={scorecard.sanctioned} count={scorecard.sanctioned_count} mode={valueMode} />
+                <ScorecardCell label="Completed" value={scorecard.completed} count={scorecard.completed_count} mode={valueMode} />
+                <ScorecardCell label="Paid" value={scorecard.paid} count={scorecard.paid_count} mode={valueMode} />
                 <div className="scorecard-cell">
                   <div className="label">Total projects</div>
                   <div className="value num">{scorecard.works_total.toLocaleString('en-IN')}</div>

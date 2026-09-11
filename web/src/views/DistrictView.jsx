@@ -32,8 +32,12 @@ export function DistrictView() {
   const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
   const [severityFilter, setSeverityFilter] = useState('')
+  const [valueMode, setValueMode] = useState('amount')
+
+  const [pcGeojson, setPcGeojson] = useState(null)
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}) }, [])
+  useEffect(() => { fetch('/static/geo/india_pc_2019_simplified.geojson').then((r) => r.json()).then(setPcGeojson) }, [])
 
   useEffect(() => {
     setData(null)
@@ -64,6 +68,40 @@ export function DistrictView() {
     return { type: 'FeatureCollection', features: [data.boundary] }
   }, [data])
 
+  // the constituencies making up this district's own boundary (same
+  // constituency_details/pc_id join StateView uses for its own constituency
+  // choropleth) - here they're the sub-district geometry the anomaly heatmap
+  // colours, with the district's dissolved boundary drawn as a dominant
+  // outline on top via IndiaMap's overlayGeojson.
+  const districtFilteredPcGeojson = useMemo(() => {
+    if (!pcGeojson || !data) return null
+    const pcIds = new Set(data.constituency_details.map((c) => c.pc_id).filter((id) => id != null))
+    const features = pcGeojson.features.filter((f) => pcIds.has(f.properties.pc_id))
+    return features.length ? { type: 'FeatureCollection', features } : null
+  }, [pcGeojson, data])
+
+  // anomaly count per constituency, from the same flagged-works queue
+  // already fetched for the "Pending action" list - real counts, not a
+  // fabricated location signal, and never keyed by total works or amount.
+  const anomalyHeatByKey = useMemo(() => {
+    if (!data) return {}
+    const nameToPcId = {}
+    for (const c of data.constituency_details) if (c.pc_id != null) nameToPcId[c.constituency] = c.pc_id
+    const counts = {}
+    for (const item of data.queue) {
+      const pcId = nameToPcId[item.constituency]
+      if (pcId == null) continue
+      counts[pcId] = (counts[pcId] || 0) + 1
+    }
+    const byKey = {}
+    for (const c of data.constituency_details) {
+      if (c.pc_id == null) continue
+      const n = counts[c.pc_id] || 0
+      byKey[c.pc_id] = { risk_score: n, anomaly_count: n, constituency: c.constituency }
+    }
+    return byKey
+  }, [data])
+
   if (error) return <ErrorView message={error} />
   if (!data) return <Loading label="Loading district" />
 
@@ -79,12 +117,9 @@ export function DistrictView() {
         profileName={isRoleView ? data.district : undefined}
         profileRole={isRoleView ? 'District Authority' : undefined}
         avatarLetter={isRoleView ? 'D' : undefined}
-        drawerLinks={isRoleView ? [
-          { label: 'Implementing agencies', onClick: () => document.getElementById('district-agencies')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
-        ] : [
+        drawerLinks={isRoleView ? [] : [
           { label: 'Overview', onClick: () => navigate('/mospi') },
           { label: 'Map', onClick: () => navigate('/mospi/map') },
-          { label: 'Implementing agencies', onClick: () => document.getElementById('district-agencies')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
           { label: 'Reports', onClick: () => navigate('/reports') },
         ]}
       />
@@ -96,98 +131,48 @@ export function DistrictView() {
               { label: data.district },
             ]} />
             <h1 style={{ margin: '4px 0 2px' }}>{data.district}</h1>
-            <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>District Authority · {data.state} · {scopeLabel(scope)}</div>
-            <div className="report-toolbar">
-              <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
-              <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
-              <GenerateReportButton
-                level="district" scope={scope} dateFrom={dateFrom} dateTo={dateTo}
-                state={data.state} district={data.district}
-                title={`${data.district}, ${data.state} — ${scopeLabel(scope)}`}
-                summary={data.scorecard}
-              />
+            <div className="mospi-page-sub-row">
+              <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13, flex: 1, minWidth: 240 }}>District Authority · {data.state} · {scopeLabel(scope)}</div>
+              <div className="report-toolbar">
+                <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
+                <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
+                <GenerateReportButton
+                  level="district" scope={scope} dateFrom={dateFrom} dateTo={dateTo}
+                  state={data.state} district={data.district}
+                  title={`${data.district}, ${data.state} — ${scopeLabel(scope)}`}
+                  summary={data.scorecard}
+                />
+              </div>
             </div>
           </div>
 
           <div className="map-drill-row">
             <div className="map-drill-details">
-              <h3>District overview</h3>
+              <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
+                <h3 style={{ margin: 0 }}>District overview</h3>
+                <ScopeToggle
+                  scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
+                  value={valueMode} onChange={setValueMode} includeAll={false}
+                />
+              </div>
               <div className="scorecard-grid">
-                <ScorecardCell label="Allocated" value={data.scorecard.allocated} />
-                <ScorecardCell label="Sanctioned" value={data.scorecard.sanctioned} />
-                <ScorecardCell label="Paid" value={data.scorecard.paid} />
+                <ScorecardCell label="Allocated" value={data.scorecard.allocated} count={data.scorecard.works_total} mode={valueMode} />
+                <ScorecardCell label="Recommended" value={data.scorecard.recommended} count={data.scorecard.recommended_count} mode={valueMode} />
+                <ScorecardCell label="Sanctioned" value={data.scorecard.sanctioned} count={data.scorecard.sanctioned_count} mode={valueMode} />
+                <ScorecardCell label="Completed" value={data.scorecard.completed} count={data.scorecard.completed_count} mode={valueMode} />
+                <ScorecardCell label="Paid" value={data.scorecard.paid} count={data.scorecard.paid_count} mode={valueMode} />
                 <div className="scorecard-cell">
                   <div className="label">Works flagged</div>
                   <div className="value num">{data.scorecard.works_flagged.toLocaleString('en-IN')} / {data.scorecard.works_total.toLocaleString('en-IN')}</div>
                 </div>
-                <div className="scorecard-cell">
-                  <div className="label">Ongoing</div>
-                  <div className="value num">{data.scorecard.ongoing.toLocaleString('en-IN')}</div>
-                </div>
-                <div className="scorecard-cell">
-                  <div className="label">Delayed</div>
-                  <div className="value num">{data.scorecard.delayed.toLocaleString('en-IN')}</div>
-                </div>
-                <div className="scorecard-cell">
-                  <div className="label">Pending approvals</div>
-                  <div className="value num">{data.scorecard.pending_approvals.toLocaleString('en-IN')}</div>
-                </div>
-                <div className="scorecard-cell">
-                  <div className="label">Pending payments</div>
-                  <div className="value num">{data.scorecard.pending_payments.toLocaleString('en-IN')}</div>
-                </div>
               </div>
               <div className="comparison-row">
-                <span>Completion rate</span>
-                <span className="value num">{data.scorecard.completion_rate != null ? `${data.scorecard.completion_rate.toFixed(0)}%` : '—'}</span>
+                <span>District authority</span>
+                <span className="value num">{data.district_authority.join(', ') || '—'}</span>
               </div>
-
-              <h3 id="district-agencies">Implementing agency performance</h3>
-              {data.agency_performance.length ? (
-                <div className="tag-breakdown">
-                  {data.agency_performance.map((a) => (
-                    <div key={a.agency} className="tag-breakdown-row" style={{ alignItems: 'flex-start' }}>
-                      <span style={{ maxWidth: '60%' }}>{a.agency}</span>
-                      <span className="num" style={{ color: 'var(--ink-muted)', fontWeight: 400 }}>
-                        {a.completed}/{a.works_total} completed · {a.delayed} delayed
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="panel-note">
-                  No agency has recorded expenditure here yet - agency identity is only known once a work has a disbursement.
-                </p>
-              )}
-
-              <h3>District authority</h3>
-              {data.district_authority.map((name) => <p key={name} className="fact-line">{name}</p>)}
-
-              <h3>MPs</h3>
-              {/* ranked by how many of this district's works that MP actually
-                  recommended - DISTRICT is derived from the sanctioning IDA,
-                  not the MP's own constituency, so a seat's works can be
-                  split across districts near a boundary; the count keeps a
-                  1-2-work edge case from reading as an equal co-MP next to a
-                  100+-work incumbent. */}
-              <div className="tag-breakdown">
-                {data.mps.map((m) => (
-                  <button
-                    key={`${m.constituency_id}-${m.mp_name}`}
-                    type="button"
-                    className="tag-breakdown-row tag-breakdown-row-btn"
-                    onClick={() => navigate(
-                      isRoleView
-                        ? `/constituency/${m.constituency_id}?scope=${encodeURIComponent(scope)}&role=district&role_name=${encodeURIComponent(data.district)}`
-                        : `/constituency/${m.constituency_id}?scope=${encodeURIComponent(scope)}`
-                    )}
-                  >
-                    <span>{m.mp_name}</span>
-                    <span className="num" style={{ color: 'var(--ink-muted)', fontWeight: 400 }}>
-                      {m.constituency} · {m.works_count.toLocaleString('en-IN')} work{m.works_count === 1 ? '' : 's'}
-                    </span>
-                  </button>
-                ))}
+              <div className="comparison-row">
+                <span>Member of Parliament</span>
+                <span className="value num">{data.mps.length ? `${data.mps[0].mp_name} · ${data.mps[0].constituency}` : '—'}</span>
               </div>
 
               <h3>By tag</h3>
@@ -199,7 +184,25 @@ export function DistrictView() {
             </div>
 
             <div className="map-drill-map">
-              {districtGeojson ? (
+              {districtFilteredPcGeojson ? (
+                <>
+                  <IndiaMap
+                    geojson={districtFilteredPcGeojson}
+                    keyProp="pc_id"
+                    nameProp="pc_name"
+                    dataByKey={anomalyHeatByKey}
+                    backdropGeojson={districtGeojson}
+                    overlayGeojson={districtGeojson}
+                    tooltipRenderer={(risk, name) => `<strong>${name}</strong><br/>${risk.anomaly_count.toLocaleString('en-IN')} anomal${risk.anomaly_count === 1 ? 'y' : 'ies'}`}
+                  />
+                  <div className="map-legend">
+                    <div className="map-legend-ramp" />
+                    <div className="map-legend-labels"><span>Fewer anomalies</span><span>More anomalies</span></div>
+                    <div className="map-legend-swatch"><span className="map-legend-line" /> District boundary</div>
+                    <div className="map-legend-swatch"><span className="map-legend-line map-legend-line-dashed" /> Parliamentary constituency</div>
+                  </div>
+                </>
+              ) : districtGeojson ? (
                 <IndiaMap geojson={districtGeojson} keyProp="district" dataByKey={{}} focusKey={data.district} />
               ) : (
                 <div className="map-pane-fallback">

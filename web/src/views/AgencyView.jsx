@@ -30,6 +30,7 @@ export function AgencyView() {
   const [error, setError] = useState(null)
   const [severityFilter, setSeverityFilter] = useState('')
   const [stateFilter, setStateFilter] = useState('')
+  const [valueMode, setValueMode] = useState('amount')
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}) }, [])
 
@@ -97,11 +98,17 @@ export function AgencyView() {
 
           <div className="map-drill-row map-drill-row-2col">
             <div className="map-drill-details">
-              <h3>My work overview</h3>
+              <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
+                <h3 style={{ margin: 0 }}>My work overview</h3>
+                <ScopeToggle
+                  scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
+                  value={valueMode} onChange={setValueMode} includeAll={false}
+                />
+              </div>
               <div className="scorecard-grid">
-                <ScorecardCell label="Sanctioned" value={data.scorecard.sanctioned} />
-                <ScorecardCell label="Completed" value={data.scorecard.completed} />
-                <ScorecardCell label="Paid" value={data.scorecard.paid} />
+                <ScorecardCell label="Sanctioned" value={data.scorecard.sanctioned} count={data.scorecard.sanctioned_count} mode={valueMode} />
+                <ScorecardCell label="Completed" value={data.scorecard.completed} count={data.scorecard.completed_count} mode={valueMode} />
+                <ScorecardCell label="Paid" value={data.scorecard.paid} count={data.scorecard.paid_count} mode={valueMode} />
                 <div className="scorecard-cell">
                   <div className="label">Flagged</div>
                   <div className="value num">{data.scorecard.works_flagged.toLocaleString('en-IN')} / {data.scorecard.works_total.toLocaleString('en-IN')}</div>

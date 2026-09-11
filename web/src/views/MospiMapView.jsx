@@ -56,6 +56,7 @@ export function MospiMapView() {
   const [stateDetail, setStateDetail] = useState(null)
   const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
+  const [valueMode, setValueMode] = useState('amount')
 
   // level === 'india': the whole country, one polygon per state, coloured by
   // that state's own aggregate breach rate across all its constituencies.
@@ -210,13 +211,19 @@ export function MospiMapView() {
             {level === 'india' ? (
               funnel ? (
                 <>
-                  <h3>National scorecard</h3>
+                  <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
+                    <h3 style={{ margin: 0 }}>National scorecard</h3>
+                    <ScopeToggle
+                      scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
+                      value={valueMode} onChange={setValueMode} includeAll={false}
+                    />
+                  </div>
                   <div className="scorecard-grid">
-                    <ScorecardCell label="Allocated" value={funnel.allocated} />
-                    <ScorecardCell label="Recommended" value={funnel.recommended_amount} />
-                    <ScorecardCell label="Sanctioned" value={funnel.sanctioned_amount} />
-                    <ScorecardCell label="Completed" value={funnel.completed_amount} />
-                    <ScorecardCell label="Paid" value={funnel.paid} />
+                    <ScorecardCell label="Allocated" value={funnel.allocated} count={funnel.total_works} mode={valueMode} />
+                    <ScorecardCell label="Recommended" value={funnel.recommended_amount} count={funnel.recommended} mode={valueMode} />
+                    <ScorecardCell label="Sanctioned" value={funnel.sanctioned_amount} count={funnel.sanctioned} mode={valueMode} />
+                    <ScorecardCell label="Completed" value={funnel.completed_amount} count={funnel.completed} mode={valueMode} />
+                    <ScorecardCell label="Paid" value={funnel.paid} count={funnel.paid_count} mode={valueMode} />
                     <div className="scorecard-cell">
                       <div className="label">Works flagged</div>
                       <div className="value num">{funnel.works_flagged.toLocaleString('en-IN')} / {funnel.total_works.toLocaleString('en-IN')}</div>
@@ -255,13 +262,19 @@ export function MospiMapView() {
             ) : (
               stateDetail ? (
                 <>
-                  <h3>{selectedState} scorecard</h3>
+                  <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
+                    <h3 style={{ margin: 0 }}>{selectedState} scorecard</h3>
+                    <ScopeToggle
+                      scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
+                      value={valueMode} onChange={setValueMode} includeAll={false}
+                    />
+                  </div>
                   <div className="scorecard-grid">
-                    <ScorecardCell label="Allocated" value={stateDetail.scorecard.allocated} />
-                    <ScorecardCell label="Recommended" value={stateDetail.scorecard.recommended} />
-                    <ScorecardCell label="Sanctioned" value={stateDetail.scorecard.sanctioned} />
-                    <ScorecardCell label="Completed" value={stateDetail.scorecard.completed} />
-                    <ScorecardCell label="Paid" value={stateDetail.scorecard.paid} />
+                    <ScorecardCell label="Allocated" value={stateDetail.scorecard.allocated} count={stateDetail.scorecard.works_total} mode={valueMode} />
+                    <ScorecardCell label="Recommended" value={stateDetail.scorecard.recommended} count={stateDetail.scorecard.recommended_count} mode={valueMode} />
+                    <ScorecardCell label="Sanctioned" value={stateDetail.scorecard.sanctioned} count={stateDetail.scorecard.sanctioned_count} mode={valueMode} />
+                    <ScorecardCell label="Completed" value={stateDetail.scorecard.completed} count={stateDetail.scorecard.completed_count} mode={valueMode} />
+                    <ScorecardCell label="Paid" value={stateDetail.scorecard.paid} count={stateDetail.scorecard.paid_count} mode={valueMode} />
                     <div className="scorecard-cell">
                       <div className="label">Works flagged</div>
                       <div className="value num">{stateDetail.scorecard.works_flagged.toLocaleString('en-IN')} / {stateDetail.scorecard.works_total.toLocaleString('en-IN')}</div>

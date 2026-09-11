@@ -2,10 +2,132 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, formatRupees, buildSearchIndex } from '../api'
 import { MospiNav } from '../components/MospiNav'
-import { SEV_LABEL, TAG_COLOR_KEY } from '../components/Chips'
+import { TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView } from '../components/StateViews'
+
+// 4 distinct pipeline/risk states, each its own hue rather than one shared
+// accent (Funnel.jsx's decreasing-magnitude funnel bars intentionally stay
+// one colour; this is a status comparison, not a funnel) - validated
+// together via the dataviz skill's palette checker (scripts/validate_palette.js)
+// against this app's own surface and its existing --sev-high red (kept
+// fixed since that token is reserved for severity everywhere else in the
+// app): all 4 hard gates pass in this order, worst adjacent CVD Delta E 15.1.
+// Amber/aqua sit under the 3:1 contrast floor against a white card, which is
+// fine here only because every bar is always direct-labelled (name + count
+// + a legend swatch) - color never has to carry the identification alone.
+const STATUS_COLORS = { recommended: '#2a78d6', sanctioned: '#eda100', highRisk: 'var(--sev-high)', completed: '#1baf7a' }
+
+// per-row badge colour for the states list - a scan aid only (GitHub-label-
+// style), not a data-encoding channel: the state name and its 3 numbers are
+// always shown as text, so this doesn't need the same CVD gate a chart
+// series colour needs. Reuses the dataviz skill's own validated 8-hue
+// categorical order (adjacent-pair safe in that sequence); a name hash
+// doesn't preserve that adjacency guarantee once the list is re-sorted, so
+// this is deliberately treated as decorative, never as the only cue.
+const STATE_BADGE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948']
+function stateBadgeColor(name) {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return STATE_BADGE_COLORS[h % STATE_BADGE_COLORS.length]
+}
+
+const STATE_SORTS = {
+  risk: { label: 'Highest risk', fn: (a, b) => b.risk_score - a.risk_score },
+  volume: { label: 'Highest volume', fn: (a, b) => b.works_total - a.works_total },
+  alpha: { label: 'Alphabetical', fn: (a, b) => a.state.localeCompare(b.state) },
+}
+
+// replaces the "Findings by severity" donut - a project's lifecycle/risk
+// standing is 4 comparable counts (not parts of one whole the way severity
+// or tag shares are), so a bar comparison reads more directly than a donut
+// slice. financial value rides along per bar (tooltip) and in the legend,
+// never as a second axis on the same chart (two measures of different
+// scale never share one axis - dataviz skill).
+function StatusBarChart({ title, items }) {
+  const max = Math.max(1, ...items.map((i) => i.value))
+  return (
+    <div className="chart-card">
+      <h3>{title}</h3>
+      <div className="status-bar-chart">
+        {items.map((item) => (
+          <div className="status-bar-col" key={item.label}>
+            <div className="status-bar-value num">{item.value.toLocaleString('en-IN')}</div>
+            <div className="status-bar-track">
+              <div
+                className="status-bar-fill"
+                style={{ height: `${Math.max((item.value / max) * 100, 2)}%`, background: item.color }}
+                title={`${item.label}: ${item.value.toLocaleString('en-IN')} works · ${formatRupees(item.amount)}`}
+              />
+            </div>
+            <div className="status-bar-label">{item.label}</div>
+          </div>
+        ))}
+      </div>
+      <div className="status-bar-legend">
+        {items.map((item) => (
+          <span className="status-bar-legend-item" key={item.label}>
+            <span className="status-bar-swatch" style={{ background: item.color }} />
+            {item.label} · {formatRupees(item.amount)}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// replaces the top-5-only "Top states by risk" rank chart - every state/UT
+// (states is the full, unsliced /api/states list, already sorted server-
+// side by risk_score), with its own search + sort controls and a scrolling
+// list rather than a static slice.
+function StatesPanel({ states, onSelect }) {
+  const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState('risk')
+
+  const filtered = useMemo(() => {
+    if (!states) return []
+    const q = search.trim().toLowerCase()
+    const rows = q ? states.filter((s) => s.state.toLowerCase().includes(q)) : states
+    return [...rows].sort(STATE_SORTS[sortBy].fn)
+  }, [states, search, sortBy])
+
+  return (
+    <div className="chart-card">
+      <h3>Top states by risk ({states ? states.length : 0})</h3>
+      <div className="filters" style={{ marginBottom: 10 }}>
+        <input
+          type="search" placeholder="Search states or UTs…" value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+          {Object.entries(STATE_SORTS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+      </div>
+      {filtered.length ? (
+        <>
+          <div className="states-panel-head">
+            <span /><span>State / UT</span><span>Total</span><span>Flagged</span><span>Risk %</span>
+          </div>
+          <div className="rank-list states-panel-list">
+            {filtered.map((s) => (
+              <button key={s.state} type="button" className="state-row" onClick={() => onSelect(s)}>
+                <span className="state-row-swatch" style={{ background: stateBadgeColor(s.state) }} />
+                <span className="state-row-name">{s.state}</span>
+                <span className="state-row-stat">{s.works_total.toLocaleString('en-IN')}</span>
+                <span className="state-row-stat">{s.works_flagged.toLocaleString('en-IN')}</span>
+                <span className="state-row-pct">{(s.breach_rate * 100).toFixed(0)}%</span>
+                <span className="state-row-bar"><span style={{ width: `${Math.max(s.breach_rate * 100, 2)}%` }} /></span>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="states-panel-empty">No state or UT matches "{search}".</div>
+      )}
+    </div>
+  )
+}
 
 const DEFAULT_SCOPE = '18th Lok Sabha'
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
@@ -96,6 +218,7 @@ export function NationalView() {
   const [funnel, setFunnel] = useState(null)
   const [analytics, setAnalytics] = useState(null)
   const [constituencies, setConstituencies] = useState(null)
+  const [states, setStates] = useState(null)
   const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
 
@@ -110,6 +233,9 @@ export function NationalView() {
   useEffect(() => {
     api.funnel(scope, { dateFrom, dateTo }).then(setFunnel).catch((e) => setError(e.message))
     api.analytics(scope, { dateFrom, dateTo }).then(setAnalytics).catch((e) => setError(e.message))
+    // full state/UT coverage for the states panel - /api/states, not the
+    // analytics endpoint's top-5-only slice.
+    api.states({ scope }, { dateFrom, dateTo }).then((r) => setStates(r.items)).catch((e) => setError(e.message))
   }, [scope, dateFrom, dateTo])
 
   function setRange(from, to) {
@@ -156,10 +282,6 @@ export function NationalView() {
     { label: 'Completed', value: funnel.completed.toLocaleString('en-IN'), sub: formatRupees(funnel.completed_amount) },
   ] : []
 
-  const severityItems = analytics
-    ? ['high', 'medium', 'low'].map((k) => ({ label: SEV_LABEL[k], value: analytics.severity_counts[k] || 0, key: k }))
-    : []
-  const severityColor = (item) => `var(--sev-${item.key})`
   const tagItems = analytics
     ? Object.entries(analytics.tag_counts).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }))
     : []
@@ -167,9 +289,15 @@ export function NationalView() {
   const stageItems = analytics
     ? Object.entries(STAGE_LABEL).map(([k, label]) => ({ label, value: analytics.stage_counts[k] || 0 }))
     : []
-  const topStateItems = analytics
-    ? analytics.top_states.map((s) => ({ label: s.state, value: s.works_flagged, breachRate: s.breach_rate }))
-    : []
+
+  // real counts + real financial exposure per pipeline/risk state, all from
+  // the same /api/funnel response the KPI cards above already use.
+  const statusItems = funnel ? [
+    { label: 'Recommended', value: funnel.recommended, amount: funnel.recommended_amount, color: STATUS_COLORS.recommended },
+    { label: 'Sanctioned', value: funnel.sanctioned, amount: funnel.sanctioned_amount, color: STATUS_COLORS.sanctioned },
+    { label: 'High risk', value: funnel.high_risk_count, amount: funnel.high_risk_amount, color: STATUS_COLORS.highRisk },
+    { label: 'Completed', value: funnel.completed, amount: funnel.completed_amount, color: STATUS_COLORS.completed },
+  ] : []
 
   if (error) return <ErrorView message={error} onRetry={() => window.location.reload()} />
 
@@ -217,15 +345,13 @@ export function NationalView() {
         </button>
 
         <div className="mospi-charts-grid" id="mospi-analytics">
-          {analytics ? (
+          {analytics && funnel && states ? (
             <>
-              <DonutCard title="Findings by severity" items={severityItems} colorFor={severityColor} />
+              <StatusBarChart title="Projects by status" items={statusItems} />
               <DonutCard title="Findings by tag" items={tagItems} colorFor={tagColor} />
-              <RankChart
-                title="Top states by risk"
-                items={topStateItems}
-                onSelect={(item) => navigate(`/mospi/map?state=${encodeURIComponent(item.label)}`)}
-                formatValue={(item) => `${item.value.toLocaleString('en-IN')} flagged`}
+              <StatesPanel
+                states={states}
+                onSelect={(s) => navigate(`/mospi/map?state=${encodeURIComponent(s.state)}`)}
               />
               <RankChart title="Works by pipeline stage" items={stageItems} />
             </>

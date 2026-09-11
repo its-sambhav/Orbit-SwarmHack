@@ -6,6 +6,7 @@ import { IndiaMap } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip } from '../components/Chips'
+import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 
 const ROLE_LABEL = { state: 'State Nodal Authority', district: 'District Authority' }
@@ -30,6 +31,7 @@ export function ConstituencyView() {
   const [data, setData] = useState(null)
   const [geojson, setGeojson] = useState(null)
   const [error, setError] = useState(null)
+  const [valueMode, setValueMode] = useState('amount')
 
   useEffect(() => {
     setData(null)
@@ -94,14 +96,20 @@ export function ConstituencyView() {
 
       <div className="map-drill-row">
         <div className="map-drill-details">
-          <h3>MP scorecard</h3>
+          <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>MP scorecard</h3>
+            <ScopeToggle
+              scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
+              value={valueMode} onChange={setValueMode} includeAll={false}
+            />
+          </div>
           <p className="fact-line">{data.mp_name || 'MP not on record for this scope'}</p>
           <div className="scorecard-grid">
-            <ScorecardCell label="Allocated" value={scorecard.allocated} />
-            <ScorecardCell label="Recommended" value={scorecard.recommended} />
-            <ScorecardCell label="Sanctioned" value={scorecard.sanctioned} />
-            <ScorecardCell label="Completed" value={scorecard.completed} />
-            <ScorecardCell label="Paid" value={scorecard.paid} />
+            <ScorecardCell label="Allocated" value={scorecard.allocated} count={scorecard.works_total} mode={valueMode} />
+            <ScorecardCell label="Recommended" value={scorecard.recommended} count={scorecard.recommended_count} mode={valueMode} />
+            <ScorecardCell label="Sanctioned" value={scorecard.sanctioned} count={scorecard.sanctioned_count} mode={valueMode} />
+            <ScorecardCell label="Completed" value={scorecard.completed} count={scorecard.completed_count} mode={valueMode} />
+            <ScorecardCell label="Paid" value={scorecard.paid} count={scorecard.paid_count} mode={valueMode} />
             <div className="scorecard-cell">
               <div className="label">Works flagged</div>
               <div className="value num">{scorecard.works_flagged.toLocaleString('en-IN')} / {scorecard.works_total.toLocaleString('en-IN')}</div>

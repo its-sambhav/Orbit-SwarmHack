@@ -117,6 +117,9 @@ def get_funnel(scope: str = Query("all"), date_from: str | None = None, date_to:
     alloc = s.allocated if scope == "all" else s.allocated[s.allocated["SCOPE_TENURE"] == scope]
     completion_rate = float(sp["has_completed"].sum() / sp["has_sanctioned"].sum() * 100) if sp["has_sanctioned"].sum() else None
     works_flagged = len(wr)
+    # distinct works whose worst finding is high-severity (not a raw finding
+    # count, which would multi-count a work with more than one high finding).
+    high_risk = wr[wr["max_severity"] == "high"]
     return clean({
         "scope": scope, "date_from": date_from, "date_to": date_to,
         "total_works": len(sp),
@@ -131,6 +134,9 @@ def get_funnel(scope: str = Query("all"), date_from: str | None = None, date_to:
         "completed": int(sp["has_completed"].sum()),
         "completed_amount": float(sp.loc[sp["has_completed"], "comp_ACTUAL_AMOUNT"].sum()),
         "paid": float(sp["exp_total_disbursed"].sum()),
+        "paid_count": int(sp["has_expenditure"].sum()),
+        "high_risk_count": int(len(high_risk)),
+        "high_risk_amount": float(high_risk["total_exposure"].sum()),
         "completion_rate": completion_rate,
         "never_sanctioned": int((sp["has_recommended"] & ~sp["has_sanctioned"]).sum()),
         "sanctioned_never_completed": int((sp["has_sanctioned"] & ~sp["has_completed"]).sum()),
@@ -351,6 +357,8 @@ def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha"),
             "sanctioned": float(sp["SANCTION_AMOUNT"].sum()),
             "completed": float(sp["comp_ACTUAL_AMOUNT"].sum()),
             "paid": float(sp["exp_total_disbursed"].sum()),
+            "recommended_count": int(sp["has_recommended"].sum()), "sanctioned_count": int(sp["has_sanctioned"].sum()),
+            "completed_count": int(sp["has_completed"].sum()), "paid_count": int(sp["has_expenditure"].sum()),
             "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
             "breach_rate": round(float(row["breach_rate"]), 4),
             "completion_rate": completion_rate,
@@ -445,6 +453,8 @@ def get_state(state_name: str, scope: str = Query("18th Lok Sabha"), date_from: 
             "sanctioned": float(sp.loc[sp["has_sanctioned"], "SANCTION_AMOUNT"].sum()),
             "completed": float(sp.loc[sp["has_completed"], "comp_ACTUAL_AMOUNT"].sum()),
             "paid": float(sp["exp_total_disbursed"].sum()),
+            "recommended_count": int(sp["has_recommended"].sum()), "sanctioned_count": int(sp["has_sanctioned"].sum()),
+            "completed_count": int(sp["has_completed"].sum()), "paid_count": int(sp["has_expenditure"].sum()),
             "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
             "breach_rate": round(float(row["breach_rate"]), 4),
             "delayed": delayed_count(f),
@@ -570,6 +580,8 @@ def get_mp(mp_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | 
             "sanctioned": float(sp.loc[sp["has_sanctioned"], "SANCTION_AMOUNT"].sum()),
             "completed": float(sp.loc[sp["has_completed"], "comp_ACTUAL_AMOUNT"].sum()),
             "paid": float(sp["exp_total_disbursed"].sum()),
+            "recommended_count": works_total, "sanctioned_count": sanctioned_n, "completed_count": completed_n,
+            "paid_count": int(sp["has_expenditure"].sum()),
             "works_total": works_total, "works_flagged": int(works_flagged),
             "breach_rate": round(works_flagged / works_total, 4) if works_total else None,
             "pending_approvals": int((sp["has_recommended"] & ~sp["has_sanctioned"]).sum()),
@@ -712,6 +724,8 @@ def get_district(state_name: str, district_name: str, scope: str = Query("18th L
             "sanctioned": float(sp.loc[sp["has_sanctioned"], "SANCTION_AMOUNT"].sum()),
             "completed": float(sp.loc[sp["has_completed"], "comp_ACTUAL_AMOUNT"].sum()),
             "paid": float(sp["exp_total_disbursed"].sum()),
+            "recommended_count": int(sp["has_recommended"].sum()), "sanctioned_count": int(sp["has_sanctioned"].sum()),
+            "completed_count": int(sp["has_completed"].sum()), "paid_count": int(sp["has_expenditure"].sum()),
             "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
             "delayed": delayed_count(f),
             **stage_counts(sp),
@@ -795,6 +809,8 @@ def get_agency(agency_name: str, scope: str = Query("18th Lok Sabha"), date_from
             "sanctioned": float(sp.loc[sp["has_sanctioned"], "SANCTION_AMOUNT"].sum()),
             "completed": float(sp.loc[sp["has_completed"], "comp_ACTUAL_AMOUNT"].sum()),
             "paid": float(sp["exp_total_disbursed"].sum()),
+            "sanctioned_count": int(sp["has_sanctioned"].sum()), "completed_count": int(sp["has_completed"].sum()),
+            "paid_count": int(sp["has_expenditure"].sum()),
             "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
             "delayed": delayed_count(f),
             **stage_counts(sp),

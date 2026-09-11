@@ -132,6 +132,20 @@
 .mospi-page-sub-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
 .mospi-page-sub-row .mospi-page-sub { margin-bottom: 0; flex: 1; min-width: 240px; }
 .mospi-page-sub-row .report-toolbar { margin-bottom: 0; }
+/* .map-drill-header is a flex item (column child of .map-drill-view), which
+   establishes its own block-formatting context - its last child's own
+   bottom margin no longer collapses with the header's own margin-bottom the
+   way it would in normal flow, so both applied in full and doubled the gap
+   above the cards below. The header's margin-bottom is already the intended
+   spacing; the toolbar (always its last child, State/District/Agency/MP
+   drill pages) doesn't need a second one on top of it. */
+.map-drill-header .report-toolbar { margin-bottom: 0; }
+/* same fix, one level up: when the meta line + toolbar share one
+   .mospi-page-sub-row (State/District overview headers), that row is
+   .map-drill-header's actual last child now - it carries its own
+   margin-bottom too, which stacked with the header's for the same
+   non-collapsing-flex-item reason as above. */
+.map-drill-header .mospi-page-sub-row { margin-bottom: 0; }
 .map-pane-fallback { height: 100%; display: flex; align-items: center; justify-content: center; }
 
 /* analytics as 4 distinct cards with real gaps between them, not one merged
@@ -168,6 +182,48 @@
 .donut-row-stacked .donut-legend { width: 100%; }
 .donut-legend-row-compact { grid-template-columns: 10px 1fr auto; }
 
+/* status bar chart (Projects by status) - 4 vertical bars anchored to a
+   shared baseline, one measure (project count), each bar its own validated
+   colour (see app.css header note / dataviz skill) since these are 4
+   distinct pipeline states, not a single-hue progression like Funnel.jsx's
+   stage bars. Financial value stays out of the bar itself (mixing two
+   measures on one axis is the #1 chart mistake) and shows in the legend
+   and the hover tooltip instead. */
+.status-bar-chart { display: flex; align-items: flex-end; gap: 16px; padding: 4px 2px 0; }
+.status-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.status-bar-value { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+.status-bar-track { width: 100%; height: 120px; display: flex; align-items: flex-end; }
+.status-bar-fill { width: 100%; border-radius: 4px 4px 0 0; min-height: 3px; }
+.status-bar-label { font-size: 11.5px; color: var(--ink-muted); text-align: center; margin-top: 8px; }
+.status-bar-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--ink-muted); }
+.status-bar-legend-item { display: flex; align-items: center; gap: 6px; }
+.status-bar-swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+
+/* Top states by risk - full coverage (every state/UT, not a top-5 slice),
+   search + sort controls, a colour badge per row purely as a scan aid (the
+   state name and numbers are always the actual information - see the
+   header comment on stateColor in NationalView.jsx for why a badge colour
+   doesn't need the same CVD gate a data-encoding chart colour does). */
+.states-panel-head {
+  display: grid; grid-template-columns: 9px 1fr auto auto auto; gap: 10px; align-items: center;
+  padding: 0 4px 6px; font-size: 10.5px; font-weight: 600; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.03em;
+}
+.states-panel-head span { text-align: right; }
+.states-panel-head span:first-of-type { text-align: left; }
+.state-row {
+  display: grid; grid-template-columns: 9px 1fr auto auto auto; gap: 10px; align-items: center;
+  width: 100%; text-align: left; padding: 7px 4px; border: none; border-bottom: 1px solid var(--border);
+  background: none; cursor: pointer; font-family: inherit;
+}
+.state-row:hover { background: var(--surface-sunken); }
+.state-row-swatch { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.state-row-name { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.state-row-stat { font-size: 12px; color: var(--ink-muted); text-align: right; min-width: 40px; }
+.state-row-pct { font-size: 12.5px; font-weight: 600; text-align: right; min-width: 38px; }
+.state-row-bar { grid-column: 1 / -1; height: 4px; background: var(--surface-sunken); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+.state-row-bar span { display: block; height: 100%; background: var(--accent); }
+.states-panel-empty { padding: 16px 4px; font-size: 12.5px; color: var(--ink-muted); }
+
 /* review queue laid out as a card grid instead of a narrow rail list -
    .queue-item's own rules (padding/hover/font) are untouched, this only
    adds a full border so cards read correctly at grid width */
@@ -184,6 +240,8 @@
 .map-legend-labels { display: flex; justify-content: space-between; margin-bottom: 6px; }
 .map-legend-swatch { display: flex; align-items: center; gap: 6px; }
 .swatch-nodata { width: 10px; height: 10px; border-radius: 2px; background: #E3E6E2; display: inline-block; }
+.map-legend-line { width: 16px; height: 0; border-top: 2.5px solid #2C4A66; display: inline-block; }
+.map-legend-line-dashed { border-top: 1.5px dashed var(--ink-muted); }
 .leaflet-tooltip.map-tooltip { font-family: var(--font); font-size: 12px; }
 
 /* ---------- funnel ---------- */
