@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, formatRupees } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { ScorecardCell } from '../components/Scorecard'
+import { StatusBarChart, STATUS_COLORS } from '../components/StatusBarChart'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
@@ -62,6 +63,14 @@ export function AgencyView() {
   if (error) return <ErrorView message={error} />
   if (!data) return <Loading label="Loading agency" />
 
+  // no "Recommended" bar - allocation/recommendation is a per-MP figure an
+  // implementing agency doesn't have (see data.scorecard's own API comment).
+  const statusItems = [
+    { label: 'Sanctioned', value: data.scorecard.sanctioned_count, amount: data.scorecard.sanctioned, color: STATUS_COLORS.sanctioned },
+    { label: 'High risk', value: data.scorecard.high_risk_count, amount: data.scorecard.high_risk_amount, color: STATUS_COLORS.highRisk },
+    { label: 'Completed', value: data.scorecard.completed_count, amount: data.scorecard.completed, color: STATUS_COLORS.completed },
+  ]
+
   return (
     <div className="mospi-page">
       <MospiNav
@@ -74,7 +83,7 @@ export function AgencyView() {
         avatarLetter="A"
         drawerLinks={[]}
       />
-      <div className="mospi-map-page-body">
+      <div className="mospi-map-page-body" id="report-capture">
         <div className="map-drill-view" style={{ padding: 0, height: '100%' }}>
           <div className="map-drill-header">
             <Breadcrumb items={[{ label: data.agency }]} />
@@ -126,6 +135,8 @@ export function AgencyView() {
                   <div className="value num">{data.scorecard.pending_payments.toLocaleString('en-IN')}</div>
                 </div>
               </div>
+
+              <StatusBarChart title="Projects by status" items={statusItems} />
 
               <h3>States touched</h3>
               {data.states_touched.map((s) => <p key={s} className="fact-line">{s}</p>)}

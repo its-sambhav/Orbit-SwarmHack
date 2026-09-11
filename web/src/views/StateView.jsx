@@ -4,6 +4,7 @@ import { api, formatRupees } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
+import { StatusBarChart, STATUS_COLORS } from '../components/StatusBarChart'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
@@ -85,6 +86,13 @@ export function StateView() {
     [stateConstituencies]
   )
 
+  const statusItems = data ? [
+    { label: 'Recommended', value: data.scorecard.recommended_count, amount: data.scorecard.recommended, color: STATUS_COLORS.recommended },
+    { label: 'Sanctioned', value: data.scorecard.sanctioned_count, amount: data.scorecard.sanctioned, color: STATUS_COLORS.sanctioned },
+    { label: 'High risk', value: data.scorecard.high_risk_count, amount: data.scorecard.high_risk_amount, color: STATUS_COLORS.highRisk },
+    { label: 'Completed', value: data.scorecard.completed_count, amount: data.scorecard.completed, color: STATUS_COLORS.completed },
+  ] : []
+
   if (error) return <ErrorView message={error} />
   if (!data) return <Loading label="Loading state" />
 
@@ -103,7 +111,7 @@ export function StateView() {
           { label: 'Anomalies', onClick: () => document.getElementById('state-anomalies')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
         ]}
       />
-      <div className="mospi-map-page-body">
+      <div className="mospi-map-page-body" id="report-capture">
         <div className="map-drill-view" style={{ padding: 0, height: '100%' }}>
           <div className="map-drill-header">
             <Breadcrumb items={[{ label: data.state }]} />
@@ -151,6 +159,8 @@ export function StateView() {
                 <span>National median</span>
                 <span className="value num">{data.scorecard.national_median_completion_rate != null ? `${data.scorecard.national_median_completion_rate.toFixed(0)}%` : '—'}</span>
               </div>
+
+              <StatusBarChart title="Projects by status" items={statusItems} />
 
               <h3 id="state-constituencies">Constituencies ({sortedConstituencies.length})</h3>
               <div className="rank-list rank-list-compact">

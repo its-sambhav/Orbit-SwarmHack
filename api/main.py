@@ -8,13 +8,16 @@ already produced. The one exception, /api/narrative, calls Claude to format
 (never generate) reasoning already present in a finding's evidence - see
 api/narrative.py for the validator that enforces this.
 """
+import base64
 import json
 import math
+import re
 
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -359,6 +362,8 @@ def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha"),
             "paid": float(sp["exp_total_disbursed"].sum()),
             "recommended_count": int(sp["has_recommended"].sum()), "sanctioned_count": int(sp["has_sanctioned"].sum()),
             "completed_count": int(sp["has_completed"].sum()), "paid_count": int(sp["has_expenditure"].sum()),
+            "high_risk_count": int((wr["max_severity"] == "high").sum()),
+            "high_risk_amount": float(wr.loc[wr["max_severity"] == "high", "total_exposure"].sum()),
             "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
             "breach_rate": round(float(row["breach_rate"]), 4),
             "completion_rate": completion_rate,
@@ -455,6 +460,8 @@ def get_state(state_name: str, scope: str = Query("18th Lok Sabha"), date_from: 
             "paid": float(sp["exp_total_disbursed"].sum()),
             "recommended_count": int(sp["has_recommended"].sum()), "sanctioned_count": int(sp["has_sanctioned"].sum()),
             "completed_count": int(sp["has_completed"].sum()), "paid_count": int(sp["has_expenditure"].sum()),
+            "high_risk_count": int((wr["max_severity"] == "high").sum()),
+            "high_risk_amount": float(wr.loc[wr["max_severity"] == "high", "total_exposure"].sum()),
             "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
             "breach_rate": round(float(row["breach_rate"]), 4),
             "delayed": delayed_count(f),
@@ -726,6 +733,8 @@ def get_district(state_name: str, district_name: str, scope: str = Query("18th L
             "paid": float(sp["exp_total_disbursed"].sum()),
             "recommended_count": int(sp["has_recommended"].sum()), "sanctioned_count": int(sp["has_sanctioned"].sum()),
             "completed_count": int(sp["has_completed"].sum()), "paid_count": int(sp["has_expenditure"].sum()),
+            "high_risk_count": int((wr["max_severity"] == "high").sum()),
+            "high_risk_amount": float(wr.loc[wr["max_severity"] == "high", "total_exposure"].sum()),
             "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
             "delayed": delayed_count(f),
             **stage_counts(sp),
@@ -811,6 +820,8 @@ def get_agency(agency_name: str, scope: str = Query("18th Lok Sabha"), date_from
             "paid": float(sp["exp_total_disbursed"].sum()),
             "sanctioned_count": int(sp["has_sanctioned"].sum()), "completed_count": int(sp["has_completed"].sum()),
             "paid_count": int(sp["has_expenditure"].sum()),
+            "high_risk_count": int((wr["max_severity"] == "high").sum()),
+            "high_risk_amount": float(wr.loc[wr["max_severity"] == "high", "total_exposure"].sum()),
             "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
             "delayed": delayed_count(f),
             **stage_counts(sp),
@@ -827,7 +838,7 @@ def get_agency(agency_name: str, scope: str = Query("18th Lok Sabha"), date_from
 
 
 class ReportCreate(BaseModel):
-    level: str  # "overview" | "india" | "state" | "district" | "agency" | "mp"
+    level: str  # "overview" | "india" | "state" | "district" | "agency" | "constituency" | "mp"
     title: str
     scope: str
     date_from: str | None = None
@@ -836,6 +847,7 @@ class ReportCreate(BaseModel):
     district: str | None = None
     agency: str | None = None
     summary: dict
+    pdf_base64: str | None = None  # data captured from the screen at generation time
 
 
 @app.get("/api/reports")
@@ -845,7 +857,9 @@ def get_reports():
 
 @app.post("/api/reports")
 def post_report(body: ReportCreate):
-    return clean(reports_store.create_report(body.model_dump()))
+    fields = body.model_dump(exclude={"pdf_base64"})
+    pdf_bytes = base64.b64decode(body.pdf_base64) if body.pdf_base64 else None
+    return clean(reports_store.create_report(fields, pdf_bytes))
 
 
 @app.delete("/api/reports/{report_id}")
@@ -853,6 +867,22 @@ def remove_report(report_id: str):
     if not reports_store.delete_report(report_id):
         raise HTTPException(404, f"no report '{report_id}'")
     return {"deleted": report_id}
+
+
+@app.get("/api/reports/{report_id}/pdf")
+def get_report_pdf(report_id: str):
+    record = reports_store.get_report(report_id)
+    if not record or not record.get("has_pdf"):
+        raise HTTPException(404, f"no report pdf for '{report_id}'")
+    path = reports_store.pdf_path(report_id)
+    if not path.exists():
+        raise HTTPException(404, f"no report pdf for '{report_id}'")
+    safe_name = re.sub(r"[^\w-]+", "_", record["title"]).strip("_") or "report"
+    date_stamp = record["created_at"][:10]
+    return FileResponse(
+        path, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}_{date_stamp}.pdf"'},
+    )
 
 
 @app.get("/")

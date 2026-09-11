@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../api'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
+import { api, formatDate } from '../api'
 
 const PRESETS = [
   { label: 'Last 3 months', months: 3 },
@@ -105,19 +107,150 @@ export function DateRangeFilter({ dateFrom, dateTo, bounds, onChange }) {
 
 const REPORT_LABEL = { idle: 'Generate report', saving: 'Generating…', done: 'Report saved ✓', failed: 'Failed — retry' }
 
+function sanitizeFilename(title) {
+  return title.replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'report'
+}
+
+function arrayBufferToBase64(buffer) {
+  let binary = ''
+  const bytes = new Uint8Array(buffer)
+  const chunkSize = 0x8000
+  for (let i = 0; i < bytes.length; i += chunkSize) binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  return btoa(binary)
+}
+
+// renders #report-capture (the view's own content, everything below its
+// .report-toolbar) into a paginated PDF - a real visual snapshot of what was
+// on screen, not just the numbers. The toolbar itself (scope/date/this
+// button) is excluded from the image since its own transient state
+// ("Generating…") shouldn't end up baked into the picture; the applied
+// scope/date range is printed as text in the header instead so nothing about
+// what was filtered is lost.
+async function captureReportPdf({ title, scope, dateFrom, dateTo }) {
+  const node = document.getElementById('report-capture')
+  if (!node) return null
+
+  // the map card (.map-drill-map) is a grid sibling of the panels below with
+  // no height of its own - it normally stretches to match the row. Measure
+  // its height before anything is expanded, so it can be pinned there
+  // afterward instead of stretching into a tall blank card once its
+  // siblings grow to their full, unscrolled content height.
+  const mapPanels = Array.from(node.querySelectorAll('.map-drill-map'))
+  const mapHeights = mapPanels.map((el) => el.getBoundingClientRect().height)
+
+  // the drill-down layout's side panels (.map-drill-details/-findings/
+  // -center, see app.css) scroll independently inside a fixed-height row -
+  // html2canvas only paints what's on screen, so a report would silently
+  // cut off anything scrolled out of view. Expand them to their full content
+  // height for the capture (the same overflow:visible app.css already
+  // applies at narrow viewports for the stacked layout), then restore.
+  const scrollPanels = node.querySelectorAll('.map-drill-details, .map-drill-findings, .map-drill-center')
+  const restorePanels = Array.from(scrollPanels).map((el) => {
+    const prev = el.style.cssText
+    el.style.overflow = 'visible'
+    el.style.maxHeight = 'none'
+    el.style.alignSelf = 'start'
+    return () => { el.style.cssText = prev }
+  })
+  const restoreMaps = mapPanels.map((el, i) => {
+    const prev = el.style.cssText
+    el.style.height = `${mapHeights[i]}px`
+    el.style.alignSelf = 'start'
+    return () => { el.style.cssText = prev }
+  })
+
+  // .mospi-map-page-body (the capture root on drill-down views) is
+  // position:fixed pinned to the viewport, so its own clientHeight stays
+  // viewport-sized even once the panels above are expanded - only
+  // scrollHeight reflects the real, now-full content height. Passing that
+  // through as windowHeight makes html2canvas re-lay-out against a taller
+  // virtual viewport, so fixed/vh-based sizing resolves against the full
+  // content instead of clipping to the screen.
+  const fullHeight = node.scrollHeight
+
+  let canvas
+  try {
+    canvas = await html2canvas(node, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true,
+      height: fullHeight,
+      windowHeight: fullHeight,
+      ignoreElements: (el) => el.classList?.contains('report-toolbar'),
+    })
+  } finally {
+    restorePanels.forEach((fn) => fn())
+    restoreMaps.forEach((fn) => fn())
+  }
+
+  const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' })
+  const pageWidth = pdf.internal.pageSize.getWidth()
+  const pageHeight = pdf.internal.pageSize.getHeight()
+  const margin = 32
+  const imgWidth = pageWidth - margin * 2
+
+  // titles are entity names (agency names especially run long) - wrap
+  // rather than let jsPDF clip a fixed one-line title at the page edge.
+  let y = margin
+  pdf.setFontSize(14)
+  const titleLines = pdf.splitTextToSize(title, imgWidth)
+  pdf.text(titleLines, margin, y)
+  y += titleLines.length * 17
+
+  pdf.setFontSize(10)
+  pdf.setTextColor(90)
+  const rangeText = !dateFrom && !dateTo ? 'All time' : `${dateFrom ? formatDate(dateFrom) : '—'} to ${dateTo ? formatDate(dateTo) : '—'}`
+  pdf.text(`${scope} · ${rangeText}`, margin, y)
+  y += 14
+  pdf.text(`Generated on ${formatDate(new Date().toISOString())}`, margin, y)
+  pdf.setTextColor(0)
+
+  // slice the (possibly very tall) captured canvas into page-height chunks,
+  // scaled to fit the PDF's content width, one addImage per page.
+  const contentTop = y + 16
+  const ratio = imgWidth / canvas.width
+  const pxPerPage = Math.floor((pageHeight - contentTop - margin) / ratio)
+  const slice = document.createElement('canvas')
+  slice.width = canvas.width
+  const ctx = slice.getContext('2d')
+
+  let renderedPx = 0
+  let firstPage = true
+  while (renderedPx < canvas.height) {
+    const sliceHeight = Math.min(pxPerPage, canvas.height - renderedPx)
+    slice.height = sliceHeight
+    ctx.clearRect(0, 0, slice.width, sliceHeight)
+    ctx.drawImage(canvas, 0, renderedPx, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight)
+    if (!firstPage) pdf.addPage()
+    // JPEG, not PNG - this is a photo-like raster of gradients/anti-aliased
+    // text at 2x scale, where lossless PNG runs 10-20x larger for no visible
+    // gain in a report meant to be read, not pixel-inspected.
+    pdf.addImage(slice.toDataURL('image/jpeg', 0.85), 'JPEG', margin, firstPage ? contentTop : margin, imgWidth, sliceHeight * ratio)
+    renderedPx += sliceHeight
+    firstPage = false
+  }
+
+  return pdf
+}
+
 // snapshots the current page (level/entity/scope/date-range + its headline
-// numbers) into a saved report, listed on the new Reports page - a frozen
-// record of what the numbers said at generation time, not a live link.
-export function GenerateReportButton({ level, title, scope, dateFrom, dateTo, state, district, summary }) {
+// numbers, plus a visual PDF of the screen) into a saved report, listed on
+// the Reports page - a frozen record of what was on screen at generation
+// time, not a live link.
+export function GenerateReportButton({ level, title, scope, dateFrom, dateTo, state, district, agency, summary }) {
   const [status, setStatus] = useState('idle')
 
   async function generate() {
     setStatus('saving')
     try {
+      const pdf = await captureReportPdf({ title, scope, dateFrom, dateTo })
+      const pdfBase64 = pdf ? arrayBufferToBase64(pdf.output('arraybuffer')) : null
       await api.createReport({
         level, title, scope, date_from: dateFrom, date_to: dateTo,
-        state: state || null, district: district || null, summary,
+        state: state || null, district: district || null, agency: agency || null,
+        summary, pdf_base64: pdfBase64,
       })
+      if (pdf) pdf.save(`${sanitizeFilename(title)}_${new Date().toISOString().slice(0, 10)}.pdf`)
       setStatus('done')
     } catch {
       setStatus('failed')

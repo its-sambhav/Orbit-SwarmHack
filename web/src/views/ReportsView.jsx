@@ -35,7 +35,12 @@ function ReportCard({ report, onDelete }) {
             {LEVEL_LABEL[report.level] || report.level} · {report.scope} · Generated {formatDate(report.created_at)}
           </div>
         </div>
-        <button type="button" className="btn-link" onClick={() => onDelete(report.id)}>Delete</button>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          {report.has_pdf && (
+            <a className="btn-link" style={{ textDecoration: 'none', marginTop: 0 }} href={`/api/reports/${report.id}/pdf`}>Download PDF</a>
+          )}
+          <button type="button" className="btn-link" onClick={() => onDelete(report.id)}>Delete</button>
+        </div>
       </div>
       <div className="comparison-row">
         <span>Date range covered</span>

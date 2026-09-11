@@ -2,22 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, formatRupees, buildSearchIndex } from '../api'
 import { MospiNav } from '../components/MospiNav'
+import { StatusBarChart, STATUS_COLORS } from '../components/StatusBarChart'
 import { TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView } from '../components/StateViews'
-
-// 4 distinct pipeline/risk states, each its own hue rather than one shared
-// accent (Funnel.jsx's decreasing-magnitude funnel bars intentionally stay
-// one colour; this is a status comparison, not a funnel) - validated
-// together via the dataviz skill's palette checker (scripts/validate_palette.js)
-// against this app's own surface and its existing --sev-high red (kept
-// fixed since that token is reserved for severity everywhere else in the
-// app): all 4 hard gates pass in this order, worst adjacent CVD Delta E 15.1.
-// Amber/aqua sit under the 3:1 contrast floor against a white card, which is
-// fine here only because every bar is always direct-labelled (name + count
-// + a legend swatch) - color never has to carry the identification alone.
-const STATUS_COLORS = { recommended: '#2a78d6', sanctioned: '#eda100', highRisk: 'var(--sev-high)', completed: '#1baf7a' }
 
 // per-row badge colour for the states list - a scan aid only (GitHub-label-
 // style), not a data-encoding channel: the state name and its 3 numbers are
@@ -37,44 +26,6 @@ const STATE_SORTS = {
   risk: { label: 'Highest risk', fn: (a, b) => b.risk_score - a.risk_score },
   volume: { label: 'Highest volume', fn: (a, b) => b.works_total - a.works_total },
   alpha: { label: 'Alphabetical', fn: (a, b) => a.state.localeCompare(b.state) },
-}
-
-// replaces the "Findings by severity" donut - a project's lifecycle/risk
-// standing is 4 comparable counts (not parts of one whole the way severity
-// or tag shares are), so a bar comparison reads more directly than a donut
-// slice. financial value rides along per bar (tooltip) and in the legend,
-// never as a second axis on the same chart (two measures of different
-// scale never share one axis - dataviz skill).
-function StatusBarChart({ title, items }) {
-  const max = Math.max(1, ...items.map((i) => i.value))
-  return (
-    <div className="chart-card">
-      <h3>{title}</h3>
-      <div className="status-bar-chart">
-        {items.map((item) => (
-          <div className="status-bar-col" key={item.label}>
-            <div className="status-bar-value num">{item.value.toLocaleString('en-IN')}</div>
-            <div className="status-bar-track">
-              <div
-                className="status-bar-fill"
-                style={{ height: `${Math.max((item.value / max) * 100, 2)}%`, background: item.color }}
-                title={`${item.label}: ${item.value.toLocaleString('en-IN')} works · ${formatRupees(item.amount)}`}
-              />
-            </div>
-            <div className="status-bar-label">{item.label}</div>
-          </div>
-        ))}
-      </div>
-      <div className="status-bar-legend">
-        {items.map((item) => (
-          <span className="status-bar-legend-item" key={item.label}>
-            <span className="status-bar-swatch" style={{ background: item.color }} />
-            {item.label} · {formatRupees(item.amount)}
-          </span>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 // replaces the top-5-only "Top states by risk" rank chart - every state/UT
@@ -317,7 +268,7 @@ export function NationalView() {
         ]}
       />
 
-      <div className="mospi-body">
+      <div className="mospi-body" id="report-capture">
         <div className="report-toolbar">
           <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
           <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />

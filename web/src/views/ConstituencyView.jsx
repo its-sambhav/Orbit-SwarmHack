@@ -4,8 +4,10 @@ import { api, formatRupees } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { IndiaMap } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
+import { StatusBarChart, STATUS_COLORS } from '../components/StatusBarChart'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip } from '../components/Chips'
+import { GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 
@@ -49,6 +51,12 @@ export function ConstituencyView() {
   const completionDelta = scorecard.completion_rate != null && scorecard.national_median_completion_rate != null
     ? scorecard.completion_rate - scorecard.national_median_completion_rate
     : null
+  const statusItems = [
+    { label: 'Recommended', value: scorecard.recommended_count, amount: scorecard.recommended, color: STATUS_COLORS.recommended },
+    { label: 'Sanctioned', value: scorecard.sanctioned_count, amount: scorecard.sanctioned, color: STATUS_COLORS.sanctioned },
+    { label: 'High risk', value: scorecard.high_risk_count, amount: scorecard.high_risk_amount, color: STATUS_COLORS.highRisk },
+    { label: 'Completed', value: scorecard.completed_count, amount: scorecard.completed, color: STATUS_COLORS.completed },
+  ]
 
   // the drill-down trail continues within the role's own authorized scope -
   // back to the state/district page the role itself owns, never back out to
@@ -86,12 +94,20 @@ export function ConstituencyView() {
           { label: 'Reports', onClick: () => navigate('/reports') },
         ]}
       />
-      <div className="mospi-map-page-body">
+      <div className="mospi-map-page-body" id="report-capture">
       <div className="map-drill-view" style={{ padding: 0, height: '100%' }}>
       <div className="map-drill-header">
         <Breadcrumb items={breadcrumbItems} />
         <h1 style={{ margin: '4px 0 2px' }}>{data.constituency}</h1>
-        <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>{data.state} · {scope}</div>
+        <div className="mospi-page-sub-row">
+          <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>{data.state} · {scope}</div>
+          <div className="report-toolbar">
+            <GenerateReportButton
+              level="constituency" scope={scope} state={data.state}
+              title={`${data.constituency} — ${scope}`} summary={scorecard}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="map-drill-row">
@@ -133,6 +149,8 @@ export function ConstituencyView() {
               {completionDelta >= 0 ? 'Above' : 'Below'} national median by {Math.abs(completionDelta).toFixed(0)} points.
             </p>
           )}
+
+          <StatusBarChart title="Projects by status" items={statusItems} />
 
           <h3>By tag</h3>
           <div className="tag-breakdown">

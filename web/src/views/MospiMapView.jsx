@@ -165,7 +165,7 @@ export function MospiMapView() {
         ]}
       />
 
-      <div className="mospi-map-page-body">
+      <div className="mospi-map-page-body" id="report-capture">
         <div className="mospi-map-page-header">
           {level === 'india' ? (
             <>

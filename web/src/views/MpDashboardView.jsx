@@ -87,7 +87,7 @@ export function MpDashboardView() {
         avatarLetter="M"
         drawerLinks={[]}
       />
-      <div className="mospi-map-page-body">
+      <div className="mospi-map-page-body" id="report-capture">
         <div className="map-drill-view" style={{ padding: 0, height: '100%' }}>
           <div className="map-drill-header">
             <Breadcrumb items={[{ label: data.mp_name }]} />

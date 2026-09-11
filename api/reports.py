@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from engine.paths import ROOT
 
 REPORTS_PATH = ROOT / "data" / "reports.json"
+REPORTS_DIR = ROOT / "data" / "reports"
 
 
 def _load() -> list[dict]:
@@ -28,16 +29,28 @@ def _save(reports: list[dict]) -> None:
     REPORTS_PATH.write_text(json.dumps(reports, indent=2))
 
 
+def pdf_path(report_id: str):
+    return REPORTS_DIR / f"{report_id}.pdf"
+
+
 def list_reports() -> list[dict]:
     return sorted(_load(), key=lambda r: r["created_at"], reverse=True)
 
 
-def create_report(fields: dict) -> dict:
+def get_report(report_id: str) -> dict | None:
+    return next((r for r in _load() if r["id"] == report_id), None)
+
+
+def create_report(fields: dict, pdf_bytes: bytes | None = None) -> dict:
     record = {
         "id": uuid.uuid4().hex[:12],
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "has_pdf": bool(pdf_bytes),
         **fields,
     }
+    if pdf_bytes:
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        pdf_path(record["id"]).write_bytes(pdf_bytes)
     reports = _load()
     reports.append(record)
     _save(reports)
@@ -50,4 +63,5 @@ def delete_report(report_id: str) -> bool:
     if len(kept) == len(reports):
         return False
     _save(kept)
+    pdf_path(report_id).unlink(missing_ok=True)
     return True
