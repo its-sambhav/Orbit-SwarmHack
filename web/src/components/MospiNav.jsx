@@ -70,7 +70,7 @@ export function MospiNav({ scope, subtitle, scopeWorksTotal, searchIndex, drawer
         </div>
         <div className="mospi-drawer-section">
           <h3>Scope</h3>
-          <div className="mospi-drawer-meta">{scope}</div>
+          <div className="mospi-drawer-meta">{scope === 'all' ? 'All scopes (17th + 18th Lok Sabha)' : scope}</div>
           {scopeWorksTotal != null && <div className="mospi-drawer-meta">{scopeWorksTotal.toLocaleString('en-IN')} works tracked</div>}
         </div>
       </aside>

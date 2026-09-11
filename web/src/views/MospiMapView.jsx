@@ -6,10 +6,14 @@ import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip } from '../components/Chips'
+import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
+import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 
-const SCOPE = '18th Lok Sabha'
+const DEFAULT_SCOPE = '18th Lok Sabha'
 const QUEUE_LIMIT = 60
+const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
+const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
 
 function QueueList({ items, navigate }) {
   if (!items.length) {
@@ -42,7 +46,7 @@ function QueueList({ items, navigate }) {
 
 export function MospiMapView() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [stateGeojson, setStateGeojson] = useState(null)
   const [pcGeojson, setPcGeojson] = useState(null)
   const [states, setStates] = useState(null)
@@ -50,6 +54,7 @@ export function MospiMapView() {
   const [funnel, setFunnel] = useState(null)
   const [nationalQueue, setNationalQueue] = useState(null)
   const [stateDetail, setStateDetail] = useState(null)
+  const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
 
   // level === 'india': the whole country, one polygon per state, coloured by
@@ -62,21 +67,44 @@ export function MospiMapView() {
   // back/forward) lands on the right level instead of always resetting to India.
   const selectedState = searchParams.get('state')
   const level = selectedState ? 'state' : 'india'
+  const dateFrom = searchParams.get('date_from') || null
+  const dateTo = searchParams.get('date_to') || null
+  const scope = searchParams.get('scope') || DEFAULT_SCOPE
+
+  function setRange(from, to) {
+    const next = new URLSearchParams(searchParams)
+    if (from) next.set('date_from', from); else next.delete('date_from')
+    if (to) next.set('date_to', to); else next.delete('date_to')
+    setSearchParams(next)
+  }
+
+  function setScope(next) {
+    const params = new URLSearchParams(searchParams)
+    params.set('scope', next)
+    setSearchParams(params)
+  }
 
   useEffect(() => {
     fetch('/static/geo/india_states_simplified.geojson').then((r) => r.json()).then(setStateGeojson)
     fetch('/static/geo/india_pc_2019_simplified.geojson').then((r) => r.json()).then(setPcGeojson)
-    api.states({ scope: SCOPE }).then(setStates).catch((e) => setError(e.message))
-    api.constituencies(SCOPE).then(setConstituencies).catch((e) => setError(e.message))
-    api.funnel(SCOPE).then(setFunnel).catch((e) => setError(e.message))
-    api.queue({ scope: SCOPE, limit: QUEUE_LIMIT }).then(setNationalQueue).catch((e) => setError(e.message))
+    api.meta().then(setMeta).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    api.constituencies(scope).then(setConstituencies).catch((e) => setError(e.message))
+  }, [scope])
+
+  useEffect(() => {
+    api.states({ scope }, { dateFrom, dateTo }).then(setStates).catch((e) => setError(e.message))
+    api.funnel(scope, { dateFrom, dateTo }).then(setFunnel).catch((e) => setError(e.message))
+    api.queue({ scope, limit: QUEUE_LIMIT }, { dateFrom, dateTo }).then(setNationalQueue).catch((e) => setError(e.message))
+  }, [scope, dateFrom, dateTo])
 
   useEffect(() => {
     if (level !== 'state' || !selectedState) return
     setStateDetail(null)
-    api.state(selectedState, SCOPE).then(setStateDetail).catch((e) => setError(e.message))
-  }, [level, selectedState])
+    api.state(selectedState, scope, { dateFrom, dateTo }).then(setStateDetail).catch((e) => setError(e.message))
+  }, [level, selectedState, scope, dateFrom, dateTo])
 
   const searchIndex = useMemo(() => buildSearchIndex(constituencies), [constituencies])
 
@@ -104,11 +132,17 @@ export function MospiMapView() {
     return { type: 'FeatureCollection', features: pcGeojson.features.filter((f) => pcIds.has(f.properties.pc_id)) }
   }, [pcGeojson, stateConstituencies, selectedState])
 
+  // preserve the current scope/date filter across a level change - drilling
+  // into a state (or back out) shouldn't silently reset either.
   function openState(stateName) {
-    navigate(`/mospi/map?state=${encodeURIComponent(stateName)}`)
+    const params = new URLSearchParams(searchParams)
+    params.set('state', stateName)
+    setSearchParams(params)
   }
   function backToIndia() {
-    navigate('/mospi/map')
+    const params = new URLSearchParams(searchParams)
+    params.delete('state')
+    setSearchParams(params)
   }
 
   if (error) return <ErrorView message={error} onRetry={() => window.location.reload()} />
@@ -118,14 +152,15 @@ export function MospiMapView() {
   return (
     <div className="mospi-page">
       <MospiNav
-        scope={SCOPE}
-        subtitle={`MoSPI · India Risk Map · ${SCOPE}`}
+        scope={scope}
+        subtitle={`MoSPI · India Risk Map · ${scopeLabel(scope)}`}
         scopeWorksTotal={funnel?.total_works}
         searchIndex={searchIndex}
         drawerLinks={[
           { label: 'Overview', onClick: () => navigate('/mospi') },
           { label: 'Map (all India)', onClick: backToIndia },
           { label: 'MP Audits', onClick: () => navigate('/mp-audits') },
+          { label: 'Reports', onClick: () => navigate('/reports') },
         ]}
       />
 
@@ -135,17 +170,37 @@ export function MospiMapView() {
             <>
               <Breadcrumb items={[{ label: 'India' }]} />
               <h1 className="mospi-page-title">India risk map</h1>
-              <p className="mospi-page-sub">
-                State-level breach rate, {SCOPE}. Click a state to see its constituencies.
-              </p>
+              <div className="mospi-page-sub-row">
+                <p className="mospi-page-sub">
+                  State-level breach rate, {scopeLabel(scope)}. Click a state to see its constituencies.
+                </p>
+                <div className="report-toolbar">
+                  <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
+                  <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
+                  <GenerateReportButton
+                    level="india" scope={scope} dateFrom={dateFrom} dateTo={dateTo}
+                    title={`India — ${scopeLabel(scope)}`} summary={funnel}
+                  />
+                </div>
+              </div>
             </>
           ) : (
             <>
               <Breadcrumb items={[{ label: 'India', onClick: backToIndia }, { label: selectedState }]} />
               <h1 className="mospi-page-title">{selectedState}</h1>
-              <p className="mospi-page-sub">
-                Constituency-level breach rate, ranked within {selectedState}. Click a constituency for its full scorecard.
-              </p>
+              <div className="mospi-page-sub-row">
+                <p className="mospi-page-sub">
+                  Constituency-level breach rate, ranked within {selectedState}. Click a constituency for its full scorecard.
+                </p>
+                <div className="report-toolbar">
+                  <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
+                  <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
+                  <GenerateReportButton
+                    level="state" scope={scope} dateFrom={dateFrom} dateTo={dateTo} state={selectedState}
+                    title={`${selectedState} — ${scopeLabel(scope)}`} summary={stateDetail?.scorecard}
+                  />
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -231,7 +286,7 @@ export function MospiMapView() {
                         key={c.constituency_id}
                         type="button"
                         className="rank-item"
-                        onClick={() => navigate(`/constituency/${c.constituency_id}?scope=${encodeURIComponent(SCOPE)}`)}
+                        onClick={() => navigate(`/constituency/${c.constituency_id}?scope=${encodeURIComponent(scope)}`)}
                       >
                         <span className="rank-item-name">{c.constituency}</span>
                         <span className="rank-item-meta num">{c.works_flagged.toLocaleString('en-IN')} flagged</span>
@@ -264,7 +319,7 @@ export function MospiMapView() {
                     keyProp="pc_id"
                     nameProp="pc_name"
                     dataByKey={constituencyDataByKey}
-                    onSelect={(risk) => navigate(`/constituency/${risk.constituency_id}?scope=${encodeURIComponent(SCOPE)}`)}
+                    onSelect={(risk) => navigate(`/constituency/${risk.constituency_id}?scope=${encodeURIComponent(scope)}`)}
                   />
                   <MapLegend />
                 </>

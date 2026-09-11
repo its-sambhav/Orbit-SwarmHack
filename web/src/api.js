@@ -22,20 +22,46 @@ async function post(path, params = {}) {
   return res.json()
 }
 
+async function postJson(path, body) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}))
+    throw new Error(errBody.detail || `${res.status} ${res.statusText}`)
+  }
+  return res.json()
+}
+
+async function del(path) {
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail || `${res.status} ${res.statusText}`)
+  }
+  return res.json()
+}
+
 export const api = {
   meta: () => get('/meta'),
-  funnel: (scope) => get('/funnel', { scope }),
-  analytics: (scope) => get('/analytics', { scope }),
+  // { dateFrom, dateTo } is optional everywhere below - the date-range
+  // filter on Overview + Map's India/State/District views narrows to works
+  // recommended in that window (see api/data.py's Store.risk_tables).
+  funnel: (scope, { dateFrom, dateTo } = {}) => get('/funnel', { scope, date_from: dateFrom, date_to: dateTo }),
+  analytics: (scope, { dateFrom, dateTo } = {}) => get('/analytics', { scope, date_from: dateFrom, date_to: dateTo }),
   constituencies: (scope) => get('/constituencies', { scope }),
-  queue: (params) => get('/queue', params),
+  queue: (params, { dateFrom, dateTo } = {}) => get('/queue', { ...params, date_from: dateFrom, date_to: dateTo }),
   work: (workNumber, scopeHouse, scopeTenure) =>
     get(`/work/${workNumber}`, { scope_house: scopeHouse, scope_tenure: scopeTenure }),
   constituency: (id, scope) => get(`/constituency/${id}`, { scope }),
-  states: (params) => get('/states', params),
-  state: (name, scope) => get(`/state/${encodeURIComponent(name)}`, { scope }),
+  states: (params, { dateFrom, dateTo } = {}) => get('/states', { ...params, date_from: dateFrom, date_to: dateTo }),
+  state: (name, scope, { dateFrom, dateTo } = {}) =>
+    get(`/state/${encodeURIComponent(name)}`, { scope, date_from: dateFrom, date_to: dateTo }),
   districts: (state, scope) => get('/districts', { state, scope }),
-  district: (state, district, scope) =>
-    get(`/district/${encodeURIComponent(state)}/${encodeURIComponent(district)}`, { scope }),
+  district: (state, district, scope, { dateFrom, dateTo } = {}) =>
+    get(`/district/${encodeURIComponent(state)}/${encodeURIComponent(district)}`, { scope, date_from: dateFrom, date_to: dateTo }),
   narrative: (workNumber, scopeHouse, scopeTenure, findingId) =>
     post('/narrative', {
       work_number: workNumber, scope_house: scopeHouse,
@@ -43,6 +69,9 @@ export const api = {
     }),
   mps: (params) => get('/mps', params),
   mp: (name, scope) => get(`/mp/${encodeURIComponent(name)}`, { scope }),
+  reports: () => get('/reports'),
+  createReport: (body) => postJson('/reports', body),
+  deleteReport: (id) => del(`/reports/${id}`),
 }
 
 export function formatRupees(amount) {

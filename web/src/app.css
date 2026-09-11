@@ -7,8 +7,8 @@
   border-bottom: 1px solid var(--border); flex: none;
   z-index: 20;
 }
-.app-title { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
-.app-subtitle { color: var(--ink-muted); font-size: 12.5px; }
+.app-title { font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
+.app-subtitle { color: var(--ink-muted); font-size: 13.5px; }
 .switch-role-link {
   margin-left: auto; padding: 6px 12px; border-radius: var(--radius-sm); color: var(--ink-muted);
   text-decoration: none; font-size: 13px; font-weight: 500; flex: none;
@@ -29,70 +29,75 @@
 /* ---------- MoSPI landing page ---------- */
 .mospi-page { min-height: 100vh; background: var(--bg); }
 
+/* official navy chrome (header + drawer share it, gold rule along the
+   bottom) - this is the "this is a government system" cue; the content
+   area underneath stays the light working surface. */
 .mospi-nav {
   position: fixed; top: 0; left: 0; right: 0; z-index: 30;
   display: flex; align-items: center; gap: 24px;
-  height: 60px; padding: 0 24px;
-  background: var(--surface); border-bottom: 1px solid var(--border);
+  height: 68px; padding: 0 28px;
+  background: var(--accent); border-bottom: 3px solid var(--gold);
   box-shadow: var(--shadow-float);
 }
 .mospi-menu-btn {
-  flex: none; width: 36px; height: 36px; border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--surface); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  flex: none; width: 38px; height: 38px; border: 1px solid rgba(255,255,255,0.3); border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.08); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
 }
-.mospi-menu-btn:hover { background: var(--surface-sunken); }
-.mospi-menu-btn span { width: 16px; height: 2px; background: var(--ink); display: block; }
+.mospi-menu-btn:hover { background: rgba(255,255,255,0.18); }
+.mospi-menu-btn span { width: 16px; height: 2px; background: #fff; display: block; }
 .mospi-nav-brand { flex: none; }
-.mospi-nav-title { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
-.mospi-nav-subtitle { color: var(--ink-muted); font-size: 11.5px; }
+.mospi-nav-title { font-weight: 600; font-size: 18px; letter-spacing: -0.01em; color: #fff; }
+.mospi-nav-subtitle { color: rgba(255,255,255,0.72); font-size: 12.5px; }
 
 .mospi-search { flex: 1; max-width: 420px; }
 .mospi-search input {
-  width: 100%; font-family: inherit; font-size: 13px; padding: 8px 12px;
-  border-radius: var(--radius-sm); border: 1px solid var(--border);
-  background: var(--surface-sunken); color: var(--ink);
+  width: 100%; font-family: inherit; font-size: 13px; padding: 9px 12px;
+  border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.94); color: var(--ink);
 }
-.mospi-search input:focus { background: var(--surface); border-color: var(--accent); }
+.mospi-search input:focus { background: #fff; border-color: var(--gold); }
 
 .mospi-nav-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; flex: none; }
-.mospi-profile { display: flex; align-items: center; gap: 8px; }
+.mospi-nav-actions .switch-role-link { color: rgba(255,255,255,0.85); margin-left: 0; }
+.mospi-nav-actions .switch-role-link:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.mospi-profile { display: flex; align-items: center; gap: 9px; }
 .mospi-profile-avatar {
-  width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff;
-  display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; flex: none;
+  width: 32px; height: 32px; border-radius: 50%; background: var(--gold); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 13.5px; font-weight: 600; flex: none;
 }
 .mospi-profile-text { display: flex; flex-direction: column; line-height: 1.3; }
-.mospi-profile-name { font-size: 12.5px; font-weight: 600; }
-.mospi-profile-role { font-size: 11px; color: var(--ink-muted); }
+.mospi-profile-name { font-size: 12.5px; font-weight: 600; color: #fff; }
+.mospi-profile-role { font-size: 11px; color: rgba(255,255,255,0.68); }
 
 /* collapsible nav drawer - "Navigate" jump-links + live scope info. Overlays
    the page (fixed, off-canvas via transform) rather than pushing content, so
    opening it never reflows the dashboard underneath. */
-.mospi-drawer-backdrop { position: fixed; inset: 60px 0 0 0; background: rgba(20, 24, 20, 0.35); z-index: 35; }
+.mospi-drawer-backdrop { position: fixed; inset: 68px 0 0 0; background: rgba(20, 24, 20, 0.35); z-index: 35; }
 .mospi-drawer {
-  position: fixed; top: 60px; bottom: 0; left: 0; width: 280px; z-index: 40;
-  background: var(--surface); border-right: 1px solid var(--border);
+  position: fixed; top: 68px; bottom: 0; left: 0; width: 300px; z-index: 40;
+  background: var(--accent-hover); border-right: 1px solid rgba(255,255,255,0.12);
   transform: translateX(-100%); transition: transform 0.2s ease; overflow-y: auto;
 }
 .mospi-drawer.open { transform: translateX(0); }
-.mospi-drawer-section { padding: 16px 18px; border-bottom: 1px solid var(--border); }
-.mospi-drawer-section h3 { margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--ink-muted); }
+.mospi-drawer-section { padding: 18px 20px; border-bottom: 1px solid rgba(255,255,255,0.12); }
+.mospi-drawer-section h3 { margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--gold); text-transform: uppercase; letter-spacing: 0.04em; }
 .mospi-drawer-link {
-  display: block; width: 100%; text-align: left; padding: 9px 10px; margin: 0 0 2px; border: none; border-radius: var(--radius-sm);
-  background: none; color: var(--ink); font-family: inherit; font-size: 13.5px; cursor: pointer;
+  display: block; width: 100%; text-align: left; padding: 10px 12px; margin: 0 0 2px; border: none; border-radius: var(--radius-sm);
+  background: none; color: rgba(255,255,255,0.88); font-family: inherit; font-size: 14.5px; cursor: pointer;
 }
-.mospi-drawer-link:hover { background: var(--accent-wash); color: var(--accent); }
-.mospi-drawer-meta { font-size: 12.5px; color: var(--ink-muted); margin-bottom: 4px; }
+.mospi-drawer-link:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.mospi-drawer-meta { font-size: 12.5px; color: rgba(255,255,255,0.68); margin-bottom: 4px; }
 
-.mospi-body { padding: 84px 24px 40px; max-width: 1440px; margin: 0 auto; }
-#mospi-overview, #mospi-map, #mospi-analytics, #mospi-queue { scroll-margin-top: 76px; }
+.mospi-body { padding: 92px 24px 40px; max-width: 1440px; margin: 0 auto; }
+#mospi-overview, #mospi-map, #mospi-analytics, #mospi-queue { scroll-margin-top: 84px; }
 
 /* stat cards - same visual language as .stat-tile (State/District dashboards),
    extended with a second (amount) line; sized up so they read as the page's
    headline numbers, not a footnote row */
-.mospi-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-bottom: 24px; }
+.mospi-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
 .mospi-stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px 22px; }
 .mospi-stat-label { font-size: 12.5px; color: var(--ink-muted); margin-bottom: 8px; }
-.mospi-stat-value { font-size: 26px; font-weight: 600; }
+.mospi-stat-value { font-size: 30px; font-weight: 600; }
 .mospi-stat-amount { font-size: 13px; color: var(--ink-muted); margin-top: 4px; }
 
 /* Overview -> Map hand-off card. The map itself lives on its own page
@@ -113,12 +118,17 @@
    never overflows the screen either: header takes its natural height, the
    map takes 100% of whatever is left via flex, full width. */
 .mospi-map-page-body {
-  position: fixed; top: 60px; left: 0; right: 0; bottom: 0;
+  position: fixed; top: 68px; left: 0; right: 0; bottom: 0;
   display: flex; flex-direction: column; padding: 16px 24px 20px;
 }
 .mospi-map-page-header { flex: none; }
-.mospi-page-title { font-size: 19px; font-weight: 600; margin: 0 0 4px; }
-.mospi-page-sub { font-size: 13px; color: var(--ink-muted); margin: 0 0 14px; }
+.mospi-page-title { font-size: 23px; font-weight: 600; margin: 0 0 4px; }
+.mospi-page-sub { font-size: 14.5px; color: var(--ink-muted); margin: 0 0 14px; }
+/* subtitle + toolbar share one line - the toolbar's own bottom margin is
+   dropped so the row (not the toolbar alone) owns the spacing below it. */
+.mospi-page-sub-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.mospi-page-sub-row .mospi-page-sub { margin-bottom: 0; flex: 1; min-width: 240px; }
+.mospi-page-sub-row .report-toolbar { margin-bottom: 0; }
 .map-pane-fallback { height: 100%; display: flex; align-items: center; justify-content: center; }
 
 /* analytics as 4 distinct cards with real gaps between them, not one merged
@@ -126,6 +136,30 @@
 .mospi-charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
 .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px 22px; }
 .chart-card h3 { margin: 0 0 14px; font-size: 13px; font-weight: 600; color: var(--ink-muted); }
+
+/* donut chart - a CSS conic-gradient ring (no chart library) + a legend
+   list that doubles as click targets when onSelect is passed. */
+.donut-row { display: flex; align-items: center; gap: 22px; }
+.donut-chart { position: relative; width: 132px; height: 132px; border-radius: 50%; flex: none; }
+.donut-hole {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 80px; height: 80px; border-radius: 50%; background: var(--surface);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.donut-hole-value { font-size: 17px; font-weight: 700; line-height: 1.15; }
+.donut-hole-label { font-size: 10px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.donut-legend { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.donut-legend-row {
+  display: grid; grid-template-columns: 10px 1fr auto auto; align-items: center; gap: 8px;
+  width: 100%; text-align: left; padding: 5px 4px; border: none; border-radius: var(--radius-sm);
+  background: none; font-family: inherit; font-size: 12.5px; color: var(--ink); cursor: pointer;
+}
+.donut-legend-row:hover { background: var(--surface-sunken); }
+.donut-legend-row:disabled { cursor: default; }
+.donut-legend-row:disabled:hover { background: none; }
+.donut-legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
+.donut-legend-value { color: var(--ink-muted); }
+.donut-legend-pct { font-weight: 600; min-width: 32px; text-align: right; }
 
 /* review queue laid out as a card grid instead of a narrow rail list -
    .queue-item's own rules (padding/hover/font) are untouched, this only
@@ -161,6 +195,44 @@
 }
 .filters input[type="search"] { flex: 1; min-width: 220px; }
 
+/* ---------- date-range filter + report generation ---------- */
+.report-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.date-filter { position: relative; }
+.date-filter-btn {
+  display: flex; align-items: center; gap: 8px; font-family: inherit; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm);
+  padding: 7px 12px; font-size: 13px; color: var(--ink);
+}
+.date-filter-btn:hover { border-color: var(--border-strong); }
+.date-filter-preset { font-weight: 600; background: var(--surface-sunken); padding: 2px 8px; border-radius: var(--radius-sm); }
+.date-filter-range { color: var(--ink-muted); }
+.date-filter-caret { color: var(--ink-faint); font-size: 11px; }
+.date-filter-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; width: 260px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float); padding: 12px;
+}
+.date-filter-presets { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.date-filter-preset-btn {
+  text-align: left; padding: 7px 8px; border: none; border-radius: var(--radius-sm); background: none;
+  font-family: inherit; font-size: 13px; color: var(--ink); cursor: pointer;
+}
+.date-filter-preset-btn:hover { background: var(--accent-wash); color: var(--accent); }
+.date-filter-custom { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.date-filter-custom label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--ink-muted); }
+.date-filter-custom input[type="date"] {
+  font-family: inherit; font-size: 12.5px; padding: 5px 7px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface-sunken); color: var(--ink);
+}
+.generate-report-btn {
+  font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  border-radius: var(--radius-sm); padding: 8px 14px;
+}
+.generate-report-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.generate-report-btn:disabled { opacity: 0.6; cursor: default; }
+.report-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+
 /* ---------- queue ---------- */
 .queue-list { overflow-y: auto; flex: 1; min-height: 0; }
 .queue-item {
@@ -169,14 +241,15 @@
 }
 .queue-item:hover { background: var(--surface-sunken); }
 .queue-item-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
-.queue-item-title { font-size: 13px; font-weight: 500; }
-.queue-item-amount { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.queue-item-title { font-size: 14.5px; font-weight: 500; }
+.queue-item-amount { font-size: 14px; font-weight: 600; white-space: nowrap; }
 .queue-item-meta { font-size: 11.5px; color: var(--ink-muted); margin-bottom: 6px; }
 .queue-item-chips { display: flex; gap: 5px; flex-wrap: wrap; }
 
 /* ---------- chips ---------- */
-.chip { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: var(--radius-sm); font-size: 11.5px; font-weight: 500; line-height: 1.6; white-space: nowrap; }
+.chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: var(--radius-sm); font-size: 12.5px; font-weight: 500; line-height: 1.6; white-space: nowrap; }
 .tag-chip { border: 1px solid var(--chip-border); color: var(--chip-text); background: transparent; }
+.tag-chip-colored { font-weight: 600; }
 .suppressed-chip { border: 1px dashed var(--border-strong); color: var(--ink-faint); background: transparent; }
 
 /* ---------- state views ---------- */
@@ -188,7 +261,7 @@
 /* ---------- case file view ---------- */
 .casefile-view { height: 100%; overflow-y: auto; padding: 24px 28px; max-width: 980px; margin: 0 auto; }
 .casefile-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.casefile-header h1 { font-size: 19px; margin: 0 0 4px; font-weight: 600; }
+.casefile-header h1 { font-size: 23px; margin: 0 0 4px; font-weight: 600; }
 .casefile-header .meta { color: var(--ink-muted); font-size: 13px; }
 .back-link {
   color: var(--ink-muted); text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 12px;
@@ -220,8 +293,8 @@
 .timeline-connector { width: 1px; flex: 1; min-height: 28px; background: var(--border-strong); margin-top: 4px; }
 .timeline-body { flex: 1; min-width: 0; padding: 0 0 26px 12px; }
 .timeline-step:last-child .timeline-body { padding-bottom: 0; }
-.timeline-label { font-size: 12.5px; font-weight: 600; color: var(--ink); }
-.timeline-date { font-size: 13px; font-weight: 500; margin-top: 3px; }
+.timeline-label { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.timeline-date { font-size: 14.5px; font-weight: 500; margin-top: 3px; }
 .timeline-amount { font-size: 12px; color: var(--ink-muted); margin-top: 2px; }
 .timeline-authority { font-size: 12px; color: var(--ink-muted); margin-top: 5px; line-height: 1.4; }
 .timeline-authority-role { color: var(--ink-faint); margin-right: 4px; }
@@ -231,7 +304,7 @@
 /* findings list within case file */
 .finding-card { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 12px; }
 .finding-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
-.finding-card-name { font-weight: 600; font-size: 13.5px; }
+.finding-card-name { font-weight: 600; font-size: 15px; }
 .finding-card-route { font-size: 11.5px; color: var(--ink-muted); margin-top: 8px; }
 
 /* evidence table */
@@ -285,9 +358,13 @@
 
 .map-drill-map { position: relative; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
 
-.scorecard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin-bottom: 18px; }
+.scorecard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+.scorecard-cell {
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-sunken);
+  padding: 10px 12px; display: flex; flex-direction: column; justify-content: center; min-height: 64px;
+}
 .scorecard-cell .label { font-size: 11px; color: var(--ink-muted); margin-bottom: 2px; }
-.scorecard-cell .value { font-size: 16px; font-weight: 600; }
+.scorecard-cell .value { font-size: 19px; font-weight: 600; }
 .comparison-row { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-top: 1px solid var(--border); }
 .comparison-row .value { font-weight: 600; }
 

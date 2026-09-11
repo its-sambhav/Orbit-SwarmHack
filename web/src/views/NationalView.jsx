@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, formatRupees, buildSearchIndex } from '../api'
 import { MospiNav } from '../components/MospiNav'
-import { SeverityChip, TagChip, SEV_LABEL } from '../components/Chips'
-import { Loading, ErrorView, EmptyState } from '../components/StateViews'
+import { SEV_LABEL, TAG_COLOR_KEY } from '../components/Chips'
+import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
+import { ScopeToggle } from '../components/ScopeToggle'
+import { Loading, ErrorView } from '../components/StateViews'
 
-// This page is hardcoded to the current house - MoSPI's live oversight view
-// is the sitting Lok Sabha, not a historical comparison, so there is no
-// scope toggle here (unlike State/District/MP, which still offer 17th/18th).
-const SCOPE = '18th Lok Sabha'
+const DEFAULT_SCOPE = '18th Lok Sabha'
+const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
+const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
 
 const STAGE_LABEL = { recommendation: 'Recommendation', sanction: 'Sanction', execution: 'Execution', payment: 'Payment' }
 
@@ -43,43 +44,126 @@ function RankChart({ title, items, colorFor, onSelect, formatValue }) {
   )
 }
 
+// part-of-whole distributions (severity, tag) read better as a donut than a
+// bar rank - built on a CSS conic-gradient rather than pulling in a chart
+// library for two charts.
+function DonutCard({ title, items, colorFor, onSelect }) {
+  const total = items.reduce((s, i) => s + i.value, 0)
+  let acc = 0
+  const stops = items.map((item) => {
+    const from = total ? (acc / total) * 360 : 0
+    acc += item.value
+    const to = total ? (acc / total) * 360 : 0
+    return `${colorFor(item)} ${from}deg ${to}deg`
+  }).join(', ')
+  return (
+    <div className="chart-card">
+      <h3>{title}</h3>
+      <div className="donut-row">
+        <div className="donut-chart" style={{ background: total ? `conic-gradient(${stops})` : 'var(--surface-sunken)' }}>
+          <div className="donut-hole">
+            <span className="donut-hole-value num">{total.toLocaleString('en-IN')}</span>
+            <span className="donut-hole-label">total</span>
+          </div>
+        </div>
+        <div className="donut-legend">
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              className="donut-legend-row"
+              disabled={!onSelect}
+              onClick={onSelect ? () => onSelect(item) : undefined}
+            >
+              <span className="donut-legend-swatch" style={{ background: colorFor(item) }} />
+              <span className="donut-legend-label">{item.label}</span>
+              <span className="donut-legend-value num">{item.value.toLocaleString('en-IN')}</span>
+              <span className="donut-legend-pct num">{total ? `${((item.value / total) * 100).toFixed(0)}%` : '—'}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function NationalView() {
   const navigate = useNavigate()
-  const [meta, setMeta] = useState(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const dateFrom = searchParams.get('date_from') || null
+  const dateTo = searchParams.get('date_to') || null
+  const scope = searchParams.get('scope') || DEFAULT_SCOPE
   const [funnel, setFunnel] = useState(null)
   const [analytics, setAnalytics] = useState(null)
   const [constituencies, setConstituencies] = useState(null)
-  const [queue, setQueue] = useState(null)
-  const [filters, setFilters] = useState({ tag: '', severity: '', state: '', stage: '' })
+  const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    api.meta().then(setMeta).catch((e) => setError(e.message))
-    api.funnel(SCOPE).then(setFunnel).catch((e) => setError(e.message))
-    api.analytics(SCOPE).then(setAnalytics).catch((e) => setError(e.message))
-    api.constituencies(SCOPE).then(setConstituencies).catch((e) => setError(e.message))
+    api.meta().then(setMeta).catch(() => {})
   }, [])
 
   useEffect(() => {
-    setQueue(null)
-    api.queue({ scope: SCOPE, ...filters, limit: 60 }).then(setQueue).catch((e) => setError(e.message))
-  }, [filters])
+    api.constituencies(scope).then(setConstituencies).catch((e) => setError(e.message))
+  }, [scope])
+
+  useEffect(() => {
+    api.funnel(scope, { dateFrom, dateTo }).then(setFunnel).catch((e) => setError(e.message))
+    api.analytics(scope, { dateFrom, dateTo }).then(setAnalytics).catch((e) => setError(e.message))
+  }, [scope, dateFrom, dateTo])
+
+  function setRange(from, to) {
+    const next = new URLSearchParams(searchParams)
+    if (from) next.set('date_from', from); else next.delete('date_from')
+    if (to) next.set('date_to', to); else next.delete('date_to')
+    setSearchParams(next)
+  }
+
+  function setScope(next) {
+    const params = new URLSearchParams(searchParams)
+    params.set('scope', next)
+    setSearchParams(params)
+  }
 
   const searchIndex = useMemo(() => buildSearchIndex(constituencies), [constituencies])
 
+  // financial-health cards lead, the original volume cards follow - a 2-column
+  // x 4-row matrix rather than 8 cards jammed into one row.
   const cards = funnel ? [
-    { label: 'Total works', count: funnel.total_works, amount: funnel.total_amount },
-    { label: 'Recommended', count: funnel.recommended, amount: funnel.recommended_amount },
-    { label: 'Sanctioned', count: funnel.sanctioned, amount: funnel.sanctioned_amount },
-    { label: 'Completed', count: funnel.completed, amount: funnel.completed_amount },
+    {
+      label: 'Fund utilisation',
+      value: funnel.allocated ? `${((funnel.paid / funnel.allocated) * 100).toFixed(0)}%` : '—',
+      sub: `${formatRupees(funnel.paid)} of ${formatRupees(funnel.allocated)} allocated`,
+    },
+    {
+      label: 'Completion rate',
+      value: funnel.completion_rate != null ? `${funnel.completion_rate.toFixed(0)}%` : '—',
+      sub: `${funnel.completed.toLocaleString('en-IN')} of ${funnel.sanctioned.toLocaleString('en-IN')} sanctioned works`,
+    },
+    {
+      label: 'Pending works',
+      value: funnel.sanctioned_never_completed.toLocaleString('en-IN'),
+      sub: 'Sanctioned, not yet completed',
+    },
+    {
+      label: 'Avg. cost / completed work',
+      value: formatRupees(funnel.completed ? funnel.completed_amount / funnel.completed : 0),
+      sub: `Across ${funnel.completed.toLocaleString('en-IN')} completed works`,
+    },
+    { label: 'Total works', value: funnel.total_works.toLocaleString('en-IN'), sub: formatRupees(funnel.total_amount) },
+    { label: 'Recommended', value: funnel.recommended.toLocaleString('en-IN'), sub: formatRupees(funnel.recommended_amount) },
+    { label: 'Sanctioned', value: funnel.sanctioned.toLocaleString('en-IN'), sub: formatRupees(funnel.sanctioned_amount) },
+    { label: 'Completed', value: funnel.completed.toLocaleString('en-IN'), sub: formatRupees(funnel.completed_amount) },
   ] : []
 
   const severityItems = analytics
     ? ['high', 'medium', 'low'].map((k) => ({ label: SEV_LABEL[k], value: analytics.severity_counts[k] || 0, key: k }))
     : []
+  const severityColor = (item) => `var(--sev-${item.key})`
   const tagItems = analytics
     ? Object.entries(analytics.tag_counts).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }))
     : []
+  const tagColor = (item) => (TAG_COLOR_KEY[item.label] ? `var(--tag-${TAG_COLOR_KEY[item.label]})` : 'var(--ink-faint)')
   const stageItems = analytics
     ? Object.entries(STAGE_LABEL).map(([k, label]) => ({ label, value: analytics.stage_counts[k] || 0 }))
     : []
@@ -92,28 +176,34 @@ export function NationalView() {
   return (
     <div className="mospi-page">
       <MospiNav
-        scope={SCOPE}
-        subtitle={`MoSPI · National Oversight · ${SCOPE}`}
+        scope={scope}
+        subtitle={`MoSPI · National Oversight · ${scopeLabel(scope)}`}
         scopeWorksTotal={funnel?.total_works}
         searchIndex={searchIndex}
         drawerLinks={[
           { label: 'Overview', onClick: () => scrollToId('mospi-overview') },
           { label: 'Map', onClick: () => navigate('/mospi/map') },
           { label: 'Analytics', onClick: () => scrollToId('mospi-analytics') },
-          { label: 'Review queue', onClick: () => scrollToId('mospi-queue') },
           { label: 'MP Audits', onClick: () => navigate('/mp-audits') },
+          { label: 'Reports', onClick: () => navigate('/reports') },
         ]}
       />
 
       <div className="mospi-body">
+        <div className="report-toolbar">
+          <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
+          <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
+          <GenerateReportButton level="overview" scope={scope} dateFrom={dateFrom} dateTo={dateTo} title={`Overview — ${scopeLabel(scope)}`} summary={funnel} />
+        </div>
+
         <div className="mospi-stats" id="mospi-overview">
           {cards.length ? cards.map((c) => (
             <div className="mospi-stat-card" key={c.label}>
               <div className="mospi-stat-label">{c.label}</div>
-              <div className="mospi-stat-value num">{c.count.toLocaleString('en-IN')}</div>
-              <div className="mospi-stat-amount num">{formatRupees(c.amount)}</div>
+              <div className="mospi-stat-value num">{c.value}</div>
+              <div className="mospi-stat-amount num">{c.sub}</div>
             </div>
-          )) : Array.from({ length: 4 }).map((_, i) => (
+          )) : Array.from({ length: 8 }).map((_, i) => (
             <div className="mospi-stat-card" key={i}><Loading label="" /></div>
           ))}
         </div>
@@ -121,7 +211,7 @@ export function NationalView() {
         <button type="button" className="mospi-map-cta" onClick={() => navigate('/mospi/map')}>
           <div>
             <div className="mospi-map-cta-title">Open the India risk map</div>
-            <div className="mospi-map-cta-sub">Constituency-level choropleth, {SCOPE}</div>
+            <div className="mospi-map-cta-sub">Constituency-level choropleth, {scopeLabel(scope)}</div>
           </div>
           <span className="mospi-map-cta-arrow">→</span>
         </button>
@@ -129,68 +219,17 @@ export function NationalView() {
         <div className="mospi-charts-grid" id="mospi-analytics">
           {analytics ? (
             <>
-              <RankChart title="Findings by severity" items={severityItems} colorFor={(item) => `var(--sev-${item.key})`} />
-              <RankChart title="Findings by tag" items={tagItems} />
+              <DonutCard title="Findings by severity" items={severityItems} colorFor={severityColor} />
+              <DonutCard title="Findings by tag" items={tagItems} colorFor={tagColor} />
               <RankChart
                 title="Top states by risk"
                 items={topStateItems}
-                onSelect={(item) => navigate(`/state/${encodeURIComponent(item.label)}`)}
+                onSelect={(item) => navigate(`/mospi/map?state=${encodeURIComponent(item.label)}`)}
                 formatValue={(item) => `${item.value.toLocaleString('en-IN')} flagged`}
               />
               <RankChart title="Works by pipeline stage" items={stageItems} />
             </>
           ) : Array.from({ length: 4 }).map((_, i) => <div className="chart-card" key={i}><Loading label="Loading analytics" /></div>)}
-        </div>
-
-        <div className="panel">
-          <h2>Filters</h2>
-          {meta && (
-            <div className="filters">
-              <select value={filters.tag} onChange={(e) => setFilters({ ...filters, tag: e.target.value })}>
-                <option value="">All tags</option>
-                {meta.tags.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <select value={filters.severity} onChange={(e) => setFilters({ ...filters, severity: e.target.value })}>
-                <option value="">All severities</option>
-                {meta.severities.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <select value={filters.stage} onChange={(e) => setFilters({ ...filters, stage: e.target.value })}>
-                <option value="">All stages</option>
-                {meta.stages.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-          )}
-        </div>
-
-        <div className="panel" id="mospi-queue">
-          <h2>Review queue{queue ? ` — ${queue.total.toLocaleString('en-IN')} works` : ''}</h2>
-          {queue ? (
-            queue.items.length ? (
-              <div className="queue-list queue-grid" style={{ maxHeight: 560 }}>
-                {queue.items.map((item) => (
-                  <button
-                    key={`${item.work_number}-${item.scope_house}-${item.scope_tenure}`}
-                    className="queue-item"
-                    onClick={() => navigate(`/work/${item.work_number}?scope_house=${encodeURIComponent(item.scope_house)}&scope_tenure=${encodeURIComponent(item.scope_tenure)}`)}
-                  >
-                    <div className="queue-item-top">
-                      <span className="queue-item-title">{item.constituency}, {item.state}</span>
-                      <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
-                    </div>
-                    <div className="queue-item-meta">{item.mp_name} · Work #{item.work_number} · {item.routed_to}</div>
-                    <div className="queue-item-chips">
-                      <SeverityChip severity={item.max_severity} />
-                      {item.tags.map((t) => <TagChip key={t} tag={t} />)}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <EmptyState title="No findings match these filters" subtitle="Try clearing a filter." />
-            )
-          ) : (
-            <Loading />
-          )}
         </div>
       </div>
     </div>

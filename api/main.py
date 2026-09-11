@@ -16,9 +16,11 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from api.data import get_store, SCOPES, SCOPE_LABELS, GEO_DIR
 from api.narrative import generate_narrative
+from api import reports as reports_store
 
 app = FastAPI(title="MPLADS Anomaly Review API")
 
@@ -74,22 +76,28 @@ def get_meta():
                                int((in_scope_flagged["total_exposure"] >= s.cfg["queue"]["materiality_floor"]).sum())),
             "materiality_floor": s.cfg["queue"]["materiality_floor"],
         },
+        # bounds for the date-range filter (Overview + Map's India/State/
+        # District views) - recommendation date, the one date field present
+        # on essentially every work, see Store.__init__.
+        "date_min": s.date_min, "date_max": s.date_max,
     })
 
 
 @app.get("/api/funnel")
-def get_funnel(scope: str = Query("all")):
+def get_funnel(scope: str = Query("all"), date_from: str | None = None, date_to: str | None = None):
     s = get_store()
-    sp = s.spine_for_scope(scope)
+    sp, wr, *_ = s.risk_tables(scope, date_from, date_to)
     # total_amount = best-known value per work (sanctioned amount once sanctioned,
     # else the original recommended amount) - not a sum of every stage, which would
     # multi-count a single work's money across recommended+sanctioned+completed.
     total_amount = sp["SANCTION_AMOUNT"].fillna(sp["rec_RECOMMENDED_AMOUNT"]).sum()
+    # allocation is a lifetime-per-MP figure, not tied to any one work's
+    # recommendation date - never narrowed by the date filter.
     alloc = s.allocated if scope == "all" else s.allocated[s.allocated["SCOPE_TENURE"] == scope]
     completion_rate = float(sp["has_completed"].sum() / sp["has_sanctioned"].sum() * 100) if sp["has_sanctioned"].sum() else None
-    works_flagged = len(s.work_risk_for_scope(scope))
+    works_flagged = len(wr)
     return clean({
-        "scope": scope,
+        "scope": scope, "date_from": date_from, "date_to": date_to,
         "total_works": len(sp),
         "total_amount": float(total_amount),
         "allocated": float(alloc["ALLOCATED_AMT"].sum()),
@@ -109,16 +117,21 @@ def get_funnel(scope: str = Query("all")):
 
 
 @app.get("/api/analytics")
-def get_analytics(scope: str = Query("18th Lok Sabha")):
+def get_analytics(scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None):
     """Aggregate finding counts for the MoSPI landing page's analytics charts -
     severity/tag/stage distributions plus the top states by risk. Every number
     is a live groupby over the in-memory findings/state_risk tables, nothing
     precomputed or hardcoded per scope."""
     s = get_store()
     f = s.findings_for_scope(scope)
-    sr = s.state_risk_for_scope(scope).sort_values("risk_score", ascending=False).head(5)
+    if date_from:
+        f = f[f["date"] >= pd.Timestamp(date_from)]
+    if date_to:
+        f = f[f["date"] <= pd.Timestamp(date_to)]
+    _, _, sr, _, _ = s.risk_tables(scope, date_from, date_to)
+    sr = sr.sort_values("risk_score", ascending=False).head(5)
     return clean({
-        "scope": scope,
+        "scope": scope, "date_from": date_from, "date_to": date_to,
         "severity_counts": {k: int(v) for k, v in f["severity"].value_counts().items()},
         "tag_counts": {k: int(v) for k, v in f["tag"].value_counts().items()},
         "stage_counts": {k: int(v) for k, v in f["stage"].value_counts().items()},
@@ -166,11 +179,17 @@ def get_queue(
     stage: str | None = None,
     min_amount: float | None = None,
     max_amount: float | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ):
     s = get_store()
     wr = s.work_risk if scope == "all" else s.work_risk[s.work_risk["scope_tenure"] == scope]
+    if date_from:
+        wr = wr[wr["date"] >= pd.Timestamp(date_from)]
+    if date_to:
+        wr = wr[wr["date"] <= pd.Timestamp(date_to)]
 
     if tag:
         wr = wr[wr["tags"].apply(lambda t: tag in t)]
@@ -318,39 +337,44 @@ def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha"))
 
 
 @app.get("/api/states")
-def get_states(scope: str = Query("all")):
+def get_states(scope: str = Query("all"), date_from: str | None = None, date_to: str | None = None):
     """State Nodal Authority role picker + the state-breakdown table on the
     MoSPI dashboard. Covers all 4 scopes uniformly (STATE_NAME is populated
     regardless of house, unlike CONSTITUENCY - see docs/SCHEMA.md)."""
     s = get_store()
-    sr = s.state_risk_for_scope(scope).sort_values("risk_score", ascending=False)
+    _, _, sr, _, _ = s.risk_tables(scope, date_from, date_to)
+    sr = sr.sort_values("risk_score", ascending=False)
     items = [{
         "state": r["state"], "districts": int(r["districts"]),
         "works_total": int(r["works_total"]), "works_flagged": int(r["works_flagged"]),
         "breach_rate": round(float(r["breach_rate"]), 4), "total_exposure": float(r["total_exposure"]),
         "risk_score": round(float(r["risk_score"]), 2),
     } for _, r in sr.iterrows()]
-    return clean({"scope": scope, "count": len(items), "items": items})
+    return clean({"scope": scope, "date_from": date_from, "date_to": date_to, "count": len(items), "items": items})
 
 
 @app.get("/api/state/{state_name}")
-def get_state(state_name: str, scope: str = Query("18th Lok Sabha")):
+def get_state(state_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None):
     s = get_store()
-    sr = s.state_risk_for_scope(scope)
+    spine, wr_all, sr, dr, _ = s.risk_tables(scope, date_from, date_to)
     row = sr[sr["state"].str.casefold() == state_name.casefold()]
     if row.empty:
         raise HTTPException(404, f"no state '{state_name}' in scope {scope}")
     row = row.iloc[0]
 
-    sp = s.spine[(s.spine["STATE_NAME"].str.casefold() == state_name.casefold()) & (s.spine["SCOPE_TENURE"] == scope)]
+    sp = spine[spine["STATE_NAME"].str.casefold() == state_name.casefold()]
     funnel = {"recommended": int(sp["has_recommended"].sum()), "sanctioned": int(sp["has_sanctioned"].sum()),
               "completed": int(sp["has_completed"].sum())}
     completion_rate = float(sp["has_completed"].sum() / sp["has_sanctioned"].sum() * 100) if sp["has_sanctioned"].sum() else None
-    national_sp = s.spine[s.spine["SCOPE_TENURE"] == scope]
-    national_completion = float(national_sp["has_completed"].sum() / national_sp["has_sanctioned"].sum() * 100) if national_sp["has_sanctioned"].sum() else None
-    alloc = s.allocated[(s.allocated["STATE_NAME"].str.casefold() == state_name.casefold()) & (s.allocated["SCOPE_TENURE"] == scope)]
+    # national comparison over the same scope+date slice, before narrowing to this state.
+    national_completion = float(spine["has_completed"].sum() / spine["has_sanctioned"].sum() * 100) if spine["has_sanctioned"].sum() else None
+    # allocation is a lifetime-per-MP figure, not tied to any one work's
+    # recommendation date - never narrowed by the date filter. scope="all"
+    # sums both tenures rather than matching a SCOPE_TENURE value that never
+    # actually appears in the data.
+    state_alloc = s.allocated[s.allocated["STATE_NAME"].str.casefold() == state_name.casefold()]
+    alloc = state_alloc if scope == "all" else state_alloc[state_alloc["SCOPE_TENURE"] == scope]
 
-    dr = s.district_risk_for_scope(scope)
     districts = dr[dr["state"].str.casefold() == state_name.casefold()].sort_values("risk_score", ascending=False)
     district_items = [{
         "district": r["district"], "works_total": int(r["works_total"]), "works_flagged": int(r["works_flagged"]),
@@ -358,8 +382,7 @@ def get_state(state_name: str, scope: str = Query("18th Lok Sabha")):
         "risk_score": round(float(r["risk_score"]), 2),
     } for _, r in districts.iterrows()]
 
-    wr = s.work_risk_for_scope(scope)
-    wr = wr[wr["STATE_NAME"].str.casefold() == state_name.casefold()].sort_values("priority", ascending=False)
+    wr = wr_all[wr_all["STATE_NAME"].str.casefold() == state_name.casefold()].sort_values("priority", ascending=False)
     queue = [{
         "work_number": r["work_number"], "scope_house": r["scope_house"], "scope_tenure": r["scope_tenure"],
         "district": r["DISTRICT"], "constituency": r["CONSTITUENCY"], "mp_name": r["MP_NAME"],
@@ -367,11 +390,16 @@ def get_state(state_name: str, scope: str = Query("18th Lok Sabha")):
         "priority": round(float(r["priority"]), 2),
     } for _, r in wr.head(200).iterrows()]
 
-    tag_breakdown = s.findings[(s.findings["state"].str.casefold() == state_name.casefold())
-                                & (s.findings["scope_tenure"] == scope)]["tag"].value_counts().to_dict()
+    f = s.findings_for_scope(scope)
+    f = f[f["state"].str.casefold() == state_name.casefold()]
+    if date_from:
+        f = f[f["date"] >= pd.Timestamp(date_from)]
+    if date_to:
+        f = f[f["date"] <= pd.Timestamp(date_to)]
+    tag_breakdown = f["tag"].value_counts().to_dict()
 
     return clean({
-        "state": row["state"], "scope": scope, "funnel": funnel,
+        "state": row["state"], "scope": scope, "date_from": date_from, "date_to": date_to, "funnel": funnel,
         "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
         "breach_rate": round(float(row["breach_rate"]), 4), "total_exposure": float(row["total_exposure"]),
         "risk_score": round(float(row["risk_score"]), 2),
@@ -492,16 +520,16 @@ def get_districts(state: str, scope: str = Query("all")):
 
 
 @app.get("/api/district/{state_name}/{district_name}")
-def get_district(state_name: str, district_name: str, scope: str = Query("18th Lok Sabha")):
+def get_district(state_name: str, district_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None):
     s = get_store()
-    dr = s.district_risk_for_scope(scope)
+    spine, wr_all, _, dr, _ = s.risk_tables(scope, date_from, date_to)
     row = dr[(dr["state"].str.casefold() == state_name.casefold()) & (dr["district"].str.casefold() == district_name.casefold())]
     if row.empty:
         raise HTTPException(404, f"no district '{district_name}' in state '{state_name}', scope {scope}")
     row = row.iloc[0]
 
-    sp = s.spine[(s.spine["DISTRICT"].str.casefold() == district_name.casefold())
-                 & (s.spine["STATE_NAME"].str.casefold() == state_name.casefold()) & (s.spine["SCOPE_TENURE"] == scope)]
+    sp = spine[(spine["DISTRICT"].str.casefold() == district_name.casefold())
+               & (spine["STATE_NAME"].str.casefold() == state_name.casefold())]
     funnel = {"recommended": int(sp["has_recommended"].sum()), "sanctioned": int(sp["has_sanctioned"].sum()),
               "completed": int(sp["has_completed"].sum())}
     # constituencies touched by this district's works - a district's sanctioning
@@ -528,13 +556,14 @@ def get_district(state_name: str, district_name: str, scope: str = Query("18th L
         (r.MP_NAME, r.CONSTITUENCY, str(int(r.CONSTITUENCY_ID)))
         for r in sp.itertuples() if pd.notna(r.MP_NAME) and pd.notna(r.CONSTITUENCY) and pd.notna(r.CONSTITUENCY_ID)
     })
-    alloc = s.allocated[s.allocated["CONSTITUENCY"].isin(constituencies)
-                         & (s.allocated["STATE_NAME"].str.casefold() == state_name.casefold())
-                         & (s.allocated["SCOPE_TENURE"] == scope)]
+    # allocation is a lifetime-per-MP figure, not tied to any one work's
+    # recommendation date - never narrowed by the date filter.
+    district_alloc = s.allocated[s.allocated["CONSTITUENCY"].isin(constituencies)
+                                  & (s.allocated["STATE_NAME"].str.casefold() == state_name.casefold())]
+    alloc = district_alloc if scope == "all" else district_alloc[district_alloc["SCOPE_TENURE"] == scope]
 
-    wr = s.work_risk_for_scope(scope)
-    wr = wr[(wr["DISTRICT"].str.casefold() == district_name.casefold())
-            & (wr["STATE_NAME"].str.casefold() == state_name.casefold())].sort_values("priority", ascending=False)
+    wr = wr_all[(wr_all["DISTRICT"].str.casefold() == district_name.casefold())
+                & (wr_all["STATE_NAME"].str.casefold() == state_name.casefold())].sort_values("priority", ascending=False)
     queue = [{
         "work_number": r["work_number"], "scope_house": r["scope_house"], "scope_tenure": r["scope_tenure"],
         "constituency": r["CONSTITUENCY"], "mp_name": r["MP_NAME"], "tags": list(r["tags"]),
@@ -542,11 +571,17 @@ def get_district(state_name: str, district_name: str, scope: str = Query("18th L
         "priority": round(float(r["priority"]), 2),
     } for _, r in wr.iterrows()]
 
-    tag_breakdown = s.findings[(s.findings["district"].astype(str).str.casefold() == district_name.casefold())
-                                & (s.findings["scope_tenure"] == scope)]["tag"].value_counts().to_dict()
+    f = s.findings_for_scope(scope)
+    f = f[f["district"].astype(str).str.casefold() == district_name.casefold()]
+    if date_from:
+        f = f[f["date"] >= pd.Timestamp(date_from)]
+    if date_to:
+        f = f[f["date"] <= pd.Timestamp(date_to)]
+    tag_breakdown = f["tag"].value_counts().to_dict()
 
     return clean({
-        "district": row["district"], "state": row["state"], "scope": scope, "funnel": funnel,
+        "district": row["district"], "state": row["state"], "scope": scope,
+        "date_from": date_from, "date_to": date_to, "funnel": funnel,
         "constituencies": constituencies,
         "constituency_details": constituency_details,
         "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
@@ -567,6 +602,34 @@ def get_district(state_name: str, district_name: str, scope: str = Query("18th L
         },
         "tag_breakdown": tag_breakdown, "queue": queue,
     })
+
+
+class ReportCreate(BaseModel):
+    level: str  # "overview" | "india" | "state" | "district"
+    title: str
+    scope: str
+    date_from: str | None = None
+    date_to: str | None = None
+    state: str | None = None
+    district: str | None = None
+    summary: dict
+
+
+@app.get("/api/reports")
+def get_reports():
+    return clean({"items": reports_store.list_reports()})
+
+
+@app.post("/api/reports")
+def post_report(body: ReportCreate):
+    return clean(reports_store.create_report(body.model_dump()))
+
+
+@app.delete("/api/reports/{report_id}")
+def remove_report(report_id: str):
+    if not reports_store.delete_report(report_id):
+        raise HTTPException(404, f"no report '{report_id}'")
+    return {"deleted": report_id}
 
 
 @app.get("/")

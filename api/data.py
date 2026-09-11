@@ -63,6 +63,22 @@ class Store:
             ["work_number", "scope_house", "scope_tenure"]
         ).index.map(district_lookup)
 
+        # the date filter (report generator, map/overview date-range control)
+        # filters on recommendation date - the one date field present on
+        # essentially every spine row (unlike sanction/completion dates, which
+        # only exist once a work reaches that stage). Joined onto work_risk/
+        # findings the same way DISTRICT is above, so a date-range request
+        # only needs a cheap boolean mask, never a recompute of this join.
+        date_lookup = self.spine.set_index(["work_number", "SCOPE_HOUSE", "SCOPE_TENURE"])["rec_RECOMMENDATION_DATE"]
+        self.work_risk["date"] = self.work_risk.set_index(
+            ["work_number", "scope_house", "scope_tenure"]
+        ).index.map(date_lookup)
+        self.findings["date"] = self.findings.set_index(
+            ["work_number", "scope_house", "scope_tenure"]
+        ).index.map(date_lookup)
+        self.date_min = self.spine["rec_RECOMMENDATION_DATE"].min()
+        self.date_max = self.spine["rec_RECOMMENDATION_DATE"].max()
+
         crosswalk_path = GEO_DIR / "constituency_crosswalk.json"
         self.crosswalk: dict[str, int] = json.loads(crosswalk_path.read_text()) if crosswalk_path.exists() else {}
 
@@ -179,6 +195,36 @@ class Store:
 
     def state_risk_for_scope(self, scope: str) -> pd.DataFrame:
         return self._state_risk_by_scope.get(scope, self._state_risk_by_scope["all"])
+
+    def risk_tables(self, scope: str, date_from: str | None = None, date_to: str | None = None):
+        """(spine, work_risk, state_risk, district_risk, constituency_risk) for
+        this scope, each narrowed to [date_from, date_to] on recommendation
+        date when given. With no date filter this is the startup-precomputed
+        fast path (unchanged behaviour); with one, it's the same
+        rollup.build_*_risk() aggregation the offline pipeline uses, just
+        re-run here over an already-small (~255K/~220K row) date-filtered
+        slice - not a recompute of the expensive findings groupby, which
+        doesn't depend on date and stays untouched."""
+        scopes = SCOPES if scope == "all" else [scope]
+        if not date_from and not date_to:
+            return (
+                self.spine_for_scope(scope), self.work_risk_for_scope(scope),
+                self._state_risk_by_scope.get(scope, self._state_risk_by_scope["all"]),
+                self._district_risk_by_scope.get(scope, self._district_risk_by_scope["all"]),
+                self._constituency_risk_by_scope.get(scope, self._constituency_risk_by_scope["all"]),
+            )
+        spine, wr = self.spine, self.work_risk
+        if date_from:
+            spine = spine[spine["rec_RECOMMENDATION_DATE"] >= pd.Timestamp(date_from)]
+            wr = wr[wr["date"] >= pd.Timestamp(date_from)]
+        if date_to:
+            spine = spine[spine["rec_RECOMMENDATION_DATE"] <= pd.Timestamp(date_to)]
+            wr = wr[wr["date"] <= pd.Timestamp(date_to)]
+        wr = wr.assign(in_demo_scope=wr["scope_tenure"].isin(scopes))
+        state_risk = rollup.build_state_risk(wr, spine, scopes)
+        district_risk = rollup.build_district_risk(wr, spine, scopes)
+        constituency_risk = rollup.build_constituency_risk(wr, spine, scopes)
+        return spine, wr[wr["in_demo_scope"]], state_risk, district_risk, constituency_risk
 
     def work(self, work_number: str, scope_house: str, scope_tenure: str) -> dict | None:
         return self._spine_by_key.get((work_number, scope_house, scope_tenure))

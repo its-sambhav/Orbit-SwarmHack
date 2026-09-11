@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { MospiNav } from '../components/MospiNav'
-import { TagChip } from '../components/Chips'
+import { TagChip, StatusChip, RiskChip } from '../components/Chips'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 
 export const MP_DRAWER_LINKS = (navigate) => [
@@ -91,11 +91,11 @@ export function MpAuditsView() {
                     >
                       <div className="queue-item-top">
                         <span className="queue-item-title">{m.mp_name}</span>
-                        <span className="queue-item-amount num">{m.breach_rate != null ? `${(m.breach_rate * 100).toFixed(0)}%` : '—'}</span>
+                        <RiskChip rate={m.breach_rate} />
                       </div>
                       <div className="queue-item-meta">{m.constituency}, {m.state} · {m.scope_tenure}</div>
                       <div className="queue-item-chips">
-                        <TagChip tag={m.status} />
+                        <StatusChip status={m.status} />
                         <TagChip tag={`${m.works_flagged.toLocaleString('en-IN')} / ${m.works_total.toLocaleString('en-IN')} flagged`} />
                       </div>
                     </button>

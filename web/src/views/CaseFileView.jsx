@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, formatRupees } from '../api'
+import { MospiNav } from '../components/MospiNav'
 import { LifecycleTimeline } from '../components/LifecycleTimeline'
 import { EvidenceTable } from '../components/EvidenceTable'
 import { Breadcrumb } from '../components/Breadcrumb'
@@ -106,8 +107,14 @@ function FindingUpdate({ finding }) {
 export function CaseFileView() {
   const { workNumber } = useParams()
   const [params] = useSearchParams()
+  const navigate = useNavigate()
   const scopeHouse = params.get('scope_house')
   const scopeTenure = params.get('scope_tenure')
+  // set only when this work was opened from an MP's own "works recommended"
+  // list (MpProfileView) - the follow-up trail there is MP Audits > MP name >
+  // this work, not the geographic India > state > constituency one, since
+  // that's the path the user actually took to get here.
+  const fromMp = params.get('from_mp')
   const [work, setWork] = useState(null)
   const [error, setError] = useState(null)
 
@@ -119,22 +126,37 @@ export function CaseFileView() {
   if (error) return <ErrorView message={error} />
   if (!work) return <Loading label="Loading case file" />
 
-  // this view is reached from 4 different dashboards (MoSPI/state/district/MP
-  // queues, or a map click) - the India > state > constituency > work trail
-  // is always correct regardless of which one, since it traces the work's own
-  // real position in the hierarchy rather than guessing where the click came from.
-  const breadcrumbItems = [
-    { label: 'India', to: '/mospi/map' },
-    { label: work.state, to: `/mospi/map?state=${encodeURIComponent(work.state)}` },
-    { label: work.constituency, to: `/constituency/${work.constituency_id}?scope=${encodeURIComponent(scopeTenure)}` },
-    { label: `Work #${work.work_number}` },
-  ]
+  const breadcrumbItems = fromMp
+    ? [
+        { label: 'MP Audits', to: '/mp-audits' },
+        { label: fromMp, to: `/mp-audits/${encodeURIComponent(fromMp)}?scope=${encodeURIComponent(scopeTenure)}` },
+        { label: `Work #${work.work_number}` },
+      ]
+    : [
+        { label: 'India', to: '/mospi/map' },
+        { label: work.state, to: `/mospi/map?state=${encodeURIComponent(work.state)}` },
+        { label: work.constituency, to: `/constituency/${work.constituency_id}?scope=${encodeURIComponent(scopeTenure)}` },
+        { label: `Work #${work.work_number}` },
+      ]
 
   return (
-    <div className="map-drill-view">
+    <div className="mospi-page">
+      <MospiNav
+        scope={scopeTenure}
+        subtitle={`MoSPI · Work #${work.work_number} · ${scopeTenure}`}
+        searchIndex={[]}
+        drawerLinks={[
+          { label: 'Overview', onClick: () => navigate('/mospi') },
+          { label: 'Map', onClick: () => navigate('/mospi/map') },
+          { label: 'MP Audits', onClick: () => navigate('/mp-audits') },
+          { label: 'Reports', onClick: () => navigate('/reports') },
+        ]}
+      />
+      <div className="mospi-map-page-body">
+      <div className="map-drill-view" style={{ padding: 0, height: '100%' }}>
       <div className="map-drill-header">
         <Breadcrumb items={breadcrumbItems} />
-        <h1 style={{ fontSize: 17, margin: '4px 0 2px' }}>Work #{work.work_number}</h1>
+        <h1 style={{ margin: '4px 0 2px' }}>Work #{work.work_number}</h1>
         <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>
           {work.constituency}, {work.state} · {work.mp_name} · {scopeHouse} / {scopeTenure}
         </div>
@@ -159,6 +181,8 @@ export function CaseFileView() {
             <FindingUpdate key={f.finding_id} finding={f} />
           ))}
         </div>
+      </div>
+      </div>
       </div>
     </div>
   )

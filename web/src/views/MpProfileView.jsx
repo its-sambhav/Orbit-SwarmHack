@@ -85,7 +85,7 @@ export function MpProfileView() {
                   <button
                     key={w.work_number}
                     className="queue-item"
-                    onClick={() => navigate(`/work/${w.work_number}?scope_house=Lok%20Sabha&scope_tenure=${encodeURIComponent(scope)}`)}
+                    onClick={() => navigate(`/work/${w.work_number}?scope_house=Lok%20Sabha&scope_tenure=${encodeURIComponent(scope)}&from_mp=${encodeURIComponent(data.mp_name)}`)}
                   >
                     <div className="queue-item-top">
                       <span className="queue-item-title">{w.activity || `Work #${w.work_number}`}</span>

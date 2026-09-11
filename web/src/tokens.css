@@ -1,9 +1,17 @@
-/* Design tokens - a working analyst's tool, not a government portal or a
-   SaaS marketing page. Light workspace (projected in a hall, pasted into
-   slides). Risk colour (amber->red) is reserved ONLY for severity - on the
-   map and on severity chips, nowhere else. One typeface, tabular figures
-   for every rupee/day column - this is a financial interface, columns must
-   align. */
+/* Design tokens - an official audit portal: light workspace, built on a
+   deliberate navy + institutional-gold pairing (the authority colour and
+   its complement), not a generic SaaS blue. Risk colour (amber->red) stays
+   reserved ONLY for severity - on the map and on severity chips, nowhere
+   else; gold is reserved for the "this is an official/authority marker"
+   role and never competes with it. A validated 3-colour identity set (see
+   scripts/validate_palette.js in the dataviz skill - all-pairs CVD-safe,
+   the documented ceiling for a set that can appear in any combination) now
+   gives the most common finding tags their own colour, so an auditor can
+   pattern-match a chip's kind before reading its text; rarer tags keep the
+   neutral outline. One typeface (Plex Sans) throughout - legibility at a
+   distance comes from a larger type scale, not a second face - tabular
+   figures for every rupee/day column since this is a financial interface
+   and columns must align. */
 :root {
   /* surfaces */
   --bg: #F5F7F5;
@@ -12,16 +20,26 @@
   --border: #DBDFDA;
   --border-strong: #C3C9C1;
 
-  /* text */
+  /* text - deepened slightly over the original for stronger contrast at
+     small sizes (meta lines, table labels) without losing the hierarchy
+     step down from --ink. */
   --ink: #1B1F1C;
-  --ink-muted: #5B6359;
-  --ink-faint: #8B948A;
+  --ink-muted: #4B5348;
+  --ink-faint: #767F73;
 
-  /* interactive accent - deliberately NOT part of the risk ramp, so the two
-     never get confused: blue means "click/select", amber-red means "risk". */
-  --accent: #2C4A66;
-  --accent-hover: #21384F;
+  /* interactive accent: an authoritative navy, deliberately NOT part of the
+     risk ramp, so the two are never confused - navy means "click/select",
+     amber-red means "risk". */
+  --accent: #1F3D5C;
+  --accent-hover: #16304A;
   --accent-wash: #E7EDF1;
+
+  /* institutional gold - the navy's complement, reserved for official/
+     authority markers (the profile badge, a verified indicator) - never
+     used for severity or tag identity, so it can't be mistaken for either. */
+  --gold: #93721F;
+  --gold-hover: #7A5E19;
+  --gold-wash: #F6EFDC;
 
   /* severity ramp - desaturated amber -> red, sacred: severity only. */
   --sev-low: #C79A4B;
@@ -31,8 +49,15 @@
   --sev-high: #A73E3E;
   --sev-high-bg: #F7E4E1;
 
-  /* tag chips - flat, neutral, border-only (colour encodes severity, never
-     tag identity - twelve tag colours would fight the map). */
+  /* tag identity - validated all-pairs categorical set, reserved for the 3
+     most common finding tags (see components/Chips.jsx); every other tag
+     keeps the neutral outline below rather than stretching this set past
+     its validated ceiling. */
+  --tag-ghost-asset: #3A6BA8; --tag-ghost-asset-bg: #E8EEF5;
+  --tag-cost-outlier: #2E7A3D; --tag-cost-outlier-bg: #E8F1E9;
+  --tag-time-delay: #B85A82; --tag-time-delay-bg: #F6E9EF;
+
+  /* tag chips (unassigned tags) - flat, neutral, border-only. */
   --chip-border: #C3C9C1;
   --chip-text: #3C443A;
 
@@ -41,6 +66,16 @@
   --shadow-float: 0 2px 10px rgba(20, 24, 20, 0.10);
 
   --font: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+}
+
+/* every page title, wherever it's marked up, reads at one consistent, larger
+   size - some pages left this to the browser default before, others used a
+   smaller one-off size; both are fixed by this one rule. */
+h1 {
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
 }
 
 * { box-sizing: border-box; }
@@ -54,7 +89,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }

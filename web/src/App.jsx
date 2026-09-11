@@ -10,6 +10,7 @@ import { ConstituencyView } from './views/ConstituencyView'
 import { CaseFileView } from './views/CaseFileView'
 import { MpAuditsView } from './views/MpAuditsView'
 import { MpProfileView } from './views/MpProfileView'
+import { ReportsView } from './views/ReportsView'
 
 function DashboardShell({ children }) {
   return (
@@ -36,11 +37,18 @@ export default function App() {
       <Route path="/mospi/map" element={<MospiMapView />} />
       <Route path="/mp-audits" element={<MpAuditsView />} />
       <Route path="/mp-audits/:mpName" element={<MpProfileView />} />
+      <Route path="/reports" element={<ReportsView />} />
+      {/* StateView is the separate State Nodal Authority role dashboard
+          (reached from the role picker), not part of MoSPI's own drill-down -
+          it keeps the generic DashboardShell header. District/Constituency/
+          CaseFile are all reachable from MoSPI's own flows (map, MP Audits),
+          so they share MospiNav's fixed nav + drawer for one consistent
+          chrome across that whole workflow. */}
       <Route path="/state/:stateName" element={<DashboardShell><StateView /></DashboardShell>} />
-      <Route path="/district/:stateName/:districtName" element={<DashboardShell><DistrictView /></DashboardShell>} />
-      <Route path="/mp/:id" element={<DashboardShell><ConstituencyView /></DashboardShell>} />
-      <Route path="/constituency/:id" element={<DashboardShell><ConstituencyView /></DashboardShell>} />
-      <Route path="/work/:workNumber" element={<DashboardShell><CaseFileView /></DashboardShell>} />
+      <Route path="/district/:stateName/:districtName" element={<DistrictView />} />
+      <Route path="/mp/:id" element={<ConstituencyView />} />
+      <Route path="/constituency/:id" element={<ConstituencyView />} />
+      <Route path="/work/:workNumber" element={<CaseFileView />} />
     </Routes>
   )
 }

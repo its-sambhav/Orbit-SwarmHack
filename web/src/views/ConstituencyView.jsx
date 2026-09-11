@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, formatRupees } from '../api'
+import { MospiNav } from '../components/MospiNav'
 import { IndiaMap } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
 import { Breadcrumb } from '../components/Breadcrumb'
@@ -15,8 +16,8 @@ export function ConstituencyView() {
   const location = useLocation()
   // this view serves two entry points: MoSPI's map drill-down (/constituency/:id,
   // breadcrumb traces India > state > here) and the MP role's own dashboard
-  // (/mp/:id, breadcrumb is just a way back to the role picker - an MP has
-  // no "India" or "state" level of their own to trace through).
+  // (/mp/:id, no India/state trail - MospiNav's own "Switch role" link is
+  // the way back, so the breadcrumb here is just the current page).
   const isMpRole = location.pathname.startsWith('/mp/')
   const [data, setData] = useState(null)
   const [geojson, setGeojson] = useState(null)
@@ -40,7 +41,7 @@ export function ConstituencyView() {
     : null
 
   const breadcrumbItems = isMpRole
-    ? [{ label: 'Switch role', to: '/' }, { label: data.constituency }]
+    ? [{ label: data.constituency }]
     : [
         { label: 'India', to: '/mospi/map' },
         { label: data.state, to: `/mospi/map?state=${encodeURIComponent(data.state)}` },
@@ -48,10 +49,23 @@ export function ConstituencyView() {
       ]
 
   return (
-    <div className="map-drill-view">
+    <div className="mospi-page">
+      <MospiNav
+        scope={scope}
+        subtitle={`MoSPI · ${data.constituency} · ${scope}`}
+        searchIndex={[]}
+        drawerLinks={[
+          { label: 'Overview', onClick: () => navigate('/mospi') },
+          { label: 'Map', onClick: () => navigate('/mospi/map') },
+          { label: 'MP Audits', onClick: () => navigate('/mp-audits') },
+          { label: 'Reports', onClick: () => navigate('/reports') },
+        ]}
+      />
+      <div className="mospi-map-page-body">
+      <div className="map-drill-view" style={{ padding: 0, height: '100%' }}>
       <div className="map-drill-header">
         <Breadcrumb items={breadcrumbItems} />
-        <h1 style={{ fontSize: 17, margin: '4px 0 2px' }}>{data.constituency}</h1>
+        <h1 style={{ margin: '4px 0 2px' }}>{data.constituency}</h1>
         <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>{data.state} · {scope}</div>
       </div>
 
@@ -130,6 +144,8 @@ export function ConstituencyView() {
             <EmptyState title="No findings above the queue threshold here" subtitle="This constituency has no work currently past its review floor for this scope." />
           )}
         </div>
+      </div>
+      </div>
       </div>
     </div>
   )
