@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, formatRupees } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { IndiaMap } from '../components/IndiaMap'
@@ -8,17 +8,25 @@ import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip } from '../components/Chips'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 
+const ROLE_LABEL = { state: 'State Nodal Authority', district: 'District Authority' }
+const ROLE_AVATAR = { state: 'S', district: 'D' }
+
+// MoSPI's own constituency drill-down (from the map, or from an MP Audits
+// profile page) - India > state > here - and ALSO where a State/District
+// Authority lands after drilling into one of their own constituencies
+// (StateView's map, DistrictView's MPs list). Those callers add ?role=
+// &role_name= so this page can drop MoSPI's identity/search/cross-page
+// links for them, the same way DistrictView branches on which path it was
+// reached from - without ?role, this is unchanged MoSPI chrome. The MP's
+// own dashboard is a separate, purpose-built view (MpDashboardView.jsx, at
+// /mp/:id), not this page.
 export function ConstituencyView() {
   const { id } = useParams()
   const [params] = useSearchParams()
   const scope = params.get('scope') || '18th Lok Sabha'
+  const role = params.get('role')
+  const roleName = params.get('role_name')
   const navigate = useNavigate()
-  const location = useLocation()
-  // this view serves two entry points: MoSPI's map drill-down (/constituency/:id,
-  // breadcrumb traces India > state > here) and the MP role's own dashboard
-  // (/mp/:id, no India/state trail - MospiNav's own "Switch role" link is
-  // the way back, so the breadcrumb here is just the current page).
-  const isMpRole = location.pathname.startsWith('/mp/')
   const [data, setData] = useState(null)
   const [geojson, setGeojson] = useState(null)
   const [error, setError] = useState(null)
@@ -40,21 +48,36 @@ export function ConstituencyView() {
     ? scorecard.completion_rate - scorecard.national_median_completion_rate
     : null
 
-  const breadcrumbItems = isMpRole
-    ? [{ label: data.constituency }]
-    : [
-        { label: 'India', to: '/mospi/map' },
-        { label: data.state, to: `/mospi/map?state=${encodeURIComponent(data.state)}` },
-        { label: data.constituency },
-      ]
+  // the drill-down trail continues within the role's own authorized scope -
+  // back to the state/district page the role itself owns, never back out to
+  // a MoSPI-only page - rather than dead-ending with no way to go "up" a level.
+  const roleParentLink = role === 'state'
+    ? `/state/${encodeURIComponent(roleName)}`
+    : role === 'district'
+    ? `/district-authority/${encodeURIComponent(data.state)}/${encodeURIComponent(roleName)}`
+    : null
+  const roleQuery = role ? `&role=${role}&role_name=${encodeURIComponent(roleName)}` : ''
+
+  const breadcrumbItems = role ? [
+    { label: roleName, to: roleParentLink },
+    { label: data.constituency },
+  ] : [
+    { label: 'India', to: '/mospi/map' },
+    { label: data.state, to: `/mospi/map?state=${encodeURIComponent(data.state)}` },
+    { label: data.constituency },
+  ]
 
   return (
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle={`MoSPI · ${data.constituency} · ${scope}`}
+        subtitle={role ? `${ROLE_LABEL[role]} · ${data.constituency}` : `MoSPI · ${data.constituency} · ${scope}`}
         searchIndex={[]}
-        drawerLinks={[
+        showSearch={!role}
+        profileName={role ? roleName : undefined}
+        profileRole={role ? ROLE_LABEL[role] : undefined}
+        avatarLetter={role ? ROLE_AVATAR[role] : undefined}
+        drawerLinks={role ? [] : [
           { label: 'Overview', onClick: () => navigate('/mospi') },
           { label: 'Map', onClick: () => navigate('/mospi/map') },
           { label: 'MP Audits', onClick: () => navigate('/mp-audits') },
@@ -127,7 +150,7 @@ export function ConstituencyView() {
                 <button
                   key={`${f.work_number}-${f.scope_house}-${f.scope_tenure}`}
                   className="queue-item"
-                  onClick={() => navigate(`/work/${f.work_number}?scope_house=${encodeURIComponent(f.scope_house)}&scope_tenure=${encodeURIComponent(f.scope_tenure)}`)}
+                  onClick={() => navigate(`/work/${f.work_number}?scope_house=${encodeURIComponent(f.scope_house)}&scope_tenure=${encodeURIComponent(f.scope_tenure)}${roleQuery}`)}
                 >
                   <div className="queue-item-top">
                     <span className="queue-item-title">Work #{f.work_number}</span>

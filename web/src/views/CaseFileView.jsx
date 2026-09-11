@@ -9,6 +9,8 @@ import { SeverityChip, TagChip, SuppressedChip } from '../components/Chips'
 import { Loading, ErrorView } from '../components/StateViews'
 
 const ACTION_LABEL = { acknowledge: 'Acknowledged', escalate: 'Escalated', dismiss: 'Dismissed' }
+const ROLE_LABEL = { state: 'State Nodal Authority', district: 'District Authority', agency: 'Implementing Agency', mp: 'Member of Parliament' }
+const ROLE_AVATAR = { state: 'S', district: 'D', agency: 'A', mp: 'M' }
 
 function NarrativeBlock({ finding, workNumber, scopeHouse, scopeTenure }) {
   const [state, setState] = useState({ status: 'idle' }) // idle | loading | done | failed
@@ -113,8 +115,14 @@ export function CaseFileView() {
   // set only when this work was opened from an MP's own "works recommended"
   // list (MpProfileView) - the follow-up trail there is MP Audits > MP name >
   // this work, not the geographic India > state > constituency one, since
-  // that's the path the user actually took to get here.
+  // that's the path the user actually took to get here. Distinct from
+  // ?role= below: this is MoSPI staff auditing an MP, still full MoSPI chrome.
   const fromMp = params.get('from_mp')
+  // set when this work was opened from within a role dashboard (State/
+  // District/Agency/MP) - the drill-down trail must stay inside that role's
+  // own authorized pages, never fall back to MoSPI's own nav/breadcrumb.
+  const role = params.get('role')
+  const roleName = params.get('role_name')
   const [work, setWork] = useState(null)
   const [error, setError] = useState(null)
 
@@ -132,6 +140,28 @@ export function CaseFileView() {
         { label: fromMp, to: `/mp-audits/${encodeURIComponent(fromMp)}?scope=${encodeURIComponent(scopeTenure)}` },
         { label: `Work #${work.work_number}` },
       ]
+    : role === 'state'
+    ? [
+        { label: roleName, to: `/state/${encodeURIComponent(roleName)}` },
+        { label: work.constituency, to: `/constituency/${work.constituency_id}?scope=${encodeURIComponent(scopeTenure)}&role=state&role_name=${encodeURIComponent(roleName)}` },
+        { label: `Work #${work.work_number}` },
+      ]
+    : role === 'district'
+    ? [
+        { label: roleName, to: `/district-authority/${encodeURIComponent(work.state)}/${encodeURIComponent(roleName)}` },
+        { label: work.constituency, to: `/constituency/${work.constituency_id}?scope=${encodeURIComponent(scopeTenure)}&role=district&role_name=${encodeURIComponent(roleName)}` },
+        { label: `Work #${work.work_number}` },
+      ]
+    : role === 'agency'
+    ? [
+        { label: roleName, to: `/agency/${encodeURIComponent(roleName)}` },
+        { label: `Work #${work.work_number}` },
+      ]
+    : role === 'mp'
+    ? [
+        { label: roleName, to: `/mp/${encodeURIComponent(roleName)}?scope=${encodeURIComponent(scopeTenure)}` },
+        { label: `Work #${work.work_number}` },
+      ]
     : [
         { label: 'India', to: '/mospi/map' },
         { label: work.state, to: `/mospi/map?state=${encodeURIComponent(work.state)}` },
@@ -143,9 +173,13 @@ export function CaseFileView() {
     <div className="mospi-page">
       <MospiNav
         scope={scopeTenure}
-        subtitle={`MoSPI · Work #${work.work_number} · ${scopeTenure}`}
+        subtitle={role ? `${ROLE_LABEL[role]} · Work #${work.work_number}` : `MoSPI · Work #${work.work_number} · ${scopeTenure}`}
         searchIndex={[]}
-        drawerLinks={[
+        showSearch={!role}
+        profileName={role ? roleName : undefined}
+        profileRole={role ? ROLE_LABEL[role] : undefined}
+        avatarLetter={role ? ROLE_AVATAR[role] : undefined}
+        drawerLinks={role ? [] : [
           { label: 'Overview', onClick: () => navigate('/mospi') },
           { label: 'Map', onClick: () => navigate('/mospi/map') },
           { label: 'MP Audits', onClick: () => navigate('/mp-audits') },

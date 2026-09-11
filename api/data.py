@@ -119,12 +119,14 @@ class Store:
         self._constituency_risk_by_scope: dict[str, pd.DataFrame] = {}
         self._district_risk_by_scope: dict[str, pd.DataFrame] = {}
         self._state_risk_by_scope: dict[str, pd.DataFrame] = {}
+        self._agency_risk_by_scope: dict[str, pd.DataFrame] = {}
         for scope in [*SCOPES, "all"]:
             scopes = [scope] if scope != "all" else SCOPES
             wr = base_work_risk.assign(in_demo_scope=base_work_risk["scope_tenure"].isin(scopes))
             self._constituency_risk_by_scope[scope] = rollup.build_constituency_risk(wr, self.spine, scopes)
             self._district_risk_by_scope[scope] = rollup.build_district_risk(wr, self.spine, scopes)
             self._state_risk_by_scope[scope] = rollup.build_state_risk(wr, self.spine, scopes)
+            self._agency_risk_by_scope[scope] = rollup.build_agency_risk(wr, self.spine, scopes)
 
         self.mp_directory = self._build_mp_directory()
 
@@ -196,6 +198,9 @@ class Store:
     def state_risk_for_scope(self, scope: str) -> pd.DataFrame:
         return self._state_risk_by_scope.get(scope, self._state_risk_by_scope["all"])
 
+    def agency_risk_for_scope(self, scope: str) -> pd.DataFrame:
+        return self._agency_risk_by_scope.get(scope, self._agency_risk_by_scope["all"])
+
     def risk_tables(self, scope: str, date_from: str | None = None, date_to: str | None = None):
         """(spine, work_risk, state_risk, district_risk, constituency_risk) for
         this scope, each narrowed to [date_from, date_to] on recommendation
@@ -234,6 +239,7 @@ class Store:
 
     def district_boundary(self, state: str, district: str) -> dict | None:
         return self._district_boundary.get((state.casefold(), district.casefold()))
+
 
 
 _store: Store | None = None

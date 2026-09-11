@@ -55,7 +55,8 @@ export const api = {
   queue: (params, { dateFrom, dateTo } = {}) => get('/queue', { ...params, date_from: dateFrom, date_to: dateTo }),
   work: (workNumber, scopeHouse, scopeTenure) =>
     get(`/work/${workNumber}`, { scope_house: scopeHouse, scope_tenure: scopeTenure }),
-  constituency: (id, scope) => get(`/constituency/${id}`, { scope }),
+  constituency: (id, scope, { dateFrom, dateTo } = {}) =>
+    get(`/constituency/${id}`, { scope, date_from: dateFrom, date_to: dateTo }),
   states: (params, { dateFrom, dateTo } = {}) => get('/states', { ...params, date_from: dateFrom, date_to: dateTo }),
   state: (name, scope, { dateFrom, dateTo } = {}) =>
     get(`/state/${encodeURIComponent(name)}`, { scope, date_from: dateFrom, date_to: dateTo }),
@@ -68,7 +69,11 @@ export const api = {
       scope_tenure: scopeTenure, finding_id: findingId,
     }),
   mps: (params) => get('/mps', params),
-  mp: (name, scope) => get(`/mp/${encodeURIComponent(name)}`, { scope }),
+  mp: (name, scope, { dateFrom, dateTo } = {}) =>
+    get(`/mp/${encodeURIComponent(name)}`, { scope, date_from: dateFrom, date_to: dateTo }),
+  agencies: (params) => get('/agencies', params),
+  agency: (name, scope, { dateFrom, dateTo } = {}) =>
+    get(`/agency/${encodeURIComponent(name)}`, { scope, date_from: dateFrom, date_to: dateTo }),
   reports: () => get('/reports'),
   createReport: (body) => postJson('/reports', body),
   deleteReport: (id) => del(`/reports/${id}`),

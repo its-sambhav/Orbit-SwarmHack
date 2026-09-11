@@ -29,7 +29,8 @@ def build_work_risk(findings_df: pd.DataFrame, spine: pd.DataFrame, demo_scopes:
 
     spine_subset = spine[["WORK_RECOMMENDATION_DTL_ID", "SCOPE_HOUSE", "SCOPE_TENURE",
                            "STATE_NAME", "CONSTITUENCY", "CONSTITUENCY_ID", "MP_NAME",
-                           "DISTRICT", "IDA_NAME_CLEAN"]].copy()
+                           "DISTRICT", "IDA_NAME_CLEAN",
+                           "exp_top_ia", "exp_top_vendor", "exp_vendor_count"]].copy()
     spine_subset["work_number"] = spine_subset["WORK_RECOMMENDATION_DTL_ID"].astype("int64").astype(str)
     spine_subset = spine_subset.rename(columns={"SCOPE_HOUSE": "scope_house", "SCOPE_TENURE": "scope_tenure"})
     spine_subset = spine_subset.drop(columns=["WORK_RECOMMENDATION_DTL_ID"])
@@ -108,6 +109,45 @@ def build_district_risk(work_risk: pd.DataFrame, spine: pd.DataFrame, demo_scope
     district_risk["tag_counts"] = district_risk.apply(
         lambda r: tag_map.get((r["STATE_NAME"], r["DISTRICT"]), json.dumps({})), axis=1)
     return district_risk.rename(columns={"STATE_NAME": "state", "DISTRICT": "district"})
+
+
+def build_agency_risk(work_risk: pd.DataFrame, spine: pd.DataFrame, demo_scopes: list[str]) -> pd.DataFrame:
+    """One row per implementing agency (exp_top_ia) - the Implementing Agency
+    dashboard's unit. Unlike state/district, an agency has no geographic
+    parent to disambiguate on, so the name itself is the whole identity - and
+    that identity is real but imperfect: exp_top_ia is each work's single
+    largest-disbursement row's agency name, only whitespace/case-normalised
+    (not fuzzy-clustered - see docs/SCHEMA.md), and only populated once a
+    work has any expenditure at all (~70% of works, never for a work still at
+    Recommended/Sanctioned with zero disbursement). pandas groupby drops NaN
+    keys by default, which is exactly right here - never emit a fake
+    "Unknown agency" row for the un-attributed 30%."""
+    scoped_spine = spine[spine["SCOPE_TENURE"].isin(demo_scopes)]
+    flagged = work_risk[work_risk["in_demo_scope"]]
+    group = "exp_top_ia"
+
+    agency_risk = scoped_spine.groupby(group).agg(
+        works_total=("WORK_RECOMMENDATION_DTL_ID", "size"),
+    ).reset_index()
+    flagged_agg = flagged.groupby(group).agg(
+        works_flagged=("work_number", "size"), total_exposure=("total_exposure", "sum"),
+        mean_priority=("priority", "mean"), risk_score=("priority", "sum"),
+    ).reset_index()
+
+    agency_risk = agency_risk.merge(flagged_agg, on=group, how="left")
+    for col, default in [("works_flagged", 0), ("total_exposure", 0.0), ("mean_priority", 0.0), ("risk_score", 0.0)]:
+        agency_risk[col] = agency_risk[col].fillna(default)
+    agency_risk["works_flagged"] = agency_risk["works_flagged"].astype(int)
+    agency_risk["breach_rate"] = agency_risk["works_flagged"] / agency_risk["works_total"]
+
+    # _tag_counts_json keys its dict by the bare value (not a tuple) when
+    # given a single group column - verified directly, not by pattern-copying
+    # build_state_risk's analogous line below, which uses a tuple key and as
+    # a result never actually matches (a pre-existing bug, left alone here
+    # since fixing it isn't part of this change).
+    tag_map = _tag_counts_json(flagged, [group])
+    agency_risk["tag_counts"] = agency_risk[group].map(lambda a: tag_map.get(a, json.dumps({})))
+    return agency_risk.rename(columns={"exp_top_ia": "agency"})
 
 
 def build_state_risk(work_risk: pd.DataFrame, spine: pd.DataFrame, demo_scopes: list[str]) -> pd.DataFrame:
@@ -196,9 +236,22 @@ def demo():
             f"{name}.{col} sums to {total:,}, expected in-scope spine count {scoped_spine_len:,}"
         )
 
+    # agency_risk isn't part of run()'s exported tuple (it's computed fresh at
+    # API startup, not written to parquet - see Store.__init__), so it's
+    # self-checked here directly rather than threading a 5th value through
+    # run()/export.py's signatures.
+    agency_risk = build_agency_risk(work_risk, spine, demo_scopes)
+    scoped_spine_with_ia = int((spine["SCOPE_TENURE"].isin(demo_scopes) & spine["exp_top_ia"].notna()).sum())
+    agency_total = int(agency_risk["works_total"].sum())
+    assert agency_total == scoped_spine_with_ia, (
+        f"agency_risk.works_total sums to {agency_total:,}, expected {scoped_spine_with_ia:,} "
+        f"in-scope works with a non-null exp_top_ia"
+    )
+    assert agency_risk["agency"].notna().all(), "agency_risk must never contain a null agency row"
+
     print(f"\nrollup self-check: PASS  ({len(work_risk):,} flagged works, "
           f"{len(constituency_risk):,} constituencies, {len(district_risk):,} districts, "
-          f"{len(state_risk):,} states)")
+          f"{len(state_risk):,} states, {len(agency_risk):,} agencies)")
     return findings, work_risk, constituency_risk, district_risk, state_risk
 
 

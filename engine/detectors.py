@@ -102,7 +102,7 @@ def build_finding(row, detector_id, tag, severity, confidence, financial_exposur
             "district": row.DISTRICT if pd.notna(getattr(row, "DISTRICT", None)) else None,
             "lgd_code": None,
             "mp_name": row.MP_NAME if pd.notna(row.MP_NAME) else None,
-            "implementing_agency": row.IDA_NAME_CLEAN if pd.notna(row.IDA_NAME_CLEAN) else None,
+            "implementing_agency": row.exp_top_ia if row.has_expenditure and pd.notna(row.exp_top_ia) else None,
             "vendor": row.exp_top_vendor if row.has_expenditure and pd.notna(row.exp_top_vendor) else None,
             "vendor_count": int(row.exp_vendor_count) if row.has_expenditure and pd.notna(row.exp_vendor_count) else 0,
             "scope_house": row.SCOPE_HOUSE,

@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from api.data import get_store, SCOPES, SCOPE_LABELS, GEO_DIR
 from api.narrative import generate_narrative
 from api import reports as reports_store
+from engine import rollup
 
 app = FastAPI(title="MPLADS Anomaly Review API")
 
@@ -50,6 +51,26 @@ def clean(obj):
     if obj is pd.NaT:
         return None
     return obj
+
+
+def stage_counts(sp: pd.DataFrame) -> dict:
+    """Ongoing/pending-approval/pending-payment counts from the same real
+    has_recommended/has_sanctioned/has_completed/exp_total_disbursed spine
+    booleans the funnel already uses - not a fabricated status enum. Shared
+    by the State/District dashboards' KPI cards."""
+    return {
+        "ongoing": int((sp["has_sanctioned"] & ~sp["has_completed"]).sum()),
+        "pending_approvals": int((sp["has_recommended"] & ~sp["has_sanctioned"]).sum()),
+        "pending_payments": int((sp["has_sanctioned"] & (sp["exp_total_disbursed"] == 0)).sum()),
+    }
+
+
+def delayed_count(findings_slice: pd.DataFrame) -> int:
+    """Distinct works carrying the TIME DELAY tag within an already-scoped
+    findings slice - the real, already-computed delay signal (see
+    config/detectors.yaml's 6 time-delay detectors), not a second invented
+    delay definition."""
+    return int(findings_slice.loc[findings_slice["tag"] == "TIME DELAY", "work_number"].nunique())
 
 
 @app.get("/api/meta")
@@ -258,6 +279,7 @@ def get_work(work_number: str, scope_house: str, scope_tenure: str):
     return clean({
         "work_number": work_number, "scope_house": scope_house, "scope_tenure": scope_tenure,
         "state": work.get("STATE_NAME"), "constituency": work.get("CONSTITUENCY"),
+        "district": work.get("DISTRICT"),
         "constituency_id": work.get("CONSTITUENCY_ID"), "mp_name": work.get("MP_NAME"),
         "work_stage": work.get("WORK_STAGE_RESOLVED"),
         "has_recommended": work.get("has_recommended"), "has_sanctioned": work.get("has_sanctioned"),
@@ -279,36 +301,40 @@ def post_narrative(work_number: str, scope_house: str, scope_tenure: str, findin
 
 
 @app.get("/api/constituency/{constituency_id}")
-def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha")):
+def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None):
     s = get_store()
-    cr = s.constituency_risk_for_scope(scope)
+    spine, wr_all, _, _, cr = s.risk_tables(scope, date_from, date_to)
     row = cr[cr["CONSTITUENCY_ID"].astype("Int64").astype(str) == constituency_id]
     if row.empty:
         raise HTTPException(404, f"no constituency {constituency_id} in scope {scope}")
     row = row.iloc[0]
 
-    sp = s.spine[(s.spine["CONSTITUENCY_ID"].astype("Int64").astype(str) == constituency_id)
-                 & (s.spine["SCOPE_TENURE"] == scope)]
+    sp = spine[spine["CONSTITUENCY_ID"].astype("Int64").astype(str) == constituency_id]
     completion_rate = float(sp["has_completed"].sum() / sp["has_sanctioned"].sum() * 100) if sp["has_sanctioned"].sum() else None
 
-    national_sp = s.spine[s.spine["SCOPE_TENURE"] == scope]
-    national_completion = float(national_sp["has_completed"].sum() / national_sp["has_sanctioned"].sum() * 100) if national_sp["has_sanctioned"].sum() else None
-    state_sp = national_sp[national_sp["STATE_NAME"] == row["state"]]
+    # national/state comparisons over the same scope+date slice, before narrowing to this seat.
+    national_completion = float(spine["has_completed"].sum() / spine["has_sanctioned"].sum() * 100) if spine["has_sanctioned"].sum() else None
+    state_sp = spine[spine["STATE_NAME"] == row["state"]]
     state_completion = float(state_sp["has_completed"].sum() / state_sp["has_sanctioned"].sum() * 100) if state_sp["has_sanctioned"].sum() else None
 
+    # allocation is a lifetime-per-MP figure, not tied to any one work's
+    # recommendation date - never narrowed by the date filter.
     alloc = s.allocated[(s.allocated["CONSTITUENCY"].str.casefold() == str(row["constituency"]).casefold())
                          & (s.allocated["SCOPE_TENURE"] == scope)]
     allocated_amt = float(alloc["ALLOCATED_AMT"].sum()) if not alloc.empty else None
 
-    findings = s.findings[(s.findings["constituency_id"].astype("Int64").astype(str) == constituency_id)
-                           & (s.findings["scope_tenure"] == scope)]
+    findings = s.findings_for_scope(scope)
+    findings = findings[findings["constituency_id"].astype("Int64").astype(str) == constituency_id]
+    if date_from:
+        findings = findings[findings["date"] >= pd.Timestamp(date_from)]
+    if date_to:
+        findings = findings[findings["date"] <= pd.Timestamp(date_to)]
     tag_breakdown = findings["tag"].value_counts().to_dict()
 
     mp_names = sp["MP_NAME"].dropna().unique().tolist()
     mp_name = mp_names[0] if mp_names else None
 
-    wr = s.work_risk[(s.work_risk["CONSTITUENCY_ID"].astype("Int64").astype(str) == constituency_id)
-                      & (s.work_risk["scope_tenure"] == scope)].sort_values("priority", ascending=False)
+    wr = wr_all[wr_all["CONSTITUENCY_ID"].astype("Int64").astype(str) == constituency_id].sort_values("priority", ascending=False)
     ranked = [{
         "work_number": r["work_number"], "scope_house": r["scope_house"], "scope_tenure": r["scope_tenure"],
         "tags": list(r["tags"]), "max_severity": r["max_severity"], "total_exposure": float(r["total_exposure"]),
@@ -317,7 +343,7 @@ def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha"))
 
     return clean({
         "constituency_id": constituency_id, "constituency": row["constituency"], "state": row["state"],
-        "mp_name": mp_name,
+        "mp_name": mp_name, "scope": scope, "date_from": date_from, "date_to": date_to,
         "pc_id": s.crosswalk.get(constituency_id),
         "scorecard": {
             "allocated": allocated_amt,
@@ -375,12 +401,30 @@ def get_state(state_name: str, scope: str = Query("18th Lok Sabha"), date_from: 
     state_alloc = s.allocated[s.allocated["STATE_NAME"].str.casefold() == state_name.casefold()]
     alloc = state_alloc if scope == "all" else state_alloc[state_alloc["SCOPE_TENURE"] == scope]
 
+    f = s.findings_for_scope(scope)
+    f = f[f["state"].str.casefold() == state_name.casefold()]
+    if date_from:
+        f = f[f["date"] >= pd.Timestamp(date_from)]
+    if date_to:
+        f = f[f["date"] <= pd.Timestamp(date_to)]
+    tag_breakdown = f["tag"].value_counts().to_dict()
+    delayed_by_district = f.loc[f["tag"] == "TIME DELAY"].groupby("district")["work_number"].nunique()
+
     districts = dr[dr["state"].str.casefold() == state_name.casefold()].sort_values("risk_score", ascending=False)
-    district_items = [{
-        "district": r["district"], "works_total": int(r["works_total"]), "works_flagged": int(r["works_flagged"]),
-        "breach_rate": round(float(r["breach_rate"]), 4), "total_exposure": float(r["total_exposure"]),
-        "risk_score": round(float(r["risk_score"]), 2),
-    } for _, r in districts.iterrows()]
+    district_items = []
+    for _, r in districts.iterrows():
+        d_sp = sp[sp["DISTRICT"] == r["district"]]
+        sanctioned_amt = float(d_sp.loc[d_sp["has_sanctioned"], "SANCTION_AMOUNT"].sum())
+        paid_amt = float(d_sp["exp_total_disbursed"].sum())
+        district_items.append({
+            "district": r["district"], "works_total": int(r["works_total"]), "works_flagged": int(r["works_flagged"]),
+            "breach_rate": round(float(r["breach_rate"]), 4), "total_exposure": float(r["total_exposure"]),
+            "risk_score": round(float(r["risk_score"]), 2),
+            "delayed": int(delayed_by_district.get(r["district"], 0)),
+            "sanctioned_amount": sanctioned_amt, "paid_amount": paid_amt,
+            "utilization_rate": round(paid_amt / sanctioned_amt, 4) if sanctioned_amt else None,
+            **stage_counts(d_sp),
+        })
 
     wr = wr_all[wr_all["STATE_NAME"].str.casefold() == state_name.casefold()].sort_values("priority", ascending=False)
     queue = [{
@@ -389,14 +433,6 @@ def get_state(state_name: str, scope: str = Query("18th Lok Sabha"), date_from: 
         "tags": list(r["tags"]), "max_severity": r["max_severity"], "total_exposure": float(r["total_exposure"]),
         "priority": round(float(r["priority"]), 2),
     } for _, r in wr.head(200).iterrows()]
-
-    f = s.findings_for_scope(scope)
-    f = f[f["state"].str.casefold() == state_name.casefold()]
-    if date_from:
-        f = f[f["date"] >= pd.Timestamp(date_from)]
-    if date_to:
-        f = f[f["date"] <= pd.Timestamp(date_to)]
-    tag_breakdown = f["tag"].value_counts().to_dict()
 
     return clean({
         "state": row["state"], "scope": scope, "date_from": date_from, "date_to": date_to, "funnel": funnel,
@@ -411,6 +447,8 @@ def get_state(state_name: str, scope: str = Query("18th Lok Sabha"), date_from: 
             "paid": float(sp["exp_total_disbursed"].sum()),
             "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
             "breach_rate": round(float(row["breach_rate"]), 4),
+            "delayed": delayed_count(f),
+            **stage_counts(sp),
             "completion_rate": completion_rate,
             "national_median_completion_rate": national_completion,
         },
@@ -456,17 +494,27 @@ def get_mps(
 
 
 @app.get("/api/mp/{mp_name}")
-def get_mp(mp_name: str, scope: str = Query("18th Lok Sabha")):
+def get_mp(mp_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None):
     s = get_store()
     row = s.mp_directory[(s.mp_directory["MP_NAME"].str.casefold() == mp_name.casefold())
                           & (s.mp_directory["SCOPE_TENURE"] == scope)]
     if row.empty:
         raise HTTPException(404, f"no MP '{mp_name}' on record for {scope}")
     row = row.iloc[0]
-    completion_rate = float(row["completed"] / row["sanctioned"] * 100) if row["sanctioned"] else None
 
     # every work this MP recommended, not just the flagged ones.
-    sp = s.spine[(s.spine["MP_NAME"].str.casefold() == mp_name.casefold()) & (s.spine["SCOPE_TENURE"] == scope)]
+    sp_all = s.spine[(s.spine["MP_NAME"].str.casefold() == mp_name.casefold()) & (s.spine["SCOPE_TENURE"] == scope)]
+    # the seat's own identity doesn't depend on the date filter - resolved
+    # from the MP's full record, not the (possibly empty) date-narrowed slice.
+    cid_vals = sp_all["CONSTITUENCY_ID"].dropna().unique().tolist()
+    constituency_id = str(int(cid_vals[0])) if cid_vals else None
+    pc_id = s.crosswalk.get(constituency_id) if constituency_id else None
+
+    sp = sp_all
+    if date_from:
+        sp = sp[sp["rec_RECOMMENDATION_DATE"] >= pd.Timestamp(date_from)]
+    if date_to:
+        sp = sp[sp["rec_RECOMMENDATION_DATE"] <= pd.Timestamp(date_to)]
     sp = sp.sort_values("rec_RECOMMENDATION_DATE", ascending=False)
 
     work_numbers = set(sp["work_number"])
@@ -476,6 +524,20 @@ def get_mp(mp_name: str, scope: str = Query("18th Lok Sabha")):
     for wn, grp in mp_findings.groupby("work_number"):
         tag_by_work[wn] = sorted(grp["tag"].unique().tolist())
         sev_by_work[wn] = max(grp["severity"], key=lambda v: sev_order[v])
+
+    # ACTIVITY_NAME_CLEAN coalesced the same way each work's own "activity"
+    # field already is below - the peer-grouping key documented in
+    # docs/SCHEMA.md, not the near-useless 4-value WORK_CATEGORY picklist
+    # (98.2% in one bucket). Top-10 by count + an "Other" bucket, for the
+    # development-category donut - ~120 real categories is too many to chart.
+    activity = sp["rec_ACTIVITY_NAME_CLEAN"].where(
+        sp["rec_ACTIVITY_NAME_CLEAN"].notna(), sp["san_ACTIVITY_NAME_CLEAN"])
+    activity_counts = activity.dropna().value_counts()
+    top_activities = activity_counts.head(10)
+    other_count = int(activity_counts.iloc[10:].sum())
+    activity_breakdown = [{"label": k, "value": int(v)} for k, v in top_activities.items()]
+    if other_count:
+        activity_breakdown.append({"label": "Other", "value": other_count})
 
     recommended_works = [{
         "work_number": r.work_number,
@@ -488,18 +550,33 @@ def get_mp(mp_name: str, scope: str = Query("18th Lok Sabha")):
         "tags": tag_by_work.get(r.work_number, []), "max_severity": sev_by_work.get(r.work_number),
     } for r in sp.itertuples()]
 
+    works_total = len(sp)
+    works_flagged = mp_findings["work_number"].nunique()
+    sanctioned_n = int(sp["has_sanctioned"].sum())
+    completed_n = int(sp["has_completed"].sum())
+    completion_rate = float(completed_n / sanctioned_n * 100) if sanctioned_n else None
+
     return clean({
         "mp_name": row["MP_NAME"], "scope_tenure": scope, "status": row["status"],
         "state": row["state"], "constituency": row["constituency"],
+        "constituency_id": constituency_id, "pc_id": pc_id,
+        "date_from": date_from, "date_to": date_to,
         "tenure_start": row["TENURE_START_DATE"], "tenure_end": row["TENURE_END_DATE"],
         "scorecard": {
+            # allocation is a lifetime-per-MP figure, not tied to any one
+            # work's recommendation date - never narrowed by the date filter.
             "allocated": float(row["ALLOCATED_AMT"]) if pd.notna(row["ALLOCATED_AMT"]) else None,
-            "recommended": float(row["recommended_amount"]), "sanctioned": float(row["sanctioned_amount"]),
-            "completed": float(row["completed_amount"]), "paid": float(row["paid"]),
-            "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
-            "breach_rate": round(float(row["breach_rate"]), 4) if pd.notna(row["breach_rate"]) else None,
+            "recommended": float(sp.loc[sp["has_recommended"], "rec_RECOMMENDED_AMOUNT"].sum()),
+            "sanctioned": float(sp.loc[sp["has_sanctioned"], "SANCTION_AMOUNT"].sum()),
+            "completed": float(sp.loc[sp["has_completed"], "comp_ACTUAL_AMOUNT"].sum()),
+            "paid": float(sp["exp_total_disbursed"].sum()),
+            "works_total": works_total, "works_flagged": int(works_flagged),
+            "breach_rate": round(works_flagged / works_total, 4) if works_total else None,
+            "pending_approvals": int((sp["has_recommended"] & ~sp["has_sanctioned"]).sum()),
+            "delayed": delayed_count(mp_findings),
             "completion_rate": completion_rate,
         },
+        "activity_breakdown": activity_breakdown,
         "recommended_works": recommended_works,
     })
 
@@ -550,12 +627,19 @@ def get_district(state_name: str, district_name: str, scope: str = Query("18th L
     # as a list rather than assuming that in case the data ever disagrees.
     district_authority = sorted(sp["IDA_NAME_CLEAN"].dropna().unique().tolist())
     # every MP whose recommendations touch this district, paired with which
-    # constituency - a district can span more than one seat's MP. Carries the
-    # constituency_id too so each one can link straight to that MP's own page.
-    mps = sorted({
-        (r.MP_NAME, r.CONSTITUENCY, str(int(r.CONSTITUENCY_ID)))
-        for r in sp.itertuples() if pd.notna(r.MP_NAME) and pd.notna(r.CONSTITUENCY) and pd.notna(r.CONSTITUENCY_ID)
-    })
+    # constituency - a district can span more than one seat's MP (DISTRICT is
+    # derived from the sanctioning IDA, not the MP's own constituency, so a
+    # handful of a seat's works can be sanctioned through a neighbouring
+    # district's authority - e.g. a boundary-adjacent work). Ranked by how
+    # many of this district's works that MP actually recommended, with the
+    # count carried through, so a real 100+-work incumbent and a 1-2-work
+    # administrative edge case aren't shown as equally-weighted "the
+    # district's MPs" - verified against real Rajasthan data during review.
+    mp_sp = sp.dropna(subset=["MP_NAME", "CONSTITUENCY", "CONSTITUENCY_ID"])
+    mps = sorted(
+        mp_sp.groupby(["MP_NAME", "CONSTITUENCY", "CONSTITUENCY_ID"]).size().items(),
+        key=lambda kv: kv[1], reverse=True,
+    )
     # allocation is a lifetime-per-MP figure, not tied to any one work's
     # recommendation date - never narrowed by the date filter.
     district_alloc = s.allocated[s.allocated["CONSTITUENCY"].isin(constituencies)
@@ -579,6 +663,33 @@ def get_district(state_name: str, district_name: str, scope: str = Query("18th L
         f = f[f["date"] <= pd.Timestamp(date_to)]
     tag_breakdown = f["tag"].value_counts().to_dict()
 
+    # implementing-agency performance within this district (spec 2.E) -
+    # exp_top_ia is only populated once a work has any expenditure (~70% of
+    # works nationally), so agency_sp is a real subset of sp, not a bug.
+    agency_sp = sp[sp["exp_top_ia"].notna()]
+    delayed_by_agency = (wr[wr["tags"].apply(lambda t: "TIME DELAY" in t)].groupby("exp_top_ia")["work_number"].nunique()
+                          if len(wr) else pd.Series(dtype="int64"))
+    agency_performance = []
+    if len(agency_sp):
+        completion_days = (agency_sp["comp_ACTUAL_END_DATE"] - agency_sp["SANCTION_DATE"]).dt.days
+        agency_perf = agency_sp.assign(
+            _completed=agency_sp["has_completed"],
+            _ongoing=agency_sp["has_sanctioned"] & ~agency_sp["has_completed"],
+            _completion_days=completion_days,
+        ).groupby("exp_top_ia").agg(
+            works_total=("WORK_RECOMMENDATION_DTL_ID", "size"),
+            completed=("_completed", "sum"),
+            ongoing=("_ongoing", "sum"),
+            expenditure=("exp_total_disbursed", "sum"),
+            avg_completion_days=("_completion_days", "mean"),
+        ).reset_index().sort_values("works_total", ascending=False).head(50)
+        agency_performance = [{
+            "agency": r["exp_top_ia"], "works_total": int(r["works_total"]), "completed": int(r["completed"]),
+            "ongoing": int(r["ongoing"]), "delayed": int(delayed_by_agency.get(r["exp_top_ia"], 0)),
+            "expenditure": float(r["expenditure"]),
+            "avg_completion_days": round(float(r["avg_completion_days"]), 1) if pd.notna(r["avg_completion_days"]) else None,
+        } for _, r in agency_perf.iterrows()]
+
     return clean({
         "district": row["district"], "state": row["state"], "scope": scope,
         "date_from": date_from, "date_to": date_to, "funnel": funnel,
@@ -589,8 +700,12 @@ def get_district(state_name: str, district_name: str, scope: str = Query("18th L
         "risk_score": round(float(row["risk_score"]), 2),
         "total_states": len(s.state_risk_for_scope(scope)),
         "district_authority": district_authority,
-        "mps": [{"mp_name": mp, "constituency": c, "constituency_id": cid} for mp, c, cid in mps],
+        "mps": [
+            {"mp_name": mp, "constituency": c, "constituency_id": str(int(cid)), "works_count": int(n)}
+            for (mp, c, cid), n in mps
+        ],
         "boundary": s.district_boundary(state_name, district_name),
+        "agency_performance": agency_performance,
         "scorecard": {
             "allocated": float(alloc["ALLOCATED_AMT"].sum()) if not alloc.empty else None,
             "recommended": float(sp.loc[sp["has_recommended"], "rec_RECOMMENDED_AMOUNT"].sum()),
@@ -598,20 +713,112 @@ def get_district(state_name: str, district_name: str, scope: str = Query("18th L
             "completed": float(sp.loc[sp["has_completed"], "comp_ACTUAL_AMOUNT"].sum()),
             "paid": float(sp["exp_total_disbursed"].sum()),
             "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
+            "delayed": delayed_count(f),
+            **stage_counts(sp),
             "completion_rate": completion_rate,
         },
         "tag_breakdown": tag_breakdown, "queue": queue,
     })
 
 
+@app.get("/api/agencies")
+def get_agencies(scope: str = Query("all"), q: str | None = None, limit: int = 25, offset: int = 0):
+    """Implementing Agency role picker + search. Unlike state/district/MP,
+    an agency has no geographic parent to cascade through - agency identity
+    is a name only (exp_top_ia, whitespace/case-normalised but never
+    fuzzy-clustered - see docs/SCHEMA.md), and there are ~6,000-13,000 of
+    them depending on scope, so this always requires a free-text query
+    (or a hard-capped limit) rather than ever listing them all."""
+    s = get_store()
+    df = s.agency_risk_for_scope(scope)
+    if q:
+        df = df[df["agency"].str.casefold().str.contains(q.casefold(), na=False)]
+    df = df.sort_values("works_total", ascending=False)
+    total = len(df)
+    limit = min(limit, 100)
+    page = df.iloc[offset:offset + limit]
+    items = [{
+        "agency": r["agency"], "works_total": int(r["works_total"]), "works_flagged": int(r["works_flagged"]),
+        "breach_rate": round(float(r["breach_rate"]), 4), "total_exposure": float(r["total_exposure"]),
+        "risk_score": round(float(r["risk_score"]), 2),
+    } for _, r in page.iterrows()]
+    return clean({"scope": scope, "q": q, "total": total, "offset": offset, "limit": limit, "items": items})
+
+
+@app.get("/api/agency/{agency_name}")
+def get_agency(agency_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None):
+    s = get_store()
+    spine, wr_all, _, _, _ = s.risk_tables(scope, date_from, date_to)
+    if date_from or date_to:
+        # risk_tables()'s date-filtered wr_all is already narrowed to exactly
+        # the in-scope rows - re-stamping in_demo_scope=True over all of them
+        # (rather than re-deriving it) is correct, not a shortcut, since
+        # there's nothing left to filter out.
+        scopes = [scope] if scope != "all" else SCOPES
+        ar = rollup.build_agency_risk(wr_all.assign(in_demo_scope=True), spine, scopes)
+    else:
+        ar = s.agency_risk_for_scope(scope)
+    row = ar[ar["agency"].str.casefold() == agency_name.casefold()]
+    if row.empty:
+        raise HTTPException(404, f"no agency '{agency_name}' in scope {scope}")
+    row = row.iloc[0]
+    agency_real_name = row["agency"]
+
+    sp = spine[spine["exp_top_ia"].str.casefold() == agency_name.casefold()]
+    wr = wr_all[wr_all["exp_top_ia"].str.casefold() == agency_name.casefold()].sort_values("priority", ascending=False)
+
+    f = s.findings_for_scope(scope)
+    f = f[f["work_number"].isin(set(sp["work_number"]))]
+    if date_from:
+        f = f[f["date"] >= pd.Timestamp(date_from)]
+    if date_to:
+        f = f[f["date"] <= pd.Timestamp(date_to)]
+    tag_breakdown = f["tag"].value_counts().to_dict()
+
+    queue = [{
+        "work_number": r["work_number"], "scope_house": r["scope_house"], "scope_tenure": r["scope_tenure"],
+        "state": r["STATE_NAME"], "district": r["DISTRICT"], "constituency": r["CONSTITUENCY"], "mp_name": r["MP_NAME"],
+        "tags": list(r["tags"]), "max_severity": r["max_severity"], "total_exposure": float(r["total_exposure"]),
+        "priority": round(float(r["priority"]), 2),
+    } for _, r in wr.iterrows()]
+
+    return clean({
+        "agency": agency_real_name, "scope": scope, "date_from": date_from, "date_to": date_to,
+        "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
+        "breach_rate": round(float(row["breach_rate"]), 4), "total_exposure": float(row["total_exposure"]),
+        "risk_score": round(float(row["risk_score"]), 2),
+        "states_touched": sorted(sp["STATE_NAME"].dropna().unique().tolist()),
+        "constituencies_touched": sorted(sp["CONSTITUENCY"].dropna().unique().tolist()),
+        # allocated/recommended don't apply - allocation is a per-MP lifetime
+        # figure, not something an implementing agency has of its own.
+        "scorecard": {
+            "sanctioned": float(sp.loc[sp["has_sanctioned"], "SANCTION_AMOUNT"].sum()),
+            "completed": float(sp.loc[sp["has_completed"], "comp_ACTUAL_AMOUNT"].sum()),
+            "paid": float(sp["exp_total_disbursed"].sum()),
+            "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
+            "delayed": delayed_count(f),
+            **stage_counts(sp),
+        },
+        "tag_breakdown": tag_breakdown, "queue": queue,
+        "data_caveat": (
+            "Agency identity is matched by name only (spelling/case-normalised, "
+            "not deduplicated across real spelling variants of the same agency), "
+            "and only assigned once a work has any recorded expenditure - a work "
+            "still at Recommended or Sanctioned stage with zero disbursement has "
+            "no agency attribution yet and will not appear here."
+        ),
+    })
+
+
 class ReportCreate(BaseModel):
-    level: str  # "overview" | "india" | "state" | "district"
+    level: str  # "overview" | "india" | "state" | "district" | "agency" | "mp"
     title: str
     scope: str
     date_from: str | None = None
     date_to: str | None = None
     state: str | None = None
     district: str | None = None
+    agency: str | None = None
     summary: dict
 
 

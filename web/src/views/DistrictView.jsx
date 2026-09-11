@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, formatRupees } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { IndiaMap } from '../components/IndiaMap'
@@ -13,6 +13,12 @@ import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
 
+// the content here is identical either way a district is reached - MoSPI's
+// own India > State > District drill-down (/district/...) and the District
+// Authority role (/district-authority/..., picked from RoleSelector) show
+// the same data. Only the chrome differs: the role has no authorized access
+// to MoSPI's search or its Overview/Map/Reports pages, so isRoleView turns
+// those off rather than forking an otherwise-identical second file.
 export function DistrictView() {
   const { stateName, districtName } = useParams()
   const [params, setSearchParams] = useSearchParams()
@@ -20,9 +26,12 @@ export function DistrictView() {
   const dateFrom = params.get('date_from') || null
   const dateTo = params.get('date_to') || null
   const navigate = useNavigate()
+  const location = useLocation()
+  const isRoleView = location.pathname.startsWith('/district-authority/')
   const [data, setData] = useState(null)
   const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
+  const [severityFilter, setSeverityFilter] = useState('')
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}) }, [])
 
@@ -58,24 +67,31 @@ export function DistrictView() {
   if (error) return <ErrorView message={error} />
   if (!data) return <Loading label="Loading district" />
 
+  const filteredQueue = severityFilter ? data.queue.filter((i) => i.max_severity === severityFilter) : data.queue
+
   return (
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle={`MoSPI · ${data.district} · ${scopeLabel(scope)}`}
+        subtitle={isRoleView ? `District Authority · ${data.district}` : `MoSPI · ${data.district} · ${scopeLabel(scope)}`}
         searchIndex={[]}
-        drawerLinks={[
+        showSearch={!isRoleView}
+        profileName={isRoleView ? data.district : undefined}
+        profileRole={isRoleView ? 'District Authority' : undefined}
+        avatarLetter={isRoleView ? 'D' : undefined}
+        drawerLinks={isRoleView ? [
+          { label: 'Implementing agencies', onClick: () => document.getElementById('district-agencies')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+        ] : [
           { label: 'Overview', onClick: () => navigate('/mospi') },
           { label: 'Map', onClick: () => navigate('/mospi/map') },
-          { label: 'MP Audits', onClick: () => navigate('/mp-audits') },
+          { label: 'Implementing agencies', onClick: () => document.getElementById('district-agencies')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
           { label: 'Reports', onClick: () => navigate('/reports') },
         ]}
       />
       <div className="mospi-map-page-body">
         <div className="map-drill-view" style={{ padding: 0, height: '100%' }}>
           <div className="map-drill-header">
-            <Breadcrumb items={[
-              { label: 'India', to: '/mospi/map' },
+            <Breadcrumb items={isRoleView ? [{ label: data.district }] : [
               { label: data.state, to: `/mospi/map?state=${encodeURIComponent(data.state)}` },
               { label: data.district },
             ]} />
@@ -95,41 +111,81 @@ export function DistrictView() {
 
           <div className="map-drill-row">
             <div className="map-drill-details">
-              <h3>District &amp; MP scorecard</h3>
+              <h3>District overview</h3>
               <div className="scorecard-grid">
                 <ScorecardCell label="Allocated" value={data.scorecard.allocated} />
-                <ScorecardCell label="Recommended" value={data.scorecard.recommended} />
                 <ScorecardCell label="Sanctioned" value={data.scorecard.sanctioned} />
-                <ScorecardCell label="Completed" value={data.scorecard.completed} />
                 <ScorecardCell label="Paid" value={data.scorecard.paid} />
                 <div className="scorecard-cell">
                   <div className="label">Works flagged</div>
                   <div className="value num">{data.scorecard.works_flagged.toLocaleString('en-IN')} / {data.scorecard.works_total.toLocaleString('en-IN')}</div>
+                </div>
+                <div className="scorecard-cell">
+                  <div className="label">Ongoing</div>
+                  <div className="value num">{data.scorecard.ongoing.toLocaleString('en-IN')}</div>
+                </div>
+                <div className="scorecard-cell">
+                  <div className="label">Delayed</div>
+                  <div className="value num">{data.scorecard.delayed.toLocaleString('en-IN')}</div>
+                </div>
+                <div className="scorecard-cell">
+                  <div className="label">Pending approvals</div>
+                  <div className="value num">{data.scorecard.pending_approvals.toLocaleString('en-IN')}</div>
+                </div>
+                <div className="scorecard-cell">
+                  <div className="label">Pending payments</div>
+                  <div className="value num">{data.scorecard.pending_payments.toLocaleString('en-IN')}</div>
                 </div>
               </div>
               <div className="comparison-row">
                 <span>Completion rate</span>
                 <span className="value num">{data.scorecard.completion_rate != null ? `${data.scorecard.completion_rate.toFixed(0)}%` : '—'}</span>
               </div>
-              <div className="comparison-row">
-                <span>States &amp; UTs in India</span>
-                <span className="value num">{data.total_states}</span>
-              </div>
+
+              <h3 id="district-agencies">Implementing agency performance</h3>
+              {data.agency_performance.length ? (
+                <div className="tag-breakdown">
+                  {data.agency_performance.map((a) => (
+                    <div key={a.agency} className="tag-breakdown-row" style={{ alignItems: 'flex-start' }}>
+                      <span style={{ maxWidth: '60%' }}>{a.agency}</span>
+                      <span className="num" style={{ color: 'var(--ink-muted)', fontWeight: 400 }}>
+                        {a.completed}/{a.works_total} completed · {a.delayed} delayed
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="panel-note">
+                  No agency has recorded expenditure here yet - agency identity is only known once a work has a disbursement.
+                </p>
+              )}
 
               <h3>District authority</h3>
               {data.district_authority.map((name) => <p key={name} className="fact-line">{name}</p>)}
 
               <h3>MPs</h3>
+              {/* ranked by how many of this district's works that MP actually
+                  recommended - DISTRICT is derived from the sanctioning IDA,
+                  not the MP's own constituency, so a seat's works can be
+                  split across districts near a boundary; the count keeps a
+                  1-2-work edge case from reading as an equal co-MP next to a
+                  100+-work incumbent. */}
               <div className="tag-breakdown">
                 {data.mps.map((m) => (
                   <button
                     key={`${m.constituency_id}-${m.mp_name}`}
                     type="button"
                     className="tag-breakdown-row tag-breakdown-row-btn"
-                    onClick={() => navigate(`/constituency/${m.constituency_id}?scope=${encodeURIComponent(scope)}`)}
+                    onClick={() => navigate(
+                      isRoleView
+                        ? `/constituency/${m.constituency_id}?scope=${encodeURIComponent(scope)}&role=district&role_name=${encodeURIComponent(data.district)}`
+                        : `/constituency/${m.constituency_id}?scope=${encodeURIComponent(scope)}`
+                    )}
                   >
                     <span>{m.mp_name}</span>
-                    <span className="num" style={{ color: 'var(--ink-muted)', fontWeight: 400 }}>{m.constituency}</span>
+                    <span className="num" style={{ color: 'var(--ink-muted)', fontWeight: 400 }}>
+                      {m.constituency} · {m.works_count.toLocaleString('en-IN')} work{m.works_count === 1 ? '' : 's'}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -153,14 +209,25 @@ export function DistrictView() {
             </div>
 
             <div className="map-drill-findings">
-              <h3>Review queue ({data.queue.length})</h3>
-              {data.queue.length ? (
+              <h3>Pending action ({filteredQueue.length})</h3>
+              <div className="filters" style={{ marginBottom: 10 }}>
+                <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)}>
+                  <option value="">All severities</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+              {filteredQueue.length ? (
                 <div className="queue-list">
-                  {data.queue.map((item) => (
+                  {filteredQueue.map((item) => (
                     <button
                       key={`${item.work_number}-${item.scope_house}-${item.scope_tenure}`}
                       className="queue-item"
-                      onClick={() => navigate(`/work/${item.work_number}?scope_house=${encodeURIComponent(item.scope_house)}&scope_tenure=${encodeURIComponent(item.scope_tenure)}`)}
+                      onClick={() => navigate(
+                        `/work/${item.work_number}?scope_house=${encodeURIComponent(item.scope_house)}&scope_tenure=${encodeURIComponent(item.scope_tenure)}`
+                        + (isRoleView ? `&role=district&role_name=${encodeURIComponent(data.district)}` : '')
+                      )}
                     >
                       <div className="queue-item-top">
                         <span className="queue-item-title">{item.constituency}</span>
@@ -175,7 +242,7 @@ export function DistrictView() {
                   ))}
                 </div>
               ) : (
-                <EmptyState title="No findings above medium severity here" subtitle="This district has no flagged works for this scope." />
+                <EmptyState title="Nothing needs action" subtitle={severityFilter ? 'No flagged works at this severity for this scope.' : 'This district has no flagged works for this scope.'} />
               )}
             </div>
           </div>
