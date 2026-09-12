@@ -84,18 +84,17 @@ export function AgencyView() {
       value: formatRupees(data.scorecard.completed_count ? data.scorecard.completed / data.scorecard.completed_count : 0),
       sub: `Across ${data.scorecard.completed_count.toLocaleString('en-IN')} completed works`,
     },
-    { label: 'Total works', value: data.scorecard.works_total.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.sanctioned) },
-    {
-      label: 'Works flagged',
-      value: data.scorecard.works_flagged.toLocaleString('en-IN'),
-      sub: `of ${data.scorecard.works_total.toLocaleString('en-IN')} total works`,
-    },
     {
       label: 'Completion rate',
       value: completionRate != null ? `${completionRate.toFixed(0)}%` : '—',
       sub: `${data.scorecard.delayed.toLocaleString('en-IN')} delayed`,
     },
     { label: 'Sanctioned', value: data.scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.sanctioned) },
+    {
+      label: 'Works flagged',
+      value: data.scorecard.works_flagged.toLocaleString('en-IN'),
+      sub: `of ${data.scorecard.works_total.toLocaleString('en-IN')} total works`,
+    },
     { label: 'Completed', value: data.scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.completed) },
     { label: 'Paid', value: data.scorecard.paid_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.paid) },
     { label: 'Pending works', value: data.scorecard.ongoing.toLocaleString('en-IN'), sub: 'Sanctioned, not yet completed' },

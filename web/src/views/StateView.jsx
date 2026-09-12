@@ -57,10 +57,10 @@ export function StateView() {
   // same 8 KPI fields MoSPI's own overview leads with (NationalView.jsx),
   // scoped to this state's own scorecard instead of the national funnel.
   const cards = data ? [
-    { label: 'Total works', value: data.scorecard.works_total.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.allocated) },
     { label: 'Recommended', value: data.scorecard.recommended_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.recommended) },
     { label: 'Sanctioned', value: data.scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.sanctioned) },
     { label: 'Completed', value: data.scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.completed) },
+    { label: 'Works flagged', value: data.scorecard.works_flagged.toLocaleString('en-IN'), sub: `of ${data.scorecard.works_total.toLocaleString('en-IN')} total works` },
     {
       label: 'Fund utilisation',
       value: data.scorecard.allocated ? `${((data.scorecard.paid / data.scorecard.allocated) * 100).toFixed(0)}%` : '—',

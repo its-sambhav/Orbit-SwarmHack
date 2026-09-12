@@ -68,10 +68,10 @@ export function NationalView() {
   // financial-health cards lead, the original volume cards follow - a 2-column
   // x 4-row matrix rather than 8 cards jammed into one row.
   const cards = funnel ? [
-    { label: 'Total works', value: funnel.total_works.toLocaleString('en-IN'), sub: formatRupees(funnel.total_amount) },
     { label: 'Recommended', value: funnel.recommended.toLocaleString('en-IN'), sub: formatRupees(funnel.recommended_amount) },
     { label: 'Sanctioned', value: funnel.sanctioned.toLocaleString('en-IN'), sub: formatRupees(funnel.sanctioned_amount) },
     { label: 'Completed', value: funnel.completed.toLocaleString('en-IN'), sub: formatRupees(funnel.completed_amount) },
+    { label: 'Works flagged', value: funnel.works_flagged.toLocaleString('en-IN'), sub: `of ${funnel.total_works.toLocaleString('en-IN')} total works` },
     {
       label: 'Fund utilisation',
       value: funnel.allocated ? `${((funnel.paid / funnel.allocated) * 100).toFixed(0)}%` : '—',

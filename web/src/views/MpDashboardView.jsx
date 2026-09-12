@@ -65,10 +65,10 @@ export function MpDashboardView() {
   // same 8 KPI fields MoSPI's own overview leads with (NationalView.jsx),
   // scoped to this MP's own scorecard.
   const cards = [
-    { label: 'Total works', value: scorecard.works_total.toLocaleString('en-IN'), sub: formatRupees(scorecard.allocated) },
     { label: 'Recommended', value: scorecard.recommended_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.recommended) },
     { label: 'Sanctioned', value: scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.sanctioned) },
     { label: 'Completed', value: scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.completed) },
+    { label: 'Works flagged', value: scorecard.works_flagged.toLocaleString('en-IN'), sub: `of ${scorecard.works_total.toLocaleString('en-IN')} total works` },
     {
       label: 'Fund utilisation',
       value: scorecard.allocated ? `${((scorecard.paid / scorecard.allocated) * 100).toFixed(0)}%` : '—',

@@ -33,14 +33,30 @@ export function DistrictMapView() {
   const [valueMode, setValueMode] = useState('amount')
 
   const [pcGeojson, setPcGeojson] = useState(null)
+  // state-wide district boundaries + risk, so a State Nodal Authority (or
+  // MoSPI) viewing one district can click straight to a sibling district on
+  // the map instead of backing out to the state overview first. The District
+  // Authority role stays on its own single-district heatmap below - that
+  // role has no legitimate access to a neighbouring district's data.
+  const [districtsGeojson, setDistrictsGeojson] = useState(null)
+  const [stateDistricts, setStateDistricts] = useState(null)
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}) }, [])
   useEffect(() => { fetch('/static/geo/india_pc_2019_simplified.geojson').then((r) => r.json()).then(setPcGeojson) }, [])
+  useEffect(() => {
+    if (isRoleView) return
+    fetch('/static/geo/india_districts_simplified.geojson').then((r) => r.json()).then(setDistrictsGeojson)
+  }, [isRoleView])
 
   useEffect(() => {
     setData(null)
     api.district(stateName, districtName, scope, { dateFrom, dateTo }).then(setData).catch((e) => setError(e.message))
   }, [stateName, districtName, scope, dateFrom, dateTo])
+
+  useEffect(() => {
+    if (isRoleView || !data?.state) return
+    api.districts(data.state, scope).then(setStateDistricts).catch(() => {})
+  }, [isRoleView, data?.state, scope])
 
   function setRange(from, to) {
     const next = new URLSearchParams(params)
@@ -66,6 +82,21 @@ export function DistrictMapView() {
     const features = pcGeojson.features.filter((f) => pcIds.has(f.properties.pc_id))
     return features.length ? { type: 'FeatureCollection', features } : null
   }, [pcGeojson, data])
+
+  const stateDistrictsFilteredGeojson = useMemo(() => {
+    if (!districtsGeojson || !data) return null
+    const features = districtsGeojson.features.filter((f) => f.properties.state === data.state)
+    return features.length ? { type: 'FeatureCollection', features } : null
+  }, [districtsGeojson, data])
+
+  const districtDataByKey = useMemo(() => {
+    if (!stateDistricts) return {}
+    const map = {}
+    for (const d of stateDistricts.items) {
+      map[d.district] = { works_total: d.works_total, works_flagged: d.works_flagged, breach_rate: d.breach_rate, risk_score: d.risk_score }
+    }
+    return map
+  }, [stateDistricts])
 
   const anomalyHeatByKey = useMemo(() => {
     if (!data) return {}
@@ -120,10 +151,11 @@ export function DistrictMapView() {
               { label: data.district, to: overviewUrl },
               { label: 'Map' },
             ]} />
-            <h1 style={{ margin: '4px 0 2px' }}>{data.district} — anomaly map</h1>
+            <h1 style={{ margin: '4px 0 2px' }}>{data.district} — {isRoleView ? 'anomaly map' : 'district map'}</h1>
             <div className="mospi-page-sub-row">
               <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13, flex: 1, minWidth: 240 }}>
                 {isRoleView ? 'District Authority' : 'MoSPI'} · {data.state} · {scopeLabel(scope)}
+                {!isRoleView && ' · Click another district on the map to switch'}
               </div>
               <div className="report-toolbar">
                 <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
@@ -184,7 +216,19 @@ export function DistrictMapView() {
             </div>
 
             <div className="map-drill-map">
-              {districtFilteredPcGeojson ? (
+              {!isRoleView && stateDistrictsFilteredGeojson ? (
+                <>
+                  <IndiaMap
+                    geojson={stateDistrictsFilteredGeojson}
+                    keyProp="district"
+                    nameProp="district"
+                    dataByKey={districtDataByKey}
+                    focusKey={data.district}
+                    onSelect={(risk, key) => navigate(`/district/${encodeURIComponent(data.state)}/${encodeURIComponent(key)}/map?${params.toString()}`)}
+                  />
+                  <MapLegend />
+                </>
+              ) : districtFilteredPcGeojson ? (
                 <>
                   <IndiaMap
                     geojson={districtFilteredPcGeojson}
