@@ -65,6 +65,10 @@ export function MpDashboardView() {
   // same 8 KPI fields MoSPI's own overview leads with (NationalView.jsx),
   // scoped to this MP's own scorecard.
   const cards = [
+    { label: 'Total works', value: scorecard.works_total.toLocaleString('en-IN'), sub: formatRupees(scorecard.allocated) },
+    { label: 'Recommended', value: scorecard.recommended_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.recommended) },
+    { label: 'Sanctioned', value: scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.sanctioned) },
+    { label: 'Completed', value: scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.completed) },
     {
       label: 'Fund utilisation',
       value: scorecard.allocated ? `${((scorecard.paid / scorecard.allocated) * 100).toFixed(0)}%` : '—',
@@ -85,10 +89,6 @@ export function MpDashboardView() {
       value: formatRupees(scorecard.completed_count ? scorecard.completed / scorecard.completed_count : 0),
       sub: `Across ${scorecard.completed_count.toLocaleString('en-IN')} completed works`,
     },
-    { label: 'Total works', value: scorecard.works_total.toLocaleString('en-IN'), sub: formatRupees(scorecard.allocated) },
-    { label: 'Recommended', value: scorecard.recommended_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.recommended) },
-    { label: 'Sanctioned', value: scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.sanctioned) },
-    { label: 'Completed', value: scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.completed) },
   ]
 
   const tagItems = Object.entries(data.tag_breakdown).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }))

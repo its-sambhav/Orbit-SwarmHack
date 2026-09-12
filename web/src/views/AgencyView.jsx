@@ -79,10 +79,6 @@ export function AgencyView() {
     ? (data.scorecard.completed_count / data.scorecard.sanctioned_count) * 100
     : null
   const cards = [
-    { label: 'Sanctioned', value: data.scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.sanctioned) },
-    { label: 'Completed', value: data.scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.completed) },
-    { label: 'Paid', value: data.scorecard.paid_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.paid) },
-    { label: 'Pending works', value: data.scorecard.ongoing.toLocaleString('en-IN'), sub: 'Sanctioned, not yet completed' },
     {
       label: 'Avg. cost / completed work',
       value: formatRupees(data.scorecard.completed_count ? data.scorecard.completed / data.scorecard.completed_count : 0),
@@ -99,6 +95,10 @@ export function AgencyView() {
       value: completionRate != null ? `${completionRate.toFixed(0)}%` : '—',
       sub: `${data.scorecard.delayed.toLocaleString('en-IN')} delayed`,
     },
+    { label: 'Sanctioned', value: data.scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.sanctioned) },
+    { label: 'Completed', value: data.scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.completed) },
+    { label: 'Paid', value: data.scorecard.paid_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.paid) },
+    { label: 'Pending works', value: data.scorecard.ongoing.toLocaleString('en-IN'), sub: 'Sanctioned, not yet completed' },
   ]
 
   const tagItems = Object.entries(data.tag_breakdown).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }))
