@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, formatRupees } from '../api'
+import { api, formatRupees, mapCategoryBreakdown } from '../api'
 import { MospiNav } from '../components/MospiNav'
-import { IndiaMap } from '../components/IndiaMap'
+import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
-import { StatusBarChart, STATUS_COLORS } from '../components/StatusBarChart'
+import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip } from '../components/Chips'
 import { GenerateReportButton } from '../components/ReportTools'
@@ -32,6 +32,7 @@ export function ConstituencyView() {
   const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [geojson, setGeojson] = useState(null)
+  const [constituencies, setConstituencies] = useState(null)
   const [error, setError] = useState(null)
   const [valueMode, setValueMode] = useState('amount')
 
@@ -44,6 +45,54 @@ export function ConstituencyView() {
     fetch('/static/geo/india_pc_2019_simplified.geojson').then((r) => r.json()).then(setGeojson)
   }, [])
 
+  // the nationwide risk list already has real works_total/works_flagged/
+  // breach_rate/risk_score per constituency - the same list the search bar
+  // and StatesPanel-style rankings already use - so this constituency's map
+  // shows real heatmap colour for its state neighbours too, not just an
+  // isolated grey outline of the one seat.
+  useEffect(() => {
+    api.constituencies(scope).then(setConstituencies).catch(() => {})
+  }, [scope])
+
+  // this seat's own real scorecard numbers take precedence (data.pc_id may
+  // not even appear in the constituencies list's own join if its crosswalk
+  // entry differs slightly) - real either way, never a fabricated fallback.
+  const constituencyDataByKey = useMemo(() => {
+    const map = {}
+    if (constituencies?.items) {
+      for (const c of constituencies.items) {
+        if (c.pc_id != null) map[c.pc_id] = c
+      }
+    }
+    if (data?.pc_id != null) {
+      const worksTotal = data.scorecard?.works_total || 1
+      const worksFlagged = data.scorecard?.works_flagged || 0
+      const breachRate = data.scorecard?.breach_rate ?? (worksTotal ? worksFlagged / worksTotal : 0)
+      map[data.pc_id] = {
+        constituency: data.constituency, state: data.state,
+        works_total: worksTotal, works_flagged: worksFlagged,
+        breach_rate: breachRate, risk_score: breachRate * 100,
+        ...map[data.pc_id],
+      }
+    }
+    return map
+  }, [constituencies, data])
+
+  // this seat plus every other constituency in the same state, so the map
+  // reads as "this seat in context" rather than one shape floating alone.
+  const stateFilteredPcGeojson = useMemo(() => {
+    if (!geojson || !data?.state) return null
+    const stateName = data.state.trim().toLowerCase()
+    const pcIds = new Set(
+      (constituencies?.items || [])
+        .filter((c) => c.state && c.state.trim().toLowerCase() === stateName && c.pc_id != null)
+        .map((c) => c.pc_id)
+    )
+    if (data.pc_id != null) pcIds.add(data.pc_id)
+    const features = geojson.features.filter((f) => pcIds.has(f.properties.pc_id))
+    return features.length ? { type: 'FeatureCollection', features } : geojson
+  }, [geojson, data, constituencies])
+
   if (error) return <ErrorView message={error} />
   if (!data) return <Loading label="Loading constituency" />
 
@@ -51,12 +100,7 @@ export function ConstituencyView() {
   const completionDelta = scorecard.completion_rate != null && scorecard.national_median_completion_rate != null
     ? scorecard.completion_rate - scorecard.national_median_completion_rate
     : null
-  const statusItems = [
-    { label: 'Recommended', value: scorecard.recommended_count, amount: scorecard.recommended, color: STATUS_COLORS.recommended },
-    { label: 'Sanctioned', value: scorecard.sanctioned_count, amount: scorecard.sanctioned, color: STATUS_COLORS.sanctioned },
-    { label: 'High risk', value: scorecard.high_risk_count, amount: scorecard.high_risk_amount, color: STATUS_COLORS.highRisk },
-    { label: 'Completed', value: scorecard.completed_count, amount: scorecard.completed, color: STATUS_COLORS.completed },
-  ]
+  const lifecycleSectors = mapCategoryBreakdown(data.category_breakdown)
 
   // the drill-down trail continues within the role's own authorized scope -
   // back to the state/district page the role itself owns, never back out to
@@ -150,7 +194,7 @@ export function ConstituencyView() {
             </p>
           )}
 
-          <StatusBarChart title="Projects by status" items={statusItems} />
+          <ProjectLifecycleBarChart title="Project Lifecycle & Risk Breakdown" sectors={lifecycleSectors} />
 
           <h3>By tag</h3>
           <div className="tag-breakdown">
@@ -162,7 +206,16 @@ export function ConstituencyView() {
 
         <div className="map-drill-map">
           {data.pc_id && geojson ? (
-            <IndiaMap geojson={geojson} keyProp="pc_id" dataByKey={{}} focusKey={data.pc_id} />
+            <>
+              <IndiaMap
+                geojson={stateFilteredPcGeojson || geojson}
+                keyProp="pc_id"
+                nameProp="pc_name"
+                dataByKey={constituencyDataByKey}
+                focusKey={data.pc_id}
+              />
+              <MapLegend />
+            </>
           ) : (
             <EmptyState title="No boundary matched for this constituency" subtitle="Falls in the unmatched tail of the name crosswalk between this dataset and the boundary source." />
           )}

@@ -9,3 +9,5 @@ uvicorn
 httpx
 python-dotenv
 shapely
+scikit-learn
+joblib

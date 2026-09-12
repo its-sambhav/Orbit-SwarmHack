@@ -125,6 +125,19 @@ detectors:
       limit for the tenure, matched by constituency + tenure. This is a
       hard compliance check against ALLOCATED_AMT, not a percentile judgement.
 
+  STATUTORY_SC_ST_DEFICIT:
+    tag: "STATUTORY COMPLIANCE"
+    confidence: rule
+    severity: high
+    sc_target_pct: 15.0
+    st_target_pct: 7.5
+    min_evaluated_amount: 20000000  # ₹2 Cr minimum portfolio recommendations to evaluate compliance
+    guideline_source: >-
+      MPLADS Guideline Rule 2.5: at least 15% of annual MPLADS funds must be used
+      for areas inhabited by Scheduled Caste (SC) population and 7.5% for Scheduled
+      Tribe (ST) population. Flagged when an MP's portfolio fails to meet the statutory
+      minimum allocation thresholds.
+
   COST_OUTLIER:
     tag: "COST OUTLIER"
     confidence: statistical

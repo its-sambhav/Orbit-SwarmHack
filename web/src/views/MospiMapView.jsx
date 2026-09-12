@@ -57,6 +57,10 @@ export function MospiMapView() {
   const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
   const [valueMode, setValueMode] = useState('amount')
+  // which ranked list the state drill-in's side panel shows - the map itself
+  // stays the constituency choropleth either way (same as MoSPI's own
+  // sibling build), this only swaps the list below the scorecard.
+  const [stateTab, setStateTab] = useState('constituencies')
 
   // level === 'india': the whole country, one polygon per state, coloured by
   // that state's own aggregate breach rate across all its constituencies.
@@ -292,21 +296,49 @@ export function MospiMapView() {
                     <span>Breach rate</span>
                     <span className="value num">{(stateDetail.breach_rate * 100).toFixed(0)}%</span>
                   </div>
-                  <h3>Constituencies ({stateConstituencies.length})</h3>
-                  <div className="rank-list rank-list-compact">
-                    {[...stateConstituencies].sort((a, b) => b.risk_score - a.risk_score).map((c) => (
-                      <button
-                        key={c.constituency_id}
-                        type="button"
-                        className="rank-item"
-                        onClick={() => navigate(`/constituency/${c.constituency_id}?scope=${encodeURIComponent(scope)}`)}
-                      >
-                        <span className="rank-item-name">{c.constituency}</span>
-                        <span className="rank-item-meta num">{c.works_flagged.toLocaleString('en-IN')} flagged</span>
-                        <span className="rank-item-bar"><span style={{ width: `${Math.max(c.breach_rate * 100, 3)}%` }} /></span>
-                      </button>
-                    ))}
+                  <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
+                    <h3 style={{ margin: 0 }}>
+                      {stateTab === 'constituencies' ? `Constituencies (${stateConstituencies.length})` : `Districts (${stateDetail.districts.length})`}
+                    </h3>
+                    <ScopeToggle
+                      scopes={[
+                        { value: 'constituencies', label: `Constituencies (${stateConstituencies.length})` },
+                        { value: 'districts', label: `Districts (${stateDetail.districts.length})` },
+                      ]}
+                      value={stateTab} onChange={setStateTab} includeAll={false}
+                    />
                   </div>
+                  {stateTab === 'constituencies' ? (
+                    <div className="rank-list rank-list-compact">
+                      {[...stateConstituencies].sort((a, b) => b.risk_score - a.risk_score).map((c) => (
+                        <button
+                          key={c.constituency_id}
+                          type="button"
+                          className="rank-item"
+                          onClick={() => navigate(`/constituency/${c.constituency_id}?scope=${encodeURIComponent(scope)}`)}
+                        >
+                          <span className="rank-item-name">{c.constituency}</span>
+                          <span className="rank-item-meta num">{c.works_flagged.toLocaleString('en-IN')} flagged</span>
+                          <span className="rank-item-bar"><span style={{ width: `${Math.max(c.breach_rate * 100, 3)}%` }} /></span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rank-list rank-list-compact">
+                      {[...stateDetail.districts].sort((a, b) => b.risk_score - a.risk_score).map((d) => (
+                        <button
+                          key={d.district}
+                          type="button"
+                          className="rank-item"
+                          onClick={() => navigate(`/district/${encodeURIComponent(selectedState)}/${encodeURIComponent(d.district)}?scope=${encodeURIComponent(scope)}`)}
+                        >
+                          <span className="rank-item-name">{d.district}</span>
+                          <span className="rank-item-meta num">{d.works_flagged.toLocaleString('en-IN')} flagged</span>
+                          <span className="rank-item-bar"><span style={{ width: `${Math.max(d.breach_rate * 100, 3)}%` }} /></span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </>
               ) : <Loading label="Loading scorecard" />
             )}

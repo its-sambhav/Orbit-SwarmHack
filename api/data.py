@@ -26,6 +26,7 @@ import pandas as pd
 from engine.paths import DATA_FINDINGS, DATA_PROCESSED, DATA_INTERIM, ROOT
 from engine.detectors import load_config
 from engine import rollup
+from api.sector_categories import categorize_activity
 
 GEO_DIR = ROOT / "data" / "geo"
 
@@ -54,6 +55,17 @@ class Store:
 
         self.spine["work_number"] = self.spine["WORK_RECOMMENDATION_DTL_ID"].astype("int64").astype(str)
 
+        # sector bucket for the "Project Lifecycle & Risk Breakdown" chart -
+        # derived from ACTIVITY_NAME_CLEAN (whichever stage's copy of it
+        # exists first; one work has the same activity at every stage it
+        # reaches), not the near-useless 4-value WORK_CATEGORY column (98.4%
+        # "Normal/Others" - see docs/SCHEMA.md). See api/sector_categories.py
+        # for the category definitions and how each real activity maps to one.
+        activity = self.spine["rec_ACTIVITY_NAME_CLEAN"] \
+            .fillna(self.spine["san_ACTIVITY_NAME_CLEAN"]) \
+            .fillna(self.spine["comp_ACTIVITY_NAME_CLEAN"])
+        self.spine["CATEGORY"] = activity.apply(categorize_activity)
+
         # entities.district stays a deliberate null on every finding (no real
         # LGD-style district field exists - see docs/SCHEMA.md) - the derived
         # DISTRICT (parsed from IDA_NAME) lives on the spine instead, so it's
@@ -73,6 +85,15 @@ class Store:
         self.work_risk["date"] = self.work_risk.set_index(
             ["work_number", "scope_house", "scope_tenure"]
         ).index.map(date_lookup)
+
+        # same join, for the high-risk slice of the sector breakdown - work_risk
+        # only carries flagged works, so its own CATEGORY has to come from the
+        # spine the same way DISTRICT/date do above.
+        category_lookup = self.spine.set_index(["work_number", "SCOPE_HOUSE", "SCOPE_TENURE"])["CATEGORY"]
+        self.work_risk["category"] = self.work_risk.set_index(
+            ["work_number", "scope_house", "scope_tenure"]
+        ).index.map(category_lookup)
+
         self.findings["date"] = self.findings.set_index(
             ["work_number", "scope_house", "scope_tenure"]
         ).index.map(date_lookup)

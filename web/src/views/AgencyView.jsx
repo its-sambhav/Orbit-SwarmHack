@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, formatRupees } from '../api'
+import { api, formatRupees, mapCategoryBreakdown } from '../api'
 import { MospiNav } from '../components/MospiNav'
-import { ScorecardCell } from '../components/Scorecard'
-import { StatusBarChart, STATUS_COLORS } from '../components/StatusBarChart'
+import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart'
+import { RankChart } from '../components/RankChart'
+import { DonutCard } from '../components/DonutCard'
 import { Breadcrumb } from '../components/Breadcrumb'
-import { SeverityChip, TagChip } from '../components/Chips'
+import { SeverityChip, TagChip, TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
@@ -31,7 +32,6 @@ export function AgencyView() {
   const [error, setError] = useState(null)
   const [severityFilter, setSeverityFilter] = useState('')
   const [stateFilter, setStateFilter] = useState('')
-  const [valueMode, setValueMode] = useState('amount')
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}) }, [])
 
@@ -64,11 +64,53 @@ export function AgencyView() {
   if (!data) return <Loading label="Loading agency" />
 
   // no "Recommended" bar - allocation/recommendation is a per-MP figure an
-  // implementing agency doesn't have (see data.scorecard's own API comment).
-  const statusItems = [
-    { label: 'Sanctioned', value: data.scorecard.sanctioned_count, amount: data.scorecard.sanctioned, color: STATUS_COLORS.sanctioned },
-    { label: 'High risk', value: data.scorecard.high_risk_count, amount: data.scorecard.high_risk_amount, color: STATUS_COLORS.highRisk },
-    { label: 'Completed', value: data.scorecard.completed_count, amount: data.scorecard.completed, color: STATUS_COLORS.completed },
+  // implementing agency doesn't have (see data.scorecard's own API comment),
+  // so it's zeroed out here even though the shared category_breakdown
+  // technically has a real (agency-meaningless) number for it.
+  const lifecycleSectors = mapCategoryBreakdown(data.category_breakdown)
+    .map((c) => ({ ...c, recommended: 0, recommended_cr: 0 }))
+
+  // an implementing agency has no allocated/recommended figure of its own
+  // (see the comment above and data.scorecard's own shape) - the 8-KPI row
+  // substitutes Works flagged and Completion rate for MoSPI's own Fund
+  // Utilisation/Recommended cards rather than showing a field this role
+  // doesn't have.
+  const completionRate = data.scorecard.sanctioned_count
+    ? (data.scorecard.completed_count / data.scorecard.sanctioned_count) * 100
+    : null
+  const cards = [
+    { label: 'Sanctioned', value: data.scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.sanctioned) },
+    { label: 'Completed', value: data.scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.completed) },
+    { label: 'Paid', value: data.scorecard.paid_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.paid) },
+    { label: 'Pending works', value: data.scorecard.ongoing.toLocaleString('en-IN'), sub: 'Sanctioned, not yet completed' },
+    {
+      label: 'Avg. cost / completed work',
+      value: formatRupees(data.scorecard.completed_count ? data.scorecard.completed / data.scorecard.completed_count : 0),
+      sub: `Across ${data.scorecard.completed_count.toLocaleString('en-IN')} completed works`,
+    },
+    { label: 'Total works', value: data.scorecard.works_total.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.sanctioned) },
+    {
+      label: 'Works flagged',
+      value: data.scorecard.works_flagged.toLocaleString('en-IN'),
+      sub: `of ${data.scorecard.works_total.toLocaleString('en-IN')} total works`,
+    },
+    {
+      label: 'Completion rate',
+      value: completionRate != null ? `${completionRate.toFixed(0)}%` : '—',
+      sub: `${data.scorecard.delayed.toLocaleString('en-IN')} delayed`,
+    },
+  ]
+
+  const tagItems = Object.entries(data.tag_breakdown).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }))
+  const tagColor = (item) => (TAG_COLOR_KEY[item.label] ? `var(--tag-${TAG_COLOR_KEY[item.label]})` : 'var(--ink-faint)')
+  // an agency's own work starts at Sanction, not Recommendation - the same
+  // 4-stage Recommendation/Sanction/Execution/Payment breakdown the other
+  // roles use doesn't apply here, so this uses the 3 stages this role's own
+  // scorecard actually tracks instead of forcing a stage it has no data for.
+  const stageItems = [
+    { label: 'Sanctioned', value: data.scorecard.sanctioned_count },
+    { label: 'Ongoing', value: data.scorecard.ongoing },
+    { label: 'Completed', value: data.scorecard.completed_count },
   ]
 
   return (
@@ -105,39 +147,24 @@ export function AgencyView() {
             {data.data_caveat}
           </p>
 
+          <div className="mospi-stats">
+            {cards.map((c) => (
+              <div className="mospi-stat-card" key={c.label}>
+                <div className="mospi-stat-label">{c.label}</div>
+                <div className="mospi-stat-value num">{c.value}</div>
+                <div className="mospi-stat-amount num">{c.sub}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mospi-charts-grid">
+            <ProjectLifecycleBarChart title={`Project Lifecycle & Risk Breakdown — ${data.agency}`} sectors={lifecycleSectors} />
+            <DonutCard title="Findings by tag" items={tagItems} colorFor={tagColor} />
+            <RankChart title="Works by stage" items={stageItems} />
+          </div>
+
           <div className="map-drill-row map-drill-row-2col">
             <div className="map-drill-details">
-              <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
-                <h3 style={{ margin: 0 }}>My work overview</h3>
-                <ScopeToggle
-                  scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
-                  value={valueMode} onChange={setValueMode} includeAll={false}
-                />
-              </div>
-              <div className="scorecard-grid">
-                <ScorecardCell label="Sanctioned" value={data.scorecard.sanctioned} count={data.scorecard.sanctioned_count} mode={valueMode} />
-                <ScorecardCell label="Completed" value={data.scorecard.completed} count={data.scorecard.completed_count} mode={valueMode} />
-                <ScorecardCell label="Paid" value={data.scorecard.paid} count={data.scorecard.paid_count} mode={valueMode} />
-                <div className="scorecard-cell">
-                  <div className="label">Flagged</div>
-                  <div className="value num">{data.scorecard.works_flagged.toLocaleString('en-IN')} / {data.scorecard.works_total.toLocaleString('en-IN')}</div>
-                </div>
-                <div className="scorecard-cell">
-                  <div className="label">Ongoing</div>
-                  <div className="value num">{data.scorecard.ongoing.toLocaleString('en-IN')}</div>
-                </div>
-                <div className="scorecard-cell">
-                  <div className="label">Delayed</div>
-                  <div className="value num">{data.scorecard.delayed.toLocaleString('en-IN')}</div>
-                </div>
-                <div className="scorecard-cell">
-                  <div className="label">Pending payments</div>
-                  <div className="value num">{data.scorecard.pending_payments.toLocaleString('en-IN')}</div>
-                </div>
-              </div>
-
-              <StatusBarChart title="Projects by status" items={statusItems} />
-
               <h3>States touched</h3>
               {data.states_touched.map((s) => <p key={s} className="fact-line">{s}</p>)}
 

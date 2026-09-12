@@ -63,13 +63,35 @@ function colorForPercentile(t) {
  * among the features actually on screen instead. Recomputing this per level
  * (national vs. one state's constituencies) is deliberate: "highest risk in
  * Bihar" should mean highest among Bihar's own seats, not compressed against
- * the national scale. */
+ * the national scale.
+ *
+ * A *percentile* rank is meaningless with only one feature on screen (or
+ * several tied on risk_score) - "highest among 1" isn't a real signal, but
+ * ranking it 1 unconditionally previously painted every single-constituency
+ * district's map deep red regardless of its actual risk (e.g. a genuinely
+ * 0-breach district like Amroha). Below that threshold, fall back to an
+ * absolute scale off the real rate instead: breach_rate when the caller has
+ * it (state/national/constituency-focus views), else a normalised anomaly
+ * count (District view's own heatmap, which has no breach_rate - see
+ * DistrictView.jsx's anomalyHeatByKey) - either way, a real 0 stays low, not
+ * "rank 1 of 1." */
 function usePercentileRanks(dataByKey) {
   return useMemo(() => {
     const entries = Object.entries(dataByKey).sort((a, b) => a[1].risk_score - b[1].risk_score)
     const n = entries.length
     const ranks = {}
-    entries.forEach(([key], i) => { ranks[key] = n > 1 ? i / (n - 1) : 1 })
+    if (n === 0) return ranks
+
+    const uniqueScores = new Set(entries.map(([, v]) => v.risk_score))
+    if (n <= 1 || uniqueScores.size <= 1) {
+      const sample = entries[0][1]
+      const rate = sample.breach_rate ?? Math.min((sample.anomaly_count ?? sample.risk_score ?? 0) / 10, 1)
+      const scaledRank = Math.min(Math.max(rate / 0.45, 0.1), 0.95)
+      for (const [key] of entries) ranks[key] = scaledRank
+      return ranks
+    }
+
+    entries.forEach(([key], i) => { ranks[key] = i / (n - 1) })
     return ranks
   }, [dataByKey])
 }
@@ -122,7 +144,42 @@ export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSe
           : `<strong>${name}</strong><br/>${risk.works_flagged.toLocaleString('en-IN')} / ${risk.works_total.toLocaleString('en-IN')} works flagged &middot; ${(risk.breach_rate * 100).toFixed(0)}%`,
         { sticky: true, className: 'map-tooltip' }
       )
-      if (onSelect) layer.on('click', () => onSelect(risk, key, feature))
+
+      // Leaflet's SVG renderer gives every feature here a real, focusable
+      // <path> (for keyboard a11y) whether or not the caller passed onSelect
+      // - a district's own anomaly-heatmap view (no click-through) is just
+      // as focusable as a state/constituency one that navigates on click.
+      // Clicking one leaves it focused, and with nothing else to draw a
+      // selection state the browser falls back to its own default focus
+      // ring, rendering as a stray black box around the clicked shape's
+      // bounding box. Blur unconditionally; `isFocus`/style() above already
+      // draws this app's own selected-outline, so nothing is lost.
+      layer.on('click', (e) => {
+        e?.originalEvent?.target?.blur?.()
+        layer?._path?.blur?.()
+        if (onSelect) onSelect(risk, key, feature)
+      })
+      // stops the browser from ever drawing that focus ring in the first
+      // place, rather than only cleaning it up after the fact on click.
+      layer.on('mousedown', (e) => e?.originalEvent?.preventDefault?.())
+
+      // hover "pop", same reasoning - every state/district/constituency
+      // shape lifts slightly under the cursor regardless of clickability:
+      // brought in front of its neighbours, a heavier dark border, and a
+      // drop-shadow for a raised look. Reverted via the same style(feature)
+      // the layer was drawn with, so it never fights with isFocus's own
+      // selected-outline - hovering a selected feature just adds the lift on
+      // top of it, and un-hovering always lands back on whatever style()
+      // says this feature should be.
+      layer.on('mouseover', () => {
+        layer.bringToFront()
+        layer.setStyle({ weight: 3, color: '#1e293b' })
+        layer._path?.classList.add('map-feature-hover')
+      })
+      layer.on('mouseout', () => {
+        layer.setStyle(style(feature))
+        layer._path?.classList.remove('map-feature-hover')
+      })
     } else {
       layer.bindTooltip(`<strong>${name}</strong><br/>No data for this scope`, { sticky: true, className: 'map-tooltip' })
     }

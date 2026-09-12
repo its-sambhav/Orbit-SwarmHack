@@ -123,6 +123,17 @@
 .mospi-map-page-body {
   position: fixed; top: 68px; left: 0; right: 0; bottom: 0;
   display: flex; flex-direction: column; padding: 16px 24px 20px;
+  /* originally sized for exactly the 3-column map row (each of its own
+     panels already scrolls independently below) - StateView/DistrictView/
+     MpDashboardView now stack an overview section (KPI row + chart grid +
+     map CTA) above that row too, taller than one screen. overflow-y:auto
+     here is a no-op for the pages whose content still fits exactly (nothing
+     to scroll, no visible change) and makes the rest of the page reachable
+     for the ones that don't, rather than silently clipping past the fold -
+     the same "the whole page has to scroll, not just fight for space
+     inside a fixed viewport-height row" fix the mobile breakpoint below
+     already applies, just no longer gated to narrow screens only. */
+  overflow-y: auto;
 }
 .mospi-map-page-header { flex: none; }
 .mospi-page-title { font-size: 23px; font-weight: 600; margin: 0 0 4px; }
@@ -182,22 +193,172 @@
 .donut-row-stacked .donut-legend { width: 100%; }
 .donut-legend-row-compact { grid-template-columns: 10px 1fr auto; }
 
-/* status bar chart (Projects by status) - 4 vertical bars anchored to a
-   shared baseline, one measure (project count), each bar its own validated
-   colour (see app.css header note / dataviz skill) since these are 4
-   distinct pipeline states, not a single-hue progression like Funnel.jsx's
-   stage bars. Financial value stays out of the bar itself (mixing two
-   measures on one axis is the #1 chart mistake) and shows in the legend
-   and the hover tooltip instead. */
-.status-bar-chart { display: flex; align-items: flex-end; gap: 16px; padding: 4px 2px 0; }
-.status-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 0; }
-.status-bar-value { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
-.status-bar-track { width: 100%; height: 120px; display: flex; align-items: flex-end; }
-.status-bar-fill { width: 100%; border-radius: 4px 4px 0 0; min-height: 3px; }
-.status-bar-label { font-size: 11.5px; color: var(--ink-muted); text-align: center; margin-top: 8px; }
-.status-bar-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--ink-muted); }
-.status-bar-legend-item { display: flex; align-items: center; gap: 6px; }
-.status-bar-swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+/* ==========================================================================
+   PROJECT LIFECYCLE & RISK BAR CHART
+   ========================================================================== */
+.project-lifecycle-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-lg, 12px);
+  padding: 16px 18px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.lifecycle-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.lifecycle-card-sub {
+  font-size: 11.5px;
+  color: var(--ink-muted, #64748b);
+  display: block;
+  margin-top: 2px;
+}
+
+.lifecycle-mode-toggle {
+  display: flex;
+  background: #f1f5f9;
+  padding: 2px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.mode-btn {
+  border: none;
+  background: transparent;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.mode-btn.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.lifecycle-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.lifecycle-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.legend-label {
+  color: #475569;
+  font-weight: 500;
+}
+
+.legend-val {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.legend-cr {
+  color: #64748b;
+  font-size: 10.5px;
+}
+
+.lifecycle-svg-wrap {
+  position: relative;
+  width: 100%;
+  height: 240px;
+}
+
+.lifecycle-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.lifecycle-bar:hover {
+  filter: brightness(1.08);
+}
+
+.lifecycle-tooltip {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  background: #0f172a;
+  color: #ffffff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 50;
+  white-space: nowrap;
+  animation: tooltipFadeIn 0.12s ease-out;
+}
+
+@keyframes tooltipFadeIn {
+  from { opacity: 0; transform: translate(-50%, -90%); }
+  to { opacity: 1; transform: translate(-50%, -100%); }
+}
+
+.tooltip-sector {
+  font-weight: 700;
+  font-size: 11.5px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  padding-bottom: 3px;
+}
+
+.tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.tooltip-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.tooltip-metric {
+  color: #cbd5e1;
+}
+
+.tooltip-num {
+  color: #ffffff;
+}
+
+.tooltip-financial {
+  font-size: 10.5px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.tooltip-financial strong {
+  color: #38bdf8;
+}
 
 /* Top states by risk - full coverage (every state/UT, not a top-5 slice),
    search + sort controls, a colour badge per row purely as a scan aid (the
@@ -243,6 +404,16 @@
 .map-legend-line { width: 16px; height: 0; border-top: 2.5px solid #2C4A66; display: inline-block; }
 .map-legend-line-dashed { border-top: 1.5px dashed var(--ink-muted); }
 .leaflet-tooltip.map-tooltip { font-family: var(--font); font-size: 12px; }
+/* hover "pop" for a clickable map feature (IndiaMap.jsx) - a drop-shadow
+   reads as the shape lifting off the page under the cursor; the weight/
+   colour change itself is applied inline via layer.setStyle (Leaflet owns
+   that, not CSS) since it has to be reverted through the same style()
+   function the layer was drawn with. cursor: pointer here too, since a
+   Leaflet vector layer has no default clickable affordance of its own. */
+.leaflet-interactive.map-feature-hover {
+  filter: drop-shadow(0 3px 6px rgba(15, 23, 42, 0.45));
+  cursor: pointer;
+}
 
 /* ---------- funnel ---------- */
 .funnel-row { display: grid; grid-template-columns: 76px 1fr 48px; align-items: center; gap: 8px; margin-bottom: 8px; }
@@ -390,6 +561,11 @@
   padding: 7px 14px; font-size: 12.5px; font-weight: 500; cursor: pointer;
 }
 .narrative-btn:hover { background: var(--accent-hover); }
+
+/* AI predictive risk panel (CaseFileView) */
+.ai-risk-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ai-risk-prob { font-size: 13.5px; font-weight: 600; }
+.ai-risk-drivers { margin: 0 0 12px; padding-left: 18px; font-size: 12.5px; color: var(--ink-muted); line-height: 1.6; }
 .narrative-btn:disabled { opacity: .5; cursor: default; }
 
 /* actions */
@@ -409,7 +585,18 @@
    one anomaly - reads as the same composition. */
 .map-drill-view { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 20px 24px; }
 .map-drill-header { flex: none; margin-bottom: 16px; }
-.map-drill-row { display: grid; grid-template-columns: 340px 1fr 380px; gap: 16px; flex: 1; min-height: 0; }
+/* min-height:0 (not the flex-item default of auto) is what let this row
+   fill "whatever's left" on the original map-only pages, shrinking below
+   its own content's natural size if the fixed-height parent above it left
+   little room - relying on each of its 3 panels' own internal overflow-y
+   scroll to absorb the rest. On the pages that now stack a KPI+chart
+   overview above this row, that same rule let the overview's own natural
+   height eat 100% of the flex parent, squeezing this row to a literal
+   zero-height box (confirmed via getBoundingClientRect while chasing an
+   unrelated scroll bug) - a real height floor fixes both: still shrinks
+   freely on the original pages (they're always taller than this anyway),
+   never collapses to nothing on the new ones. */
+.map-drill-row { display: grid; grid-template-columns: 340px 1fr 380px; gap: 16px; flex: 1; min-height: 480px; }
 .map-drill-row-2col { grid-template-columns: 340px 1fr; }
 
 .map-drill-details, .map-drill-findings, .map-drill-center {

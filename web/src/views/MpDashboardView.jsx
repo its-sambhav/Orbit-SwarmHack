@@ -1,18 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, formatDate, formatRupees } from '../api'
+import { api, formatRupees, mapCategoryBreakdown } from '../api'
 import { MospiNav } from '../components/MospiNav'
-import { IndiaMap } from '../components/IndiaMap'
-import { ScorecardCell } from '../components/Scorecard'
+import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart'
+import { RankChart } from '../components/RankChart'
+import { DonutCard } from '../components/DonutCard'
 import { Breadcrumb } from '../components/Breadcrumb'
-import { DonutChart, colorForIndex } from '../components/DonutChart'
+import { TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
-import { Loading, ErrorView, EmptyState } from '../components/StateViews'
+import { Loading, ErrorView } from '../components/StateViews'
 
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
-const STAGE_LABEL = (w) => (w.has_completed ? 'Completed' : w.has_sanctioned ? 'Sanctioned' : 'Recommended')
+const PIPELINE_STAGE_LABEL = { recommendation: 'Recommendation', sanction: 'Sanction', execution: 'Execution', payment: 'Payment' }
 
 // The MP's own dashboard - constituency development and recommendations,
 // not administrative execution. Shows the FULL recommended-works portfolio
@@ -20,6 +21,10 @@ const STAGE_LABEL = (w) => (w.has_completed ? 'Completed' : w.has_sanctioned ? '
 // "under review" language for flagged items, not MoSPI's audit-toned
 // "Findings"/evidence-table framing - that distinction is the whole point
 // of this being a separate view from ConstituencyView/MoSPI's own page.
+//
+// Overview/Map split - same as StateView.jsx/StateMapView.jsx: this page is
+// stats+charts only, the constituency map + recommended-works list live at
+// their own route, MpMapView.jsx (/mp/:id/map).
 export function MpDashboardView() {
   const { id: mpName } = useParams()
   const [params, setSearchParams] = useSearchParams()
@@ -29,14 +34,9 @@ export function MpDashboardView() {
   const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [meta, setMeta] = useState(null)
-  const [geojson, setGeojson] = useState(null)
   const [error, setError] = useState(null)
-  const [districtFilter, setDistrictFilter] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('')
-  const [valueMode, setValueMode] = useState('amount')
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}) }, [])
-  useEffect(() => { fetch('/static/geo/india_pc_2019_simplified.geojson').then((r) => r.json()).then(setGeojson) }, [])
 
   useEffect(() => {
     setData(null)
@@ -56,24 +56,51 @@ export function MpDashboardView() {
     setSearchParams(p)
   }
 
-  const districts = useMemo(() => {
-    if (!data) return []
-    return [...new Set(data.recommended_works.map((w) => w.district).filter(Boolean))].sort()
-  }, [data])
-
-  const filteredWorks = useMemo(() => {
-    if (!data) return []
-    return data.recommended_works.filter((w) =>
-      (!districtFilter || w.district === districtFilter)
-      && (!categoryFilter || w.activity === categoryFilter)
-    )
-  }, [data, districtFilter, categoryFilter])
-
   if (error) return <ErrorView message={error} />
   if (!data) return <Loading label="Loading MP dashboard" />
 
   const { scorecard } = data
-  const donutSegments = data.activity_breakdown.map((a, i) => ({ label: a.label, value: a.value, color: colorForIndex(i) }))
+  const lifecycleSectors = mapCategoryBreakdown(data.category_breakdown)
+
+  // same 8 KPI fields MoSPI's own overview leads with (NationalView.jsx),
+  // scoped to this MP's own scorecard.
+  const cards = [
+    {
+      label: 'Fund utilisation',
+      value: scorecard.allocated ? `${((scorecard.paid / scorecard.allocated) * 100).toFixed(0)}%` : '—',
+      sub: `${formatRupees(scorecard.paid)} of ${formatRupees(scorecard.allocated)} allocated`,
+    },
+    {
+      label: 'Completion rate',
+      value: scorecard.completion_rate != null ? `${scorecard.completion_rate.toFixed(0)}%` : '—',
+      sub: `${scorecard.completed_count.toLocaleString('en-IN')} of ${scorecard.sanctioned_count.toLocaleString('en-IN')} sanctioned works`,
+    },
+    {
+      label: 'Pending works',
+      value: scorecard.ongoing.toLocaleString('en-IN'),
+      sub: 'Sanctioned, not yet completed',
+    },
+    {
+      label: 'Avg. cost / completed work',
+      value: formatRupees(scorecard.completed_count ? scorecard.completed / scorecard.completed_count : 0),
+      sub: `Across ${scorecard.completed_count.toLocaleString('en-IN')} completed works`,
+    },
+    { label: 'Total works', value: scorecard.works_total.toLocaleString('en-IN'), sub: formatRupees(scorecard.allocated) },
+    { label: 'Recommended', value: scorecard.recommended_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.recommended) },
+    { label: 'Sanctioned', value: scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.sanctioned) },
+    { label: 'Completed', value: scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.completed) },
+  ]
+
+  const tagItems = Object.entries(data.tag_breakdown).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }))
+  const tagColor = (item) => (TAG_COLOR_KEY[item.label] ? `var(--tag-${TAG_COLOR_KEY[item.label]})` : 'var(--ink-faint)')
+  const stageItems = [
+    { label: PIPELINE_STAGE_LABEL.recommendation, value: scorecard.recommended_count },
+    { label: PIPELINE_STAGE_LABEL.sanction, value: scorecard.sanctioned_count },
+    { label: PIPELINE_STAGE_LABEL.execution, value: Math.max(0, scorecard.sanctioned_count - scorecard.completed_count) },
+    { label: PIPELINE_STAGE_LABEL.payment, value: scorecard.completed_count },
+  ]
+
+  const mapUrl = `/mp/${encodeURIComponent(mpName)}/map?${params.toString()}`
 
   return (
     <div className="mospi-page">
@@ -85,125 +112,50 @@ export function MpDashboardView() {
         profileName={data.mp_name}
         profileRole="Member of Parliament"
         avatarLetter="M"
-        drawerLinks={[]}
+        drawerLinks={[
+          { label: 'Map', onClick: () => navigate(mapUrl) },
+        ]}
       />
-      <div className="mospi-map-page-body" id="report-capture">
-        <div className="map-drill-view" style={{ padding: 0, height: '100%' }}>
-          <div className="map-drill-header">
-            <Breadcrumb items={[{ label: data.mp_name }]} />
-            <h1 style={{ margin: '4px 0 2px' }}>{data.mp_name}</h1>
-            <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>
-              {data.constituency}, {data.state} · {scopeLabel(scope)} · {data.status}
-            </div>
-            <div className="report-toolbar">
-              <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
-              <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
-              <GenerateReportButton
-                level="mp" scope={scope} dateFrom={dateFrom} dateTo={dateTo}
-                title={`${data.mp_name} — ${scopeLabel(scope)}`} summary={scorecard}
-              />
-            </div>
+      <div className="mospi-body" id="report-capture">
+        <div className="report-toolbar">
+          <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
+          <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
+          <GenerateReportButton
+            level="mp" scope={scope} dateFrom={dateFrom} dateTo={dateTo}
+            title={`${data.mp_name} — ${scopeLabel(scope)}`} summary={scorecard}
+          />
+        </div>
+
+        <div className="map-drill-header" style={{ marginBottom: 18 }}>
+          <Breadcrumb items={[{ label: data.mp_name }]} />
+          <h1 style={{ margin: '4px 0 2px' }}>{data.mp_name}</h1>
+          <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>
+            {data.constituency}, {data.state} · {scopeLabel(scope)} · {data.status}
           </div>
+        </div>
 
-          <div className="map-drill-row">
-            <div className="map-drill-details">
-              <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
-                <h3 style={{ margin: 0 }}>Constituency overview</h3>
-                <ScopeToggle
-                  scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
-                  value={valueMode} onChange={setValueMode} includeAll={false}
-                />
-              </div>
-              <div className="scorecard-grid">
-                <ScorecardCell label="Recommended" value={scorecard.recommended} count={scorecard.recommended_count} mode={valueMode} />
-                <ScorecardCell label="Sanctioned" value={scorecard.sanctioned} count={scorecard.sanctioned_count} mode={valueMode} />
-                <ScorecardCell label="Completed" value={scorecard.completed} count={scorecard.completed_count} mode={valueMode} />
-                <ScorecardCell label="Paid" value={scorecard.paid} count={scorecard.paid_count} mode={valueMode} />
-                <div className="scorecard-cell">
-                  <div className="label">Total projects</div>
-                  <div className="value num">{scorecard.works_total.toLocaleString('en-IN')}</div>
-                </div>
-                <div className="scorecard-cell">
-                  <div className="label">Pending approval</div>
-                  <div className="value num">{scorecard.pending_approvals.toLocaleString('en-IN')}</div>
-                </div>
-              </div>
-              <div className="comparison-row">
-                <span>Completion rate</span>
-                <span className="value num">{scorecard.completion_rate != null ? `${scorecard.completion_rate.toFixed(0)}%` : '—'}</span>
-              </div>
-
-              <h3>Fund utilization</h3>
-              <div className="comparison-row">
-                <span>Allocated</span>
-                <span className="value num">{formatRupees(scorecard.allocated)}</span>
-              </div>
-              <div className="comparison-row">
-                <span>Utilized (paid)</span>
-                <span className="value num">{formatRupees(scorecard.paid)}</span>
-              </div>
-              <div className="comparison-row">
-                <span>Utilization %</span>
-                <span className="value num">{scorecard.allocated ? `${((scorecard.paid / scorecard.allocated) * 100).toFixed(0)}%` : '—'}</span>
-              </div>
-
-              <h3>Where the funds are going</h3>
-              {donutSegments.length ? (
-                <DonutChart compact segments={donutSegments} onSelect={(seg) => setCategoryFilter(seg.label === categoryFilter ? '' : seg.label)} />
-              ) : (
-                <p className="panel-note">No categorised activity recorded for this window.</p>
-              )}
+        <div className="mospi-stats">
+          {cards.map((c) => (
+            <div className="mospi-stat-card" key={c.label}>
+              <div className="mospi-stat-label">{c.label}</div>
+              <div className="mospi-stat-value num">{c.value}</div>
+              <div className="mospi-stat-amount num">{c.sub}</div>
             </div>
+          ))}
+        </div>
 
-            <div className="map-drill-map">
-              {data.pc_id && geojson ? (
-                <IndiaMap geojson={geojson} keyProp="pc_id" dataByKey={{}} focusKey={data.pc_id} />
-              ) : (
-                <EmptyState title="No boundary matched for this constituency" subtitle="Falls in the unmatched tail of the name crosswalk between this dataset and the boundary source." />
-              )}
-            </div>
-
-            <div className="map-drill-findings">
-              <h3>Projects recommended ({filteredWorks.length})</h3>
-              <div className="filters" style={{ marginBottom: 10 }}>
-                <select value={districtFilter} onChange={(e) => setDistrictFilter(e.target.value)}>
-                  <option value="">All districts</option>
-                  {districts.map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
-                {categoryFilter && (
-                  <button type="button" className="btn-link" onClick={() => setCategoryFilter('')}>
-                    Clear category: {categoryFilter} ×
-                  </button>
-                )}
-              </div>
-              {filteredWorks.length ? (
-                <div className="queue-list">
-                  {filteredWorks.map((w) => (
-                    <button
-                      key={w.work_number}
-                      className="queue-item"
-                      onClick={() => navigate(`/work/${w.work_number}?scope_house=Lok%20Sabha&scope_tenure=${encodeURIComponent(scope)}&role=mp&role_name=${encodeURIComponent(data.mp_name)}`)}
-                    >
-                      <div className="queue-item-top">
-                        <span className="queue-item-title">{w.activity || `Work #${w.work_number}`}</span>
-                        <span className="queue-item-amount num">{formatRupees(w.recommended_amount)}</span>
-                      </div>
-                      <div className="queue-item-meta">
-                        {w.district ? `${w.district} · ` : ''}{STAGE_LABEL(w)} · Recommended {formatDate(w.recommended_date)}
-                      </div>
-                      {w.tags.length > 0 && (
-                        <div className="queue-item-chips">
-                          <span className="chip tag-chip">Under review · {w.tags.join(', ')}</span>
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <EmptyState title="No projects match these filters" subtitle="Try clearing a filter or widening the date range." />
-              )}
-            </div>
+        <button type="button" className="mospi-map-cta" onClick={() => navigate(mapUrl)}>
+          <div>
+            <div className="mospi-map-cta-title">View the constituency map</div>
+            <div className="mospi-map-cta-sub">{data.constituency}, {scopeLabel(scope)}</div>
           </div>
+          <span className="mospi-map-cta-arrow">→</span>
+        </button>
+
+        <div className="mospi-charts-grid">
+          <ProjectLifecycleBarChart title={`Project Lifecycle & Risk Breakdown — ${data.constituency}`} sectors={lifecycleSectors} />
+          <DonutCard title="Findings by tag" items={tagItems} colorFor={tagColor} />
+          <RankChart title="Works by pipeline stage" items={stageItems} />
         </div>
       </div>
     </div>

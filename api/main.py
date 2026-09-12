@@ -4,9 +4,12 @@
 
 Nothing here computes a detector or re-runs the pipeline - every route
 reads findings/work_risk/constituency_risk/spine that engine/run_pipeline.py
-already produced. The one exception, /api/narrative, calls Claude to format
-(never generate) reasoning already present in a finding's evidence - see
-api/narrative.py for the validator that enforces this.
+already produced. The exceptions: /api/narrative calls an LLM (via OpenRouter)
+to format (never generate) reasoning already present in a finding's evidence -
+see api/narrative.py for the validator that enforces this; /api/predict_risk
+and /api/work/{n}/ai_assessment call the trained scikit-learn model in
+engine/predictive.py (a real, separate signal from the rule-based detectors -
+predicts delay risk, it doesn't detect anything that already happened).
 """
 import base64
 import json
@@ -23,7 +26,9 @@ from pydantic import BaseModel
 
 from api.data import get_store, SCOPES, SCOPE_LABELS, GEO_DIR
 from api.narrative import generate_narrative
+from engine.predictive import predict_work_risk
 from api import reports as reports_store
+from api.sector_categories import CATEGORIES
 from engine import rollup
 
 app = FastAPI(title="MPLADS Anomaly Review API")
@@ -74,6 +79,32 @@ def delayed_count(findings_slice: pd.DataFrame) -> int:
     config/detectors.yaml's 6 time-delay detectors), not a second invented
     delay definition."""
     return int(findings_slice.loc[findings_slice["tag"] == "TIME DELAY", "work_number"].nunique())
+
+
+def category_breakdown(sp: pd.DataFrame, wr: pd.DataFrame) -> list[dict]:
+    """Recommended/sanctioned/high-risk/completed counts+amounts, split by
+    the 5 sector categories in api/sector_categories.py, for the "Project
+    Lifecycle & Risk Breakdown" chart. `sp`/`wr` are the same already
+    scope+filter-narrowed spine/work_risk slices the caller's own scorecard
+    uses - same source columns as get_funnel(), just grouped by CATEGORY
+    first, so this always foots to that scorecard's own totals."""
+    out = []
+    for cat in CATEGORIES:
+        csp = sp[sp["CATEGORY"] == cat]
+        cwr = wr[wr["category"] == cat]
+        high_risk = cwr[cwr["max_severity"] == "high"]
+        out.append({
+            "sector": cat,
+            "recommended": int(csp["has_recommended"].sum()),
+            "recommended_amount": float(csp.loc[csp["has_recommended"], "rec_RECOMMENDED_AMOUNT"].sum()),
+            "sanctioned": int(csp["has_sanctioned"].sum()),
+            "sanctioned_amount": float(csp.loc[csp["has_sanctioned"], "SANCTION_AMOUNT"].sum()),
+            "high_risk": int(len(high_risk)),
+            "high_risk_amount": float(high_risk["total_exposure"].sum()),
+            "completed": int(csp["has_completed"].sum()),
+            "completed_amount": float(csp.loc[csp["has_completed"], "comp_ACTUAL_AMOUNT"].sum()),
+        })
+    return out
 
 
 @app.get("/api/meta")
@@ -143,6 +174,7 @@ def get_funnel(scope: str = Query("all"), date_from: str | None = None, date_to:
         "completion_rate": completion_rate,
         "never_sanctioned": int((sp["has_recommended"] & ~sp["has_sanctioned"]).sum()),
         "sanctioned_never_completed": int((sp["has_sanctioned"] & ~sp["has_completed"]).sum()),
+        "category_breakdown": category_breakdown(sp, wr),
     })
 
 
@@ -309,6 +341,66 @@ def post_narrative(work_number: str, scope_house: str, scope_tenure: str, findin
     return clean(result)
 
 
+class PredictRiskRequest(BaseModel):
+    amount: float
+    state: str
+    activity: str
+    month: int = 6
+
+
+@app.post("/api/predict_risk")
+def post_predict_risk(body: PredictRiskRequest):
+    """Standalone, model-only endpoint - the raw predictive signal for any
+    hypothetical (amount, state, activity, month), independent of any one
+    real work. Mirrors the /api/work/{n}/ai_assessment inputs so a state/
+    district authority can ask "what if" before a work is even recommended,
+    not just review one that already exists."""
+    return clean(predict_work_risk(
+        amount=body.amount, state=body.state, activity=body.activity, month=body.month,
+    ))
+
+
+@app.get("/api/work/{work_number}/ai_assessment")
+def get_work_ai_assessment(work_number: str, scope_house: str, scope_tenure: str):
+    """Composite AI read on one work: the rule-based findings already on
+    file, this same work's own ML-predicted delay risk (engine/predictive.py,
+    fed straight from its own recommended amount/state/activity/month - never
+    hypothetical inputs the caller has to reconstruct), and the constrained
+    LLM narrative for whichever finding is most severe. Three independently-
+    built signals, composited into the one read a reviewing officer actually
+    wants - not three separate calls the frontend has to stitch together."""
+    s = get_store()
+    work = s.work(work_number, scope_house, scope_tenure)
+    if work is None:
+        raise HTTPException(404, f"no work {work_number} in {scope_house}/{scope_tenure}")
+    findings = s.findings_for_work(work_number, scope_house, scope_tenure)
+
+    rec_date = work.get("rec_RECOMMENDATION_DATE")
+    month = rec_date.month if pd.notna(rec_date) else 6
+    amount = work.get("rec_RECOMMENDED_AMOUNT")
+    if amount is None or (isinstance(amount, float) and math.isnan(amount)):
+        amount = work.get("SANCTION_AMOUNT") or 500000
+    activity = work.get("rec_ACTIVITY_NAME_CLEAN") or work.get("san_ACTIVITY_NAME_CLEAN") or "General"
+
+    prediction = predict_work_risk(
+        amount=float(amount), state=work.get("STATE_NAME") or "", activity=activity, month=month,
+    )
+
+    severity_rank = {"high": 3, "medium": 2, "low": 1}
+    top_finding = max(findings, key=lambda f: severity_rank.get(f["severity"], 0), default=None)
+    narrative = generate_narrative(top_finding) if top_finding else None
+
+    return clean({
+        "work_number": work_number,
+        "rule_based_findings": [
+            {"finding_id": f["finding_id"], "detector": f["detector"], "tag": f["tag"], "severity": f["severity"]}
+            for f in findings
+        ],
+        "predicted_delay_risk": prediction,
+        "top_finding_narrative": narrative,
+    })
+
+
 @app.get("/api/constituency/{constituency_id}")
 def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None):
     s = get_store()
@@ -366,10 +458,12 @@ def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha"),
             "high_risk_amount": float(wr.loc[wr["max_severity"] == "high", "total_exposure"].sum()),
             "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
             "breach_rate": round(float(row["breach_rate"]), 4),
+            **stage_counts(sp),
             "completion_rate": completion_rate,
             "national_median_completion_rate": national_completion,
             "state_median_completion_rate": state_completion,
         },
+        "category_breakdown": category_breakdown(sp, wr),
         "tag_breakdown": tag_breakdown,
         "findings": ranked,
     })
@@ -469,6 +563,7 @@ def get_state(state_name: str, scope: str = Query("18th Lok Sabha"), date_from: 
             "completion_rate": completion_rate,
             "national_median_completion_rate": national_completion,
         },
+        "category_breakdown": category_breakdown(sp, wr),
         "districts": district_items, "tag_breakdown": tag_breakdown, "queue": queue,
     })
 
@@ -572,6 +667,8 @@ def get_mp(mp_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | 
     sanctioned_n = int(sp["has_sanctioned"].sum())
     completed_n = int(sp["has_completed"].sum())
     completion_rate = float(completed_n / sanctioned_n * 100) if sanctioned_n else None
+    wr = s.work_risk_for_scope(scope)
+    wr = wr[wr["work_number"].isin(work_numbers)]
 
     return clean({
         "mp_name": row["MP_NAME"], "scope_tenure": scope, "status": row["status"],
@@ -591,10 +688,12 @@ def get_mp(mp_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | 
             "paid_count": int(sp["has_expenditure"].sum()),
             "works_total": works_total, "works_flagged": int(works_flagged),
             "breach_rate": round(works_flagged / works_total, 4) if works_total else None,
-            "pending_approvals": int((sp["has_recommended"] & ~sp["has_sanctioned"]).sum()),
             "delayed": delayed_count(mp_findings),
+            **stage_counts(sp),
             "completion_rate": completion_rate,
         },
+        "category_breakdown": category_breakdown(sp, wr),
+        "tag_breakdown": mp_findings["tag"].value_counts().to_dict(),
         "activity_breakdown": activity_breakdown,
         "recommended_works": recommended_works,
     })
@@ -740,6 +839,7 @@ def get_district(state_name: str, district_name: str, scope: str = Query("18th L
             **stage_counts(sp),
             "completion_rate": completion_rate,
         },
+        "category_breakdown": category_breakdown(sp, wr),
         "tag_breakdown": tag_breakdown, "queue": queue,
     })
 
@@ -826,6 +926,7 @@ def get_agency(agency_name: str, scope: str = Query("18th Lok Sabha"), date_from
             "delayed": delayed_count(f),
             **stage_counts(sp),
         },
+        "category_breakdown": category_breakdown(sp, wr),
         "tag_breakdown": tag_breakdown, "queue": queue,
         "data_caveat": (
             "Agency identity is matched by name only (spelling/case-normalised, "

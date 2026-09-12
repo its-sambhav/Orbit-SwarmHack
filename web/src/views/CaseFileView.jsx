@@ -8,6 +8,50 @@ import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip, SuppressedChip } from '../components/Chips'
 import { Loading, ErrorView } from '../components/StateViews'
 
+// Maps the ML model's own risk_tier string ("High"/"Medium"/"Low") onto the
+// same severity token every rule-based finding already uses (SeverityChip),
+// rather than inventing a second colour scale for what is, visually, the
+// same kind of signal.
+const RISK_TIER_SEVERITY = { High: 'high', Medium: 'medium', Low: 'low' }
+
+// A separate, independent AI signal from the rule-based findings below it -
+// predicts this work's OWN chance of severe delay (engine/predictive.py, a
+// scikit-learn model trained on historical works), fed from its own real
+// recommended amount/state/activity/month, never a hypothetical the viewer
+// has to supply. Fails silently (returns null, not an error banner) since
+// this is a supplementary read, not required to review the case file.
+function AiRiskPanel({ workNumber, scopeHouse, scopeTenure }) {
+  const [assessment, setAssessment] = useState(null)
+
+  useEffect(() => {
+    setAssessment(null)
+    api.aiAssessment(workNumber, scopeHouse, scopeTenure).then(setAssessment).catch(() => {})
+  }, [workNumber, scopeHouse, scopeTenure])
+
+  if (!assessment) return null
+  const pred = assessment.predicted_delay_risk
+
+  return (
+    <div className="panel" style={{ marginTop: 12 }}>
+      <h2>AI predictive risk</h2>
+      <div className="ai-risk-row">
+        <SeverityChip severity={RISK_TIER_SEVERITY[pred.risk_tier] || 'medium'} />
+        <span className="ai-risk-prob num">{Math.round(pred.predicted_delay_probability * 100)}% predicted delay probability</span>
+      </div>
+      {pred.drivers.length > 0 && (
+        <ul className="ai-risk-drivers">
+          {pred.drivers.map((d, i) => <li key={i}>{d}</li>)}
+        </ul>
+      )}
+      <p className="panel-note" style={{ marginBottom: 0 }}>
+        Model AUC {pred.model_auc.toFixed(2)} on held-out historical works - predicts this work's OWN
+        delay risk before/at recommendation, a separate signal from the {assessment.rule_based_findings.length} rule-based
+        finding{assessment.rule_based_findings.length === 1 ? '' : 's'} below, not a replacement for them.
+      </p>
+    </div>
+  )
+}
+
 const ACTION_LABEL = { acknowledge: 'Acknowledged', escalate: 'Escalated', dismiss: 'Dismissed' }
 const ROLE_LABEL = { state: 'State Nodal Authority', district: 'District Authority', agency: 'Implementing Agency', mp: 'Member of Parliament' }
 const ROLE_AVATAR = { state: 'S', district: 'D', agency: 'A', mp: 'M' }
@@ -200,6 +244,7 @@ export function CaseFileView() {
         <div className="map-drill-details">
           <h3>Lifecycle</h3>
           <LifecycleTimeline lifecycle={work.lifecycle} />
+          <AiRiskPanel workNumber={work.work_number} scopeHouse={scopeHouse} scopeTenure={scopeTenure} />
         </div>
 
         <div className="map-drill-center">

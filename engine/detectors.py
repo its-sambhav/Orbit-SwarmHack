@@ -297,6 +297,100 @@ def detect_over_allocation(spine, cfg):
     return findings
 
 
+def detect_statutory_sc_st_deficit(spine, cfg):
+    """MP-level statutory compliance check: MPLADS Guideline Rule 2.5 mandates
+    at least 15% of annual funds for Scheduled Caste (SC) areas and 7.5% for
+    Scheduled Tribe (ST) areas.
+    Identifies SC/ST targeted works via:
+    1. Constituency reservation suffix: '(SC)' or '(ST)'
+    2. Description and activity keyword matches (e.g. 'SC', 'ST', 'SCHEDULED CASTE',
+       'SCHEDULED TRIBE', 'TRIBAL', 'BASTI', 'ADIVASI', 'ASHRAM SHALA', 'AMBEDKAR').
+    Evaluates MPs whose total portfolio recommendations exceed min_evaluated_amount.
+    Flags the MP's single largest non-SC/ST work with the shortfall amount as exposure.
+    """
+    c = cfg["detectors"].get("STATUTORY_SC_ST_DEFICIT")
+    if not c:
+        return []
+
+    min_amt = c.get("min_evaluated_amount", 20000000)
+    sc_target = c.get("sc_target_pct", 15.0)
+    st_target = c.get("st_target_pct", 7.5)
+
+    rec = spine[spine.has_recommended & spine["rec_RECOMMENDED_AMOUNT"].notna()].copy()
+    if rec.empty:
+        return []
+
+    # Detect SC and ST designation
+    constituency_upper = rec["CONSTITUENCY"].astype(str).str.upper()
+    is_sc_seat = constituency_upper.str.endswith("(SC)")
+    is_st_seat = constituency_upper.str.endswith("(ST)")
+
+    desc_upper = (rec["rec_WORK_DESCRIPTION"].fillna("").astype(str) + " " +
+                  rec["rec_ACTIVITY_NAME_CLEAN"].fillna("").astype(str)).str.upper()
+
+    sc_pattern = r'\b(SC|SCHEDULED CASTE|HARIJAN|VALMIKI|AMBEDKAR|DALIT)\b'
+    st_pattern = r'\b(ST|SCHEDULED TRIBE|TRIBAL|ADIVASI|GIRIDHAR|ASHRAM SHALA)\b'
+
+    has_sc_keywords = desc_upper.str.contains(sc_pattern, regex=True)
+    has_st_keywords = desc_upper.str.contains(st_pattern, regex=True)
+
+    rec["is_sc"] = is_sc_seat | (has_sc_keywords & ~is_st_seat)
+    rec["is_st"] = is_st_seat | (has_st_keywords & ~is_sc_seat)
+
+    # Calculate MP portfolio sums per tenure
+    mp_groups = rec.groupby(["MP_NAME", "SCOPE_TENURE"])
+    findings = []
+
+    for (mp_name, tenure), grp in mp_groups:
+        total_amt = grp["rec_RECOMMENDED_AMOUNT"].sum()
+        if total_amt < min_amt:
+            continue
+
+        sc_amt = grp.loc[grp["is_sc"], "rec_RECOMMENDED_AMOUNT"].sum()
+        st_amt = grp.loc[grp["is_st"], "rec_RECOMMENDED_AMOUNT"].sum()
+
+        sc_pct = (sc_amt / total_amt) * 100.0 if total_amt else 0.0
+        st_pct = (st_amt / total_amt) * 100.0 if total_amt else 0.0
+
+        sc_deficit = max(0.0, (sc_target - sc_pct) * total_amt / 100.0)
+        st_deficit = max(0.0, (st_target - st_pct) * total_amt / 100.0)
+        total_shortfall = sc_deficit + st_deficit
+
+        # Flag if either SC < 15% or ST < 7.5% with significant deficit (> ₹10L)
+        if (sc_pct < sc_target or st_pct < st_target) and total_shortfall >= 1000000:
+            rep_work = grp.loc[grp["rec_RECOMMENDED_AMOUNT"].idxmax()]
+            findings.append(build_finding(
+                rep_work,
+                detector_id="STATUTORY_SC_ST_DEFICIT",
+                tag=c["tag"],
+                severity=c["severity"],
+                confidence=c["confidence"],
+                financial_exposure=total_shortfall,
+                stage="recommendation",
+                observed={
+                    "total_recommended": float(total_amt),
+                    "sc_amount": float(sc_amt),
+                    "sc_percentage": round(float(sc_pct), 2),
+                    "st_amount": float(st_amt),
+                    "st_percentage": round(float(st_pct), 2),
+                    "sc_shortfall": float(sc_deficit),
+                    "st_shortfall": float(st_deficit),
+                    "total_shortfall": float(total_shortfall),
+                },
+                threshold={
+                    "sc_target_pct": sc_target,
+                    "st_target_pct": st_target,
+                    "source": c["guideline_source"],
+                },
+                deviation=(
+                    f"MP portfolio allocated {sc_pct:.1f}% to SC (target 15%) and {st_pct:.1f}% to ST (target 7.5%) "
+                    f"out of ₹{total_amt:,.0f} recommended — ₹{total_shortfall:,.0f} cumulative quota shortfall"
+                ),
+            ))
+
+    return findings
+
+
 def modified_z_scores(values: pd.Series) -> pd.Series:
     median = values.median()
     mad = (values - median).abs().median()
@@ -419,7 +513,7 @@ DETECTORS = [
     detect_stalled_at_sanction, detect_sanction_delay, detect_stalled_at_execution,
     detect_execution_delay, detect_temporal_impossible, detect_ghost_asset,
     detect_paid_not_complete, detect_stuck_status, detect_over_allocation,
-    detect_cost_outlier, detect_duplicate_work,
+    detect_statutory_sc_st_deficit, detect_cost_outlier, detect_duplicate_work,
 ]
 
 

@@ -1,15 +1,33 @@
 const BASE = '/api'
 
+// every state/district/constituency/etc. page re-fetches from scratch on
+// every visit today, so drilling back into a place you already opened this
+// session pays the same backend query cost again. Cache GET responses by
+// their full URL (scope/date-range params included, since they're already
+// part of the querystring) for the life of the page - navigating back to an
+// already-fetched view is then instant instead of round-tripping again.
+// Mutating calls (post/postJson/del) intentionally bypass this.
+const getCache = new Map()
+
 async function get(path, params = {}) {
   const qs = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
   ).toString()
-  const res = await fetch(`${BASE}${path}${qs ? `?${qs}` : ''}`)
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || `${res.status} ${res.statusText}`)
-  }
-  return res.json()
+  const url = `${BASE}${path}${qs ? `?${qs}` : ''}`
+  if (getCache.has(url)) return getCache.get(url)
+  const promise = (async () => {
+    const res = await fetch(url)
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail || `${res.status} ${res.statusText}`)
+    }
+    return res.json()
+  })().catch((err) => {
+    getCache.delete(url)
+    throw err
+  })
+  getCache.set(url, promise)
+  return promise
 }
 
 async function post(path, params = {}) {
@@ -68,6 +86,14 @@ export const api = {
       work_number: workNumber, scope_house: scopeHouse,
       scope_tenure: scopeTenure, finding_id: findingId,
     }),
+  // the ML-predicted delay-risk model (engine/predictive.py) - a signal
+  // independent of the rule-based detectors above, not a replacement.
+  predictRisk: (amount, state, activity, month) => postJson('/predict_risk', { amount, state, activity, month }),
+  // composites that same model's prediction (fed from this work's own real
+  // data, not hypothetical inputs) with this work's rule-based findings and
+  // its top finding's LLM narrative, in one call.
+  aiAssessment: (workNumber, scopeHouse, scopeTenure) =>
+    get(`/work/${workNumber}/ai_assessment`, { scope_house: scopeHouse, scope_tenure: scopeTenure }),
   mps: (params) => get('/mps', params),
   mp: (name, scope, { dateFrom, dateTo } = {}) =>
     get(`/mp/${encodeURIComponent(name)}`, { scope, date_from: dateFrom, date_to: dateTo }),
@@ -85,6 +111,23 @@ export function formatRupees(amount) {
   if (abs >= 1e7) return `₹${(amount / 1e7).toFixed(2)} Cr`
   if (abs >= 1e5) return `₹${(amount / 1e5).toFixed(2)} L`
   return `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+}
+
+// /api/funnel, /api/state/:name, /api/district/:s/:d, /api/constituency/:id
+// and /api/agency/:name all carry the same real, per-sector-category
+// recommended/sanctioned/high_risk/completed breakdown (api/main.py's
+// category_breakdown()) - this is the one shared reshape from that wire
+// format into what <ProjectLifecycleBarChart> renders (highRisk not
+// high_risk, amounts in crore not raw rupees).
+export function mapCategoryBreakdown(items) {
+  if (!items) return []
+  return items.map((c) => ({
+    sector: c.sector,
+    recommended: c.recommended, recommended_cr: c.recommended_amount / 1e7,
+    sanctioned: c.sanctioned, sanctioned_cr: c.sanctioned_amount / 1e7,
+    highRisk: c.high_risk, highRisk_cr: c.high_risk_amount / 1e7,
+    completed: c.completed, completed_cr: c.completed_amount / 1e7,
+  }))
 }
 
 export function formatDate(iso) {
