@@ -20,6 +20,7 @@ Two things are precomputed here rather than per-request:
    full table on every request.
 """
 import json
+import threading
 
 import pandas as pd
 
@@ -264,10 +265,21 @@ class Store:
 
 
 _store: Store | None = None
+_store_lock = threading.Lock()
 
 
 def get_store() -> Store:
+    """FastAPI's normal `def` (non-async) route handlers each run on a
+    worker thread, so without this lock two requests landing before the
+    first Store() finishes (e.g. the frontend's own handful of parallel
+    fetches on first load) would both see `_store is None` and both start
+    building it concurrently - racing on the same parquet reads and roughly
+    doubling the already-slow one-time load. Double-checked locking: the
+    lock is only ever taken on that first, slow build; every request after
+    that reads the already-set `_store` with no locking overhead."""
     global _store
     if _store is None:
-        _store = Store()
+        with _store_lock:
+            if _store is None:
+                _store = Store()
     return _store

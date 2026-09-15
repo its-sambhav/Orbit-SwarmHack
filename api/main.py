@@ -15,6 +15,7 @@ import base64
 import json
 import math
 import re
+from contextlib import asynccontextmanager
 
 import numpy as np
 import pandas as pd
@@ -31,7 +32,22 @@ from api import reports as reports_store
 from api.sector_categories import CATEGORIES
 from engine import rollup
 
-app = FastAPI(title="MPLADS Anomaly Review API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # api/data.py's own docstring says the Store loads "once at process
+    # start" - without this it actually only loaded lazily, on whichever
+    # request happened to arrive first, so a real user's first page load
+    # (not `uvicorn`'s own startup) silently ate the one-time ~20s cost of
+    # reading every parquet file into memory. This just makes that already-
+    # documented intent real: uvicorn now won't report ready / accept
+    # traffic until the data is loaded, instead of the first visitor's
+    # request doing it. No response, route, or behavior changes.
+    get_store()
+    yield
+
+
+app = FastAPI(title="MPLADS Anomaly Review API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
