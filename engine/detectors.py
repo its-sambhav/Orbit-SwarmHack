@@ -509,11 +509,85 @@ def detect_duplicate_work(spine, cfg):
     return findings
 
 
+def detect_agency_concentration(spine, cfg):
+    """District-agency concentration: an aggregate check per (DISTRICT,
+    exp_top_ia) pair, same shape as detect_over_allocation - a groupby, an
+    eligibility gate, then the pair's own largest-value work stands in as
+    the representative build_finding() row, since the signal is about the
+    AGENCY's aggregate footprint in a district, not any one work (not a
+    per-row _emit() mask like most detectors above). The percentile gate
+    itself reuses dynamic_gate() - the same recompute-every-run machinery
+    the TIME DELAY detectors already use - applied to the population of
+    eligible district-agency shares instead of day-counts.
+
+    exp_top_ia is only populated once a work has any expenditure (~70% of
+    works nationally - see docs/SCHEMA.md); this detector naturally only
+    ever evaluates that attributed subset, same as get_district()'s own
+    agency_performance table in api/main.py.
+    """
+    c = cfg["detectors"]["AGENCY_CONCENTRATION"]
+    base = spine[spine.exp_top_ia.notna()].copy()
+    base["best_value"] = base["SANCTION_AMOUNT"].fillna(base["rec_RECOMMENDED_AMOUNT"]).fillna(0.0)
+
+    per_pair = base.groupby(["DISTRICT", "exp_top_ia"]).agg(
+        agency_works=("WORK_RECOMMENDATION_DTL_ID", "size"),
+        agency_value=("best_value", "sum"),
+    ).reset_index()
+    district_totals = base.groupby("DISTRICT").agg(
+        district_works=("WORK_RECOMMENDATION_DTL_ID", "size"),
+        district_value=("best_value", "sum"),
+        district_agencies=("exp_top_ia", "nunique"),
+    ).reset_index()
+
+    merged = per_pair.merge(district_totals, on="DISTRICT")
+    merged["share_works"] = merged.agency_works / merged.district_works
+    merged["share_value"] = merged.agency_value / merged.district_value
+    share_col = "share_value" if c["share_basis"] == "value" else "share_works"
+
+    eligible = merged[
+        (merged.agency_works >= c["min_agency_works"])
+        & (merged.district_agencies >= c["min_district_agencies"])
+        & (merged.district_value >= c["min_district_value"])
+    ].copy()
+    if eligible.empty:
+        return []
+
+    gate, buckets, peer_benchmark = dynamic_gate(eligible[share_col], c)
+    hits = eligible[eligible[share_col] > gate]
+
+    findings = []
+    for _, r in hits.iterrows():
+        candidates = base[(base.DISTRICT == r.DISTRICT) & (base.exp_top_ia == r.exp_top_ia)]
+        top = candidates.loc[candidates["best_value"].idxmax()]
+        findings.append(build_finding(
+            top, detector_id="AGENCY_CONCENTRATION", tag=c["tag"], confidence=c["confidence"],
+            severity=bucket_severity(r[share_col], buckets),
+            financial_exposure=r.agency_value, stage="execution",
+            observed={
+                "district": r.DISTRICT, "agency": r.exp_top_ia,
+                "agency_works": int(r.agency_works), "agency_value": float(r.agency_value),
+                "district_works": int(r.district_works), "district_value": float(r.district_value),
+                "district_agencies": int(r.district_agencies),
+                "share_value": round(float(r.share_value), 4), "share_works": round(float(r.share_works), 4),
+            },
+            threshold={"gate_share_this_run": round(gate, 4), "gate_percentile": c["gate_percentile"],
+                       "share_basis": c["share_basis"], "source": c["guideline_source"]},
+            peer_benchmark=peer_benchmark,
+            deviation=(
+                f"'{r.exp_top_ia}' holds {r[share_col] * 100:.0f}% of {r.DISTRICT}'s attributed "
+                f"{'value' if c['share_basis'] == 'value' else 'works'} across {int(r.district_agencies)} "
+                f"agencies this run"
+            ),
+        ))
+    return findings
+
+
 DETECTORS = [
     detect_stalled_at_sanction, detect_sanction_delay, detect_stalled_at_execution,
     detect_execution_delay, detect_temporal_impossible, detect_ghost_asset,
     detect_paid_not_complete, detect_stuck_status, detect_over_allocation,
     detect_statutory_sc_st_deficit, detect_cost_outlier, detect_duplicate_work,
+    detect_agency_concentration,
 ]
 
 

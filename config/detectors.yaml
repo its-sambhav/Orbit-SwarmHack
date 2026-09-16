@@ -180,6 +180,30 @@ detectors:
       not proof any of them is fake, but a real description match a human
       should compare side by side.
 
+  AGENCY_CONCENTRATION:
+    tag: "AGENCY CONCENTRATION"
+    confidence: statistical
+    share_basis: value   # "value" or "works" - which share drives the gate + severity
+    gate_percentile: 90
+    bucket_percentiles: [90, 95, 99]
+    min_agency_works: 5        # agency needs at least this many attributed works in the district
+    min_district_agencies: 3   # district needs >=3 distinct attributed agencies, or "100% share" is trivial
+    min_district_value: 5000000   # district's total attributed value (₹50L) must clear this floor
+    guideline_source: >-
+      An implementing agency's share of a district's total attributed
+      (sanctioned, falling back to recommended) works/value among every
+      agency active in that district, gated on a PERCENTILE of the current
+      real distribution of eligible district-agency shares (recomputed
+      every run, same philosophy as the TIME DELAY detectors above) - not a
+      fixed share threshold. Only evaluated for districts with >=3 distinct
+      attributed agencies and >=₹50L total attributed value, and only for
+      agencies with >=5 attributed works in that district, so a tiny-sample
+      district can't trivially flag its one agency at "100% share." The
+      problem statement's own background names single-bid tender
+      manipulation as a failure mode; this dataset has no bid-count field
+      to check that literally, but agency concentration is the closest
+      computable proxy for the same underlying concern.
+
 queue:
   # 18th LS only - the reasoning that always excluded 17th LS from the
   # actionable queue (its MPs' terms ended in 2024; routing a finding to

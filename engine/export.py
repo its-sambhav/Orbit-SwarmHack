@@ -67,6 +67,12 @@ def demo():
     from engine.detectors import run as detectors_run, load_config as load_detector_config
     from engine.score import run as score_run
     from engine.rollup import run as rollup_run
+    from engine import alerts
+
+    # must read the PREVIOUS run's findings.jsonl before write_findings()
+    # (inside run(), below) overwrites it - this is the only chance to diff
+    # "new this run" against "what was already known."
+    previous_finding_ids = alerts.load_previous_finding_ids()
 
     link_run()
     cfg = load_detector_config()
@@ -95,6 +101,8 @@ def demo():
 
     print(f"\nexport self-check: PASS  (jsonl={jsonl_lines:,} parquet={len(findings_pq):,} "
           f"duckdb tables match source row counts)")
+
+    alerts.run(findings, previous_finding_ids, cfg["as_of_date"])
 
 
 if __name__ == "__main__":

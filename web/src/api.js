@@ -1,4 +1,5 @@
 const BASE = '/api'
+const AUTH_KEY = 'mplads_auth'
 
 // every state/district/constituency/etc. page re-fetches from scratch on
 // every visit today, so drilling back into a place you already opened this
@@ -9,6 +10,45 @@ const BASE = '/api'
 // Mutating calls (post/postJson/del) intentionally bypass this.
 const getCache = new Map()
 
+// {token, role, entity} for the signed-in role/entity, or null when signed
+// out - read by every request below to attach Authorization, and by
+// RoleSelector.jsx to know whether a password prompt is still needed.
+export function getAuthInfo() {
+  try {
+    const raw = localStorage.getItem(AUTH_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+export function setAuthToken(token, role, entity) {
+  try {
+    localStorage.setItem(AUTH_KEY, JSON.stringify({ token, role, entity }))
+  } catch {
+    // ignore (private window / storage disabled) - the token still works
+    // for this page's lifetime, just won't survive a reload
+  }
+  // a stale cached read from a previous identity must never leak into a
+  // new sign-in within the same SPA session (no full page reload happens
+  // on login/logout, so getCache's URL-only key wouldn't otherwise notice).
+  getCache.clear()
+}
+
+export function clearAuthToken() {
+  try {
+    localStorage.removeItem(AUTH_KEY)
+  } catch {
+    // ignore
+  }
+  getCache.clear()
+}
+
+function authHeaders() {
+  const auth = getAuthInfo()
+  return auth?.token ? { Authorization: `Bearer ${auth.token}` } : {}
+}
+
 async function get(path, params = {}) {
   const qs = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
@@ -16,7 +56,7 @@ async function get(path, params = {}) {
   const url = `${BASE}${path}${qs ? `?${qs}` : ''}`
   if (getCache.has(url)) return getCache.get(url)
   const promise = (async () => {
-    const res = await fetch(url)
+    const res = await fetch(url, { headers: authHeaders() })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       throw new Error(body.detail || `${res.status} ${res.statusText}`)
@@ -30,9 +70,25 @@ async function get(path, params = {}) {
   return promise
 }
 
+// same request as get(), deliberately bypassing getCache - for resources
+// this app itself mutates (e.g. finding_status, set via postJson below),
+// where a stale cached read after our own write would silently show
+// pre-update data with no cache-invalidation trigger to catch it.
+async function getFresh(path, params = {}) {
+  const qs = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  ).toString()
+  const res = await fetch(`${BASE}${path}${qs ? `?${qs}` : ''}`, { headers: authHeaders() })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail || `${res.status} ${res.statusText}`)
+  }
+  return res.json()
+}
+
 async function post(path, params = {}) {
   const qs = new URLSearchParams(params).toString()
-  const res = await fetch(`${BASE}${path}?${qs}`, { method: 'POST' })
+  const res = await fetch(`${BASE}${path}?${qs}`, { method: 'POST', headers: authHeaders() })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.detail || `${res.status} ${res.statusText}`)
@@ -43,7 +99,7 @@ async function post(path, params = {}) {
 async function postJson(path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
@@ -54,7 +110,7 @@ async function postJson(path, body) {
 }
 
 async function del(path) {
-  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE', headers: authHeaders() })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.detail || `${res.status} ${res.statusText}`)
@@ -63,6 +119,7 @@ async function del(path) {
 }
 
 export const api = {
+  login: (role, password, entity) => postJson('/auth/login', { role, password, entity }),
   meta: () => get('/meta'),
   // { dateFrom, dateTo } is optional everywhere below - the date-range
   // filter on Overview + Map's India/State/District views narrows to works
@@ -103,6 +160,11 @@ export const api = {
   reports: () => get('/reports'),
   createReport: (body) => postJson('/reports', body),
   deleteReport: (id) => del(`/reports/${id}`),
+  // an officer's review verdict on one finding - the store this reads/writes
+  // is mutable app state, not a precomputed pipeline output, so it always
+  // goes through getFresh, never the GET cache above.
+  findingStatuses: () => getFresh('/findings/status'),
+  setFindingStatus: (findingId, body) => postJson(`/findings/${encodeURIComponent(findingId)}/status`, body),
 }
 
 export function formatRupees(amount) {

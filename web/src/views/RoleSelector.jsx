@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../api'
+import { api, setAuthToken } from '../api'
 import { Loading } from '../components/StateViews'
 
 // matches the scope every dashboard defaults to on entry - the picker's
@@ -14,6 +14,7 @@ const ROLES = [
   { id: 'agency', label: 'Implementing Agency', description: 'Only the works assigned to your agency.' },
   { id: 'mp', label: 'Member of Parliament', description: 'One constituency — your own recommended works.' },
 ]
+const ROLE_LABEL = Object.fromEntries(ROLES.map((r) => [r.id, r.label]))
 
 export function RoleSelector() {
   const navigate = useNavigate()
@@ -24,6 +25,12 @@ export function RoleSelector() {
   const [agencyQuery, setAgencyQuery] = useState('')
   const [agencies, setAgencies] = useState(null)
   const [selectedState, setSelectedState] = useState('')
+  // the role/entity/destination waiting on a password before it navigates -
+  // { role, entity, label, navigateTo } or null
+  const [pendingAuth, setPendingAuth] = useState(null)
+  const [password, setPassword] = useState('')
+  const [authError, setAuthError] = useState(null)
+  const [authLoading, setAuthLoading] = useState(false)
 
   useEffect(() => {
     if (role === 'state' || role === 'district') {
@@ -54,11 +61,29 @@ export function RoleSelector() {
     }
   }, [role, selectedState])
 
-  const goMospi = () => navigate('/mospi')
-  const goState = (state) => navigate(`/state/${encodeURIComponent(state)}`)
-  const goDistrict = (state, district) => navigate(`/district-authority/${encodeURIComponent(state)}/${encodeURIComponent(district)}`)
-  const goMp = (mpName, scopeTenure) => navigate(`/mp/${encodeURIComponent(mpName)}?scope=${encodeURIComponent(scopeTenure)}`)
-  const goAgency = (agency) => navigate(`/agency/${encodeURIComponent(agency)}`)
+  // every "go" below used to navigate straight there; now each one just
+  // queues the password step for that exact role+entity, and navigation
+  // only happens once /api/auth/login actually issues a token for it.
+  const goMospi = () => { setPendingAuth({ role: 'mospi', entity: null, label: 'MoSPI', navigateTo: '/mospi' }); setPassword(''); setAuthError(null) }
+  const goState = (state) => { setPendingAuth({ role: 'state', entity: state, label: state, navigateTo: `/state/${encodeURIComponent(state)}` }); setPassword(''); setAuthError(null) }
+  const goDistrict = (state, district) => { setPendingAuth({ role: 'district', entity: `${state}|${district}`, label: `${district}, ${state}`, navigateTo: `/district-authority/${encodeURIComponent(state)}/${encodeURIComponent(district)}` }); setPassword(''); setAuthError(null) }
+  const goMp = (mpName, scopeTenure) => { setPendingAuth({ role: 'mp', entity: mpName, label: mpName, navigateTo: `/mp/${encodeURIComponent(mpName)}?scope=${encodeURIComponent(scopeTenure)}` }); setPassword(''); setAuthError(null) }
+  const goAgency = (agency) => { setPendingAuth({ role: 'agency', entity: agency, label: agency, navigateTo: `/agency/${encodeURIComponent(agency)}` }); setPassword(''); setAuthError(null) }
+
+  async function submitLogin() {
+    setAuthError(null)
+    if (!password) { setAuthError('Enter the password.'); return }
+    setAuthLoading(true)
+    try {
+      const res = await api.login(pendingAuth.role, password, pendingAuth.entity)
+      setAuthToken(res.token, res.role, res.entity)
+      navigate(pendingAuth.navigateTo)
+    } catch (e) {
+      setAuthError(e.message)
+    } finally {
+      setAuthLoading(false)
+    }
+  }
 
   return (
     <div className="role-selector">
@@ -69,6 +94,26 @@ export function RoleSelector() {
           review, routed to whichever authority owns that stage of the work's lifecycle.
         </p>
 
+        {pendingAuth ? (
+          <>
+            <button className="btn-link" onClick={() => { setPendingAuth(null); setAuthError(null) }}>← back</button>
+            <h2>Sign in as {ROLE_LABEL[pendingAuth.role]}{pendingAuth.entity ? ` · ${pendingAuth.label}` : ''}</h2>
+            <input
+              type="password"
+              className="picker-search"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitLogin() }}
+              autoFocus
+            />
+            {authError && <p className="status-form-error">{authError}</p>}
+            <button type="button" className="action-btn" disabled={authLoading} onClick={submitLogin}>
+              {authLoading ? 'Signing in…' : 'Sign in'}
+            </button>
+          </>
+        ) : (
+        <>
         {!role && (
           <>
             <h2>Who's viewing?</h2>
@@ -81,9 +126,9 @@ export function RoleSelector() {
               ))}
             </div>
             <p className="role-selector-note">
-              This is a prototype — picking a role scopes the dashboard to that jurisdiction's
-              data, it isn't a login. A real deployment would authenticate this the same way
-              eSAKSHI itself does.
+              This is a prototype — each role has one shared demo password (not real per-person
+              credentials), but signing in issues a real token the backend checks on every
+              request: it will reject a request for a jurisdiction that token isn't scoped to.
             </p>
           </>
         )}
@@ -183,6 +228,8 @@ export function RoleSelector() {
               </div>
             )}
           </>
+        )}
+        </>
         )}
       </div>
     </div>

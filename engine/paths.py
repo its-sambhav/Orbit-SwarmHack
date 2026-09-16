@@ -6,6 +6,7 @@ CONFIG_DIR = ROOT / "config"
 DATA_INTERIM = ROOT / "data" / "interim"
 DATA_PROCESSED = ROOT / "data" / "processed"
 DATA_FINDINGS = ROOT / "data" / "findings"
+DATA_ALERTS = ROOT / "data" / "alerts"
 
-for _d in (DATA_INTERIM, DATA_PROCESSED, DATA_FINDINGS):
+for _d in (DATA_INTERIM, DATA_PROCESSED, DATA_FINDINGS, DATA_ALERTS):
     _d.mkdir(parents=True, exist_ok=True)

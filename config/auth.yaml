@@ -1,0 +1,12 @@
+# Demo access-tier passwords, one per role - not real user credentials.
+# Deliberately plaintext: these gate read-only oversight data MoSPI's own
+# role already sees in full anyway, so hashing them would add a line of
+# code for zero real change to the threat model. The one genuine secret is
+# AUTH_SECRET (in .env, gitignored) - it signs the tokens these passwords
+# unlock, and rotating it invalidates every session at once.
+roles:
+  mospi: "mospi-2026"
+  state: "state-2026"
+  district: "district-2026"
+  agency: "agency-2026"
+  mp: "mp-2026"
