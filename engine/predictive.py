@@ -17,6 +17,45 @@ from engine.paths import DATA_PROCESSED, ROOT
 MODEL_DIR = ROOT / "data" / "models"
 MODEL_PATH = MODEL_DIR / "delay_predictor.joblib"
 
+FEATURE_COLS = ["log_amount", "rec_month", "rec_quarter", "activity_freq", "state_freq"]
+
+
+def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, dict, dict]:
+    """Given an already-scoped spine slice, returns (X, activity_counts,
+    state_counts) - the 5-column feature frame this module's own delay
+    classifier trains and predicts on. Deliberately narrow and specific
+    ("will this work be late") - see engine/risk_model.py for the broader,
+    ~21-raw-feature risk + anomaly model trained against every detector's
+    output, not just a delay guideline."""
+    df = df.copy()
+    df["log_amount"] = np.log10(df["rec_RECOMMENDED_AMOUNT"].fillna(df["SANCTION_AMOUNT"]).clip(lower=1000))
+    df["rec_month"] = df["rec_RECOMMENDATION_DATE"].dt.month.fillna(6).astype(int)
+    df["rec_quarter"] = df["rec_RECOMMENDATION_DATE"].dt.quarter.fillna(2).astype(int)
+
+    activity_col = "rec_ACTIVITY_NAME_CLEAN" if "rec_ACTIVITY_NAME_CLEAN" in df.columns else "ACTIVITY_NAME"
+    activity_counts = df[activity_col].value_counts(normalize=True).to_dict()
+    df["activity_freq"] = df[activity_col].map(activity_counts).fillna(0.0)
+
+    state_counts = df["STATE_NAME"].value_counts(normalize=True).to_dict()
+    df["state_freq"] = df["STATE_NAME"].map(state_counts).fillna(0.0)
+
+    return df[FEATURE_COLS].fillna(0), activity_counts, state_counts
+
+
+def build_inference_features(amount, state, activity, month, activity_counts, state_counts) -> pd.DataFrame:
+    """The single-row feature frame for a live prediction - same 5 columns
+    as build_features(), built from the trained model's own stored
+    activity/state frequency tables rather than a fresh corpus."""
+    log_amt = float(np.log10(max(float(amount or 100000), 1000.0)))
+    quarter = (month - 1) // 3 + 1
+    return pd.DataFrame([{
+        "log_amount": log_amt,
+        "rec_month": month,
+        "rec_quarter": quarter,
+        "activity_freq": float(activity_counts.get(activity, 0.005)),
+        "state_freq": float(state_counts.get(state, 0.02)),
+    }])
+
 
 def train_model() -> dict:
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -40,21 +79,7 @@ def train_model() -> dict:
     is_delayed = ((san_delay > 45) | (exec_delay > 365) | (df["has_recommended"] & ~df["has_sanctioned"])).astype(int)
     df["target"] = is_delayed
 
-    # Recommendation-stage features
-    df["log_amount"] = np.log10(df["rec_RECOMMENDED_AMOUNT"].fillna(df["SANCTION_AMOUNT"]).clip(lower=1000))
-    df["rec_month"] = df["rec_RECOMMENDATION_DATE"].dt.month.fillna(6).astype(int)
-    df["rec_quarter"] = df["rec_RECOMMENDATION_DATE"].dt.quarter.fillna(2).astype(int)
-
-    # Frequency encode Activity and State
-    activity_col = "rec_ACTIVITY_NAME_CLEAN" if "rec_ACTIVITY_NAME_CLEAN" in df.columns else "ACTIVITY_NAME"
-    activity_counts = df[activity_col].value_counts(normalize=True).to_dict()
-    df["activity_freq"] = df[activity_col].map(activity_counts).fillna(0.0)
-
-    state_counts = df["STATE_NAME"].value_counts(normalize=True).to_dict()
-    df["state_freq"] = df["STATE_NAME"].map(state_counts).fillna(0.0)
-
-    feature_cols = ["log_amount", "rec_month", "rec_quarter", "activity_freq", "state_freq"]
-    X = df[feature_cols].fillna(0)
+    X, activity_counts, state_counts = build_features(df)
     y = df["target"]
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -79,7 +104,7 @@ def train_model() -> dict:
 
     artifacts = {
         "model": clf,
-        "feature_cols": feature_cols,
+        "feature_cols": FEATURE_COLS,
         "activity_counts": activity_counts,
         "state_counts": state_counts,
         "metrics": {
@@ -117,18 +142,8 @@ def predict_work_risk(amount: float, state: str, activity: str, month: int = 6) 
         act_counts = bundle["activity_counts"]
         st_counts = bundle["state_counts"]
 
-        log_amt = float(np.log10(max(float(amount or 100000), 1000.0)))
-        quarter = (month - 1) // 3 + 1
-        act_freq = float(act_counts.get(activity, 0.005))
         st_freq = float(st_counts.get(state, 0.02))
-
-        features = pd.DataFrame([{
-            "log_amount": log_amt,
-            "rec_month": month,
-            "rec_quarter": quarter,
-            "activity_freq": act_freq,
-            "state_freq": st_freq,
-        }])
+        features = build_inference_features(amount, state, activity, month, act_counts, st_counts)
 
         proba = float(clf.predict_proba(features)[0, 1])
 

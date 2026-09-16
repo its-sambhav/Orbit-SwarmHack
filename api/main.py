@@ -16,10 +16,11 @@ import json
 import math
 import re
 from contextlib import asynccontextmanager
+from typing import Literal
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,7 +29,12 @@ from pydantic import BaseModel
 from api.data import get_store, SCOPES, SCOPE_LABELS, GEO_DIR
 from api.narrative import generate_narrative
 from engine.predictive import predict_work_risk
+from engine.predictive import get_model as get_delay_model
+from engine.risk_model import predict as predict_risk_model, get_model as get_risk_model
 from api import reports as reports_store
+from api import finding_status as finding_status_store
+from api import alerts as alerts_store
+from api import auth
 from api.sector_categories import CATEGORIES
 from engine import rollup
 
@@ -44,6 +50,14 @@ async def lifespan(app: FastAPI):
     # traffic until the data is loaded, instead of the first visitor's
     # request doing it. No response, route, or behavior changes.
     get_store()
+    # same reasoning extended to both ML models behind /ai_assessment -
+    # otherwise the first real call to that endpoint pays for lazy-training
+    # two joblib artifacts back-to-back on one request thread.
+    get_delay_model()
+    get_risk_model()
+    # fail fast at boot, not on the first login attempt, if the secret that
+    # signs every auth token was never configured.
+    auth._secret()
     yield
 
 
@@ -121,6 +135,23 @@ def category_breakdown(sp: pd.DataFrame, wr: pd.DataFrame) -> list[dict]:
             "completed_amount": float(csp.loc[csp["has_completed"], "comp_ACTUAL_AMOUNT"].sum()),
         })
     return out
+
+
+class LoginRequest(BaseModel):
+    role: Literal["mospi", "state", "district", "agency", "mp"]
+    password: str
+    entity: str | None = None  # e.g. a state name, "State|District", an MP name, an agency name - None for mospi
+
+
+@app.post("/api/auth/login")
+def login(body: LoginRequest):
+    if not auth.verify_password(body.role, body.password):
+        raise HTTPException(401, "incorrect password")
+    if body.role != "mospi" and not (body.entity or "").strip():
+        raise HTTPException(400, "entity is required for this role")
+    entity = None if body.role == "mospi" else body.entity.strip()
+    token = auth.issue_token(body.role, entity)
+    return {"token": token, "role": body.role, "entity": entity, "expires_in_seconds": auth.TOKEN_TTL_SECONDS}
 
 
 @app.get("/api/meta")
@@ -308,11 +339,15 @@ def get_queue(
 
 
 @app.get("/api/work/{work_number}")
-def get_work(work_number: str, scope_house: str, scope_tenure: str):
+def get_work(
+    work_number: str, scope_house: str, scope_tenure: str,
+    claims: dict = Depends(auth.get_current_claims),
+):
     s = get_store()
     work = s.work(work_number, scope_house, scope_tenure)
     if work is None:
         raise HTTPException(404, f"no work {work_number} in {scope_house}/{scope_tenure}")
+    auth.check_work_access(claims, work)
     findings = s.findings_for_work(work_number, scope_house, scope_tenure)
 
     # named authority per stage - a real, distinct entity at each one, not the
@@ -347,8 +382,15 @@ def get_work(work_number: str, scope_house: str, scope_tenure: str):
 
 
 @app.post("/api/narrative")
-def post_narrative(work_number: str, scope_house: str, scope_tenure: str, finding_id: str):
+def post_narrative(
+    work_number: str, scope_house: str, scope_tenure: str, finding_id: str,
+    claims: dict = Depends(auth.get_current_claims),
+):
     s = get_store()
+    work = s.work(work_number, scope_house, scope_tenure)
+    if work is None:
+        raise HTTPException(404, f"no work {work_number} in {scope_house}/{scope_tenure}")
+    auth.check_work_access(claims, work)
     findings = s.findings_for_work(work_number, scope_house, scope_tenure)
     finding = next((f for f in findings if f["finding_id"] == finding_id), None)
     if finding is None:
@@ -377,18 +419,28 @@ def post_predict_risk(body: PredictRiskRequest):
 
 
 @app.get("/api/work/{work_number}/ai_assessment")
-def get_work_ai_assessment(work_number: str, scope_house: str, scope_tenure: str):
+def get_work_ai_assessment(
+    work_number: str, scope_house: str, scope_tenure: str,
+    claims: dict = Depends(auth.get_current_claims),
+):
     """Composite AI read on one work: the rule-based findings already on
     file, this same work's own ML-predicted delay risk (engine/predictive.py,
-    fed straight from its own recommended amount/state/activity/month - never
-    hypothetical inputs the caller has to reconstruct), and the constrained
-    LLM narrative for whichever finding is most severe. Three independently-
-    built signals, composited into the one read a reviewing officer actually
-    wants - not three separate calls the frontend has to stitch together."""
+    a specific "will this be late" question), a much broader risk +
+    anomaly read (engine/risk_model.py - ~21 features engineered from raw
+    spine columns across every lifecycle stage, trained against whether
+    the work was ever flagged high-severity by any of the 13 real
+    detectors, not just a delay guideline - independent of both the delay
+    model and the rule findings, with driver explanations computed from
+    the model's own learned feature importances, not canned text), and the
+    constrained LLM narrative for whichever finding is most severe. Four
+    independently-built signals, composited into the one read a reviewing
+    officer actually wants - not four separate calls the frontend has to
+    stitch together."""
     s = get_store()
     work = s.work(work_number, scope_house, scope_tenure)
     if work is None:
         raise HTTPException(404, f"no work {work_number} in {scope_house}/{scope_tenure}")
+    auth.check_work_access(claims, work)
     findings = s.findings_for_work(work_number, scope_house, scope_tenure)
 
     rec_date = work.get("rec_RECOMMENDATION_DATE")
@@ -401,6 +453,7 @@ def get_work_ai_assessment(work_number: str, scope_house: str, scope_tenure: str
     prediction = predict_work_risk(
         amount=float(amount), state=work.get("STATE_NAME") or "", activity=activity, month=month,
     )
+    risk_assessment = predict_risk_model(work)
 
     severity_rank = {"high": 3, "medium": 2, "low": 1}
     top_finding = max(findings, key=lambda f: severity_rank.get(f["severity"], 0), default=None)
@@ -413,6 +466,7 @@ def get_work_ai_assessment(work_number: str, scope_house: str, scope_tenure: str
             for f in findings
         ],
         "predicted_delay_risk": prediction,
+        "risk_assessment": risk_assessment,
         "top_finding_narrative": narrative,
     })
 
@@ -503,7 +557,11 @@ def get_states(scope: str = Query("all"), date_from: str | None = None, date_to:
 
 
 @app.get("/api/state/{state_name}")
-def get_state(state_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None):
+def get_state(
+    state_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None,
+    claims: dict = Depends(auth.require_role("state")),
+):
+    auth.check_entity(claims, state_name)
     s = get_store()
     spine, wr_all, sr, dr, _ = s.risk_tables(scope, date_from, date_to)
     row = sr[sr["state"].str.casefold() == state_name.casefold()]
@@ -622,7 +680,11 @@ def get_mps(
 
 
 @app.get("/api/mp/{mp_name}")
-def get_mp(mp_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None):
+def get_mp(
+    mp_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None,
+    claims: dict = Depends(auth.require_role("mp")),
+):
+    auth.check_entity(claims, mp_name)
     s = get_store()
     row = s.mp_directory[(s.mp_directory["MP_NAME"].str.casefold() == mp_name.casefold())
                           & (s.mp_directory["SCOPE_TENURE"] == scope)]
@@ -731,7 +793,21 @@ def get_districts(state: str, scope: str = Query("all")):
 
 
 @app.get("/api/district/{state_name}/{district_name}")
-def get_district(state_name: str, district_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None):
+def get_district(
+    state_name: str, district_name: str, scope: str = Query("18th Lok Sabha"),
+    date_from: str | None = None, date_to: str | None = None,
+    claims: dict = Depends(auth.get_current_claims),
+):
+    # a State Nodal Authority drills into its own districts (StateView.jsx's
+    # own district panel), not just the district's own role dashboard or
+    # MoSPI's drill-down - check_entity narrows a district token to its one
+    # district, and a state token to just its own state (any district in it).
+    if claims["role"] not in ("mospi", "district", "state"):
+        raise HTTPException(403, "this endpoint requires the 'district', 'state', or 'mospi' role")
+    if claims["role"] == "district":
+        auth.check_entity(claims, f"{state_name}|{district_name}")
+    elif claims["role"] == "state":
+        auth.check_entity(claims, state_name)
     s = get_store()
     spine, wr_all, _, dr, _ = s.risk_tables(scope, date_from, date_to)
     row = dr[(dr["state"].str.casefold() == state_name.casefold()) & (dr["district"].str.casefold() == district_name.casefold())]
@@ -885,7 +961,20 @@ def get_agencies(scope: str = Query("all"), q: str | None = None, limit: int = 2
 
 
 @app.get("/api/agency/{agency_name}")
-def get_agency(agency_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None):
+def get_agency(
+    agency_name: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None,
+    claims: dict = Depends(auth.get_current_claims),
+):
+    # a District Authority routinely drills into an agency it doesn't
+    # itself administer (DistrictView.jsx's own agency panel links here) -
+    # any valid district token may view any agency's own aggregate
+    # performance; restricting further would need a live membership check
+    # against that district's own agency_performance table, more than this
+    # pass's minimal auth needs.
+    if claims["role"] not in ("mospi", "agency", "district"):
+        raise HTTPException(403, "this endpoint requires the 'agency', 'district', or 'mospi' role")
+    if claims["role"] == "agency":
+        auth.check_entity(claims, agency_name)
     s = get_store()
     spine, wr_all, _, _, _ = s.risk_tables(scope, date_from, date_to)
     if date_from or date_to:
@@ -1000,6 +1089,43 @@ def get_report_pdf(report_id: str):
         path, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}_{date_stamp}.pdf"'},
     )
+
+
+class FindingStatusUpdate(BaseModel):
+    work_number: str
+    scope_house: str
+    scope_tenure: str
+    status: Literal["verified", "dismissed", "under_investigation"]
+    reviewer_name: str
+    note: str | None = None
+
+
+@app.get("/api/findings/status")
+def get_finding_statuses():
+    return clean({"items": finding_status_store.list_statuses()})
+
+
+@app.post("/api/findings/{finding_id}/status")
+def set_finding_status(finding_id: str, body: FindingStatusUpdate):
+    s = get_store()
+    findings = s.findings_for_work(body.work_number, body.scope_house, body.scope_tenure)
+    if not any(f["finding_id"] == finding_id for f in findings):
+        raise HTTPException(404, f"no finding '{finding_id}' on work {body.work_number}")
+    if not body.reviewer_name.strip():
+        raise HTTPException(400, "reviewer_name is required")
+    return clean(finding_status_store.set_status(
+        finding_id=finding_id, work_number=body.work_number, scope_house=body.scope_house,
+        scope_tenure=body.scope_tenure, status=body.status,
+        reviewer_name=body.reviewer_name.strip(), note=body.note,
+    ))
+
+
+@app.get("/api/alerts/latest")
+def get_latest_alert_digest():
+    digest = alerts_store.get_latest_digest()
+    if digest is None:
+        raise HTTPException(404, "no alert digest yet - run `python -m engine.export` at least once")
+    return clean(digest)
 
 
 @app.get("/")

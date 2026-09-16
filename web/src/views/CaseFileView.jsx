@@ -30,6 +30,7 @@ function AiRiskPanel({ workNumber, scopeHouse, scopeTenure }) {
 
   if (!assessment) return null
   const pred = assessment.predicted_delay_risk
+  const risk = assessment.risk_assessment
 
   return (
     <div className="panel" style={{ marginTop: 12 }}>
@@ -43,16 +44,43 @@ function AiRiskPanel({ workNumber, scopeHouse, scopeTenure }) {
           {pred.drivers.map((d, i) => <li key={i}>{d}</li>)}
         </ul>
       )}
-      <p className="panel-note" style={{ marginBottom: 0 }}>
+      <p className="panel-note">
         Model AUC {pred.model_auc.toFixed(2)} on held-out historical works - predicts this work's OWN
         delay risk before/at recommendation, a separate signal from the {assessment.rule_based_findings.length} rule-based
         finding{assessment.rule_based_findings.length === 1 ? '' : 's'} below, not a replacement for them.
       </p>
+      {risk && risk.risk_score !== null && (
+        <>
+          <div className="ai-risk-row">
+            <SeverityChip severity={RISK_TIER_SEVERITY[risk.risk_tier] || 'medium'} />
+            <span className="ai-risk-prob num">{Math.round(risk.risk_score * 100)}% overall risk score</span>
+            <SeverityChip severity={risk.is_anomalous ? 'high' : 'low'} />
+            <span className="ai-risk-prob num">{Math.round(risk.anomaly_score * 100)}% anomaly score</span>
+          </div>
+          {risk.top_drivers.length > 0 && (
+            <ul className="ai-risk-drivers">
+              {risk.top_drivers.map((d, i) => <li key={i}>{d}</li>)}
+            </ul>
+          )}
+          <p className="panel-note" style={{ marginBottom: 0 }}>
+            Model AUC {risk.model_auc.toFixed(2)} - a broader model trained on ~21 features engineered from
+            raw amounts, dates, and disbursement records across every lifecycle stage, against whether the
+            work was ever flagged high-severity by any of the 13 rule-based detectors (not just a delay
+            guideline). The anomaly score alongside it is unsupervised - it never learned what "flagged"
+            means, only what a typical work looks like - and the reasons above come from the model's own
+            learned feature importances, not a hand-written explanation.
+          </p>
+        </>
+      )}
     </div>
   )
 }
 
-const ACTION_LABEL = { acknowledge: 'Acknowledged', escalate: 'Escalated', dismiss: 'Dismissed' }
+const STATUS_LABEL = {
+  verified: 'Verified issue',
+  dismissed: 'Dismissed – false positive',
+  under_investigation: 'Under investigation',
+}
 const ROLE_LABEL = { state: 'State Nodal Authority', district: 'District Authority', agency: 'Implementing Agency', mp: 'Member of Parliament' }
 const ROLE_AVATAR = { state: 'S', district: 'D', agency: 'A', mp: 'M' }
 
@@ -122,11 +150,40 @@ function FindingEvidence({ finding, workNumber, scopeHouse, scopeTenure }) {
 }
 
 // updates taken on this anomaly - which desk it's routed to (real, from the
-// engine's routing table) and a reviewer's own recorded status (local to
-// this session - there's no persisted multi-user workflow behind it, so this
-// states the current status, not a fabricated history of what someone did).
-function FindingUpdate({ finding }) {
-  const [action, setAction] = useState(null)
+// engine's routing table) and a reviewer's own recorded verdict, persisted
+// server-side (api/finding_status.py) so it survives a reload and is the
+// same for every viewer of this case file, not just this browser tab.
+function FindingUpdate({ finding, workNumber, scopeHouse, scopeTenure, statusRecord, onSaved }) {
+  const [status, setStatus] = useState(statusRecord?.status || '')
+  const [reviewerName, setReviewerName] = useState(statusRecord?.reviewer_name || '')
+  const [note, setNote] = useState(statusRecord?.note || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    setStatus(statusRecord?.status || '')
+    setReviewerName(statusRecord?.reviewer_name || '')
+    setNote(statusRecord?.note || '')
+  }, [statusRecord])
+
+  async function save() {
+    setError(null)
+    if (!status) { setError('Choose a status.'); return }
+    if (!reviewerName.trim()) { setError('Reviewer name is required.'); return }
+    setSaving(true)
+    try {
+      const record = await api.setFindingStatus(finding.finding_id, {
+        work_number: workNumber, scope_house: scopeHouse, scope_tenure: scopeTenure,
+        status, reviewer_name: reviewerName.trim(), note: note.trim() || null,
+      })
+      onSaved(record)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="finding-card">
       <div className="finding-card-top">
@@ -134,17 +191,28 @@ function FindingUpdate({ finding }) {
         <SeverityChip severity={finding.severity} />
       </div>
       <div className="finding-card-route">Routed to {finding.routed_to}</div>
-      <div className="update-status">{action ? ACTION_LABEL[action] : 'No action recorded yet'}</div>
-      <div className="actions-row">
-        {['acknowledge', 'escalate', 'dismiss'].map((a) => (
-          <button
-            key={a}
-            className={`action-btn${action === a ? ' acknowledged' : ''}`}
-            onClick={() => setAction(action === a ? null : a)}
-          >
-            {action === a ? ACTION_LABEL[a] : a.charAt(0).toUpperCase() + a.slice(1)}
-          </button>
-        ))}
+      <div className="update-status">
+        {statusRecord
+          ? `${STATUS_LABEL[statusRecord.status]} · ${statusRecord.reviewer_name}`
+          : 'No status recorded yet'}
+      </div>
+      <div className="status-form">
+        <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="">Set status…</option>
+          {Object.entries(STATUS_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+        <input
+          type="text" placeholder="Reviewer name" value={reviewerName}
+          onChange={(e) => setReviewerName(e.target.value)}
+        />
+        <textarea
+          placeholder="Note (optional)" value={note} rows={2}
+          onChange={(e) => setNote(e.target.value)}
+        />
+        {error && <div className="status-form-error">{error}</div>}
+        <button type="button" className="action-btn" disabled={saving} onClick={save}>
+          {saving ? 'Saving…' : 'Save status'}
+        </button>
       </div>
     </div>
   )
@@ -169,11 +237,22 @@ export function CaseFileView() {
   const roleName = params.get('role_name')
   const [work, setWork] = useState(null)
   const [error, setError] = useState(null)
+  // keyed by finding_id - an officer's saved verdict on each finding, if any
+  const [statuses, setStatuses] = useState({})
 
   useEffect(() => {
     setWork(null)
     api.work(workNumber, scopeHouse, scopeTenure).then(setWork).catch((e) => setError(e.message))
+    api.findingStatuses().then((res) => {
+      const byId = {}
+      for (const r of res.items) byId[r.finding_id] = r
+      setStatuses(byId)
+    }).catch(() => {})
   }, [workNumber, scopeHouse, scopeTenure])
+
+  function handleStatusSaved(record) {
+    setStatuses((prev) => ({ ...prev, [record.finding_id]: record }))
+  }
 
   if (error) return <ErrorView message={error} />
   if (!work) return <Loading label="Loading case file" />
@@ -257,7 +336,11 @@ export function CaseFileView() {
         <div className="map-drill-findings">
           <h3>Updates</h3>
           {work.findings.map((f) => (
-            <FindingUpdate key={f.finding_id} finding={f} />
+            <FindingUpdate
+              key={f.finding_id} finding={f}
+              workNumber={work.work_number} scopeHouse={scopeHouse} scopeTenure={scopeTenure}
+              statusRecord={statuses[f.finding_id]} onSaved={handleStatusSaved}
+            />
           ))}
         </div>
       </div>
