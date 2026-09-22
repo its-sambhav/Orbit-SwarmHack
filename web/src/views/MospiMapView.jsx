@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { api, buildSearchIndex, formatRupees } from '../api'
+import { api, buildSearchIndex, fetchGeo, formatRupees } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
@@ -90,8 +90,8 @@ export function MospiMapView() {
   }
 
   useEffect(() => {
-    fetch('/static/geo/india_states_simplified.geojson').then((r) => r.json()).then(setStateGeojson)
-    fetch('/static/geo/india_pc_2019_simplified.geojson').then((r) => r.json()).then(setPcGeojson)
+    fetchGeo('india_states_simplified.geojson').then(setStateGeojson)
+    fetchGeo('india_pc_2019_simplified.geojson').then(setPcGeojson)
     api.meta().then(setMeta).catch(() => {})
   }, [])
 

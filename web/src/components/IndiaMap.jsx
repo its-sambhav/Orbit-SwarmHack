@@ -186,7 +186,7 @@ export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSe
   }
 
   const dataKey = useMemo(
-    () => `${keyProp}-${geojson?.features.length ?? 0}-${focusKey ?? 'all'}-${Object.keys(dataByKey).length}-${selectedKey ?? ''}`,
+    () => `${keyProp}-${geojson?.features?.length ?? 0}-${focusKey ?? 'all'}-${Object.keys(dataByKey).length}-${selectedKey ?? ''}`,
     [keyProp, geojson, focusKey, dataByKey, selectedKey]
   )
 

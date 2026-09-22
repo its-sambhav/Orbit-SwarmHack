@@ -75,7 +75,7 @@ MANUAL_OVERRIDES = {
 
 
 def build_crosswalk() -> dict:
-    geo = json.loads(GEOJSON_PATH.read_text())
+    geo = json.loads(GEOJSON_PATH.read_text(encoding="utf-8"))
     geo_features = geo["features"]
 
     # {our_state_norm: {name_norm: [pc_id, ...]}} - the candidate pool for a
@@ -138,7 +138,7 @@ def demo():
     crosswalk = build_crosswalk()
     assert len(crosswalk) > 500, f"only {len(crosswalk)} constituencies matched, expected >500 of 538"
     # spot-check a well-known constituency resolves to a real geo feature
-    geo = json.loads(GEOJSON_PATH.read_text())
+    geo = json.loads(GEOJSON_PATH.read_text(encoding="utf-8"))
     pc_ids = {f["properties"]["pc_id"] for f in geo["features"]}
     assert all(pid in pc_ids for pid in crosswalk.values()), "crosswalk points at a pc_id not in the geojson"
 

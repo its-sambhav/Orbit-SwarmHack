@@ -27,69 +27,149 @@
 .scope-toggle-btn:hover:not(.active) { color: var(--ink); }
 
 /* ---------- MoSPI landing page ---------- */
-.mospi-page { min-height: 100vh; background: var(--bg); }
+/* every dashboard's own root reserves the collapsed rail's width on its
+   left - a normal-flow margin, so this one rule covers all 14 dashboards
+   that share MospiNav without touching each view's own body markup. The
+   rail itself (position:fixed) paints that reserved strip. */
+.mospi-page { min-height: 100vh; background: var(--bg); margin-left: var(--rail-w); }
 
-/* official navy chrome (header + drawer share it, gold rule along the
-   bottom) - this is the "this is a government system" cue; the content
-   area underneath stays the light working surface. */
+/* official navy chrome (nav + rail share it, gold rule along the bottom of
+   the nav) - this is the "this is a government system" cue; the content
+   area underneath stays the light working surface. Nav spans the full
+   width above the rail (they never occupy the same row, so z-index between
+   them is never a concern). */
 .mospi-nav {
   position: fixed; top: 0; left: 0; right: 0; z-index: 30;
-  display: flex; align-items: center; gap: 24px;
-  height: 68px; padding: 0 28px;
+  display: flex; align-items: center; gap: 16px;
+  height: 68px; padding: 0 24px;
   background: var(--accent); border-bottom: 3px solid var(--gold);
   box-shadow: var(--shadow-float);
 }
-.mospi-menu-btn {
-  flex: none; width: 38px; height: 38px; border: 1px solid rgba(255,255,255,0.3); border-radius: var(--radius-sm);
-  background: rgba(255,255,255,0.08); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-}
-.mospi-menu-btn:hover { background: rgba(255,255,255,0.18); }
-.mospi-menu-btn span { width: 16px; height: 2px; background: #fff; display: block; }
-.mospi-nav-brand { flex: none; }
+.mospi-nav-emblem { flex: none; height: 36px; width: auto; }
+.mospi-nav-brand { flex: none; min-width: 0; }
 .mospi-nav-title { font-weight: 600; font-size: 18px; letter-spacing: -0.01em; color: #fff; }
-.mospi-nav-subtitle { color: rgba(255,255,255,0.72); font-size: 12.5px; }
-
-.mospi-search { flex: 1; max-width: 420px; }
-.mospi-search input {
-  width: 100%; font-family: inherit; font-size: 13px; padding: 9px 12px;
-  border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.3);
-  background: rgba(255,255,255,0.94); color: var(--ink);
-}
-.mospi-search input:focus { background: #fff; border-color: var(--gold); }
-
-.mospi-nav-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; flex: none; }
-.mospi-nav-actions .switch-role-link { color: rgba(255,255,255,0.85); margin-left: 0; }
-.mospi-nav-actions .switch-role-link:hover { background: rgba(255,255,255,0.12); color: #fff; }
-.mospi-profile { display: flex; align-items: center; gap: 9px; }
-.mospi-profile-avatar {
-  width: 32px; height: 32px; border-radius: 50%; background: var(--gold); color: #fff;
-  display: flex; align-items: center; justify-content: center; font-size: 13.5px; font-weight: 600; flex: none;
-}
-.mospi-profile-text { display: flex; flex-direction: column; line-height: 1.3; max-width: 220px; }
-.mospi-profile-name {
-  font-size: 12.5px; font-weight: 600; color: #fff;
+.mospi-nav-subtitle {
+  color: rgba(255,255,255,0.72); font-size: 12.5px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.mospi-profile-role { font-size: 11px; color: rgba(255,255,255,0.68); }
 
-/* collapsible nav drawer - "Navigate" jump-links + live scope info. Overlays
-   the page (fixed, off-canvas via transform) rather than pushing content, so
-   opening it never reflows the dashboard underneath. */
-.mospi-drawer-backdrop { position: fixed; inset: 68px 0 0 0; background: rgba(20, 24, 20, 0.35); z-index: 35; }
-.mospi-drawer {
-  position: fixed; top: 68px; bottom: 0; left: 0; width: 300px; z-index: 40;
-  background: var(--accent-hover); border-right: 1px solid rgba(255,255,255,0.12);
-  transform: translateX(-100%); transition: transform 0.2s ease; overflow-y: auto;
+/* search moved into the same right-hand cluster as alerts/profile (was a
+   stretched flex-1 middle element before) - a fixed, comfortable width
+   rather than one that grows to fill whatever room is left. */
+.mospi-nav-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; flex: none; }
+.mospi-search {
+  flex: none; width: 240px; display: flex; align-items: center; gap: 8px;
+  padding: 0 10px; border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.94); color: var(--ink-muted);
 }
-.mospi-drawer.open { transform: translateX(0); }
-.mospi-drawer-section { padding: 18px 20px; border-bottom: 1px solid rgba(255,255,255,0.12); }
-.mospi-drawer-section h3 { margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--gold); text-transform: uppercase; letter-spacing: 0.04em; }
-.mospi-drawer-link {
-  display: block; width: 100%; text-align: left; padding: 10px 12px; margin: 0 0 2px; border: none; border-radius: var(--radius-sm);
-  background: none; color: rgba(255,255,255,0.88); font-family: inherit; font-size: 14.5px; cursor: pointer;
+.mospi-search:focus-within { background: #fff; border-color: var(--gold); color: var(--ink); }
+.mospi-search input {
+  flex: 1; min-width: 0; width: 100%; font-family: inherit; font-size: 13px; padding: 9px 0;
+  border: none; outline: none; background: none; color: var(--ink);
 }
-.mospi-drawer-link:hover { background: rgba(255,255,255,0.12); color: #fff; }
-.mospi-drawer-meta { font-size: 12.5px; color: rgba(255,255,255,0.68); margin-bottom: 4px; }
+/* native search inputs paint their own clear-icon and, in some browsers, a
+   recent-searches affordance - suppressed since there's no longer a
+   <datalist> backing a dropdown here at all. */
+.mospi-search input::-webkit-search-cancel-button,
+.mospi-search input::-webkit-search-decoration { -webkit-appearance: none; }
+
+.mospi-popover-anchor { position: relative; }
+.mospi-icon-btn {
+  flex: none; height: 38px; padding: 0 8px; border: 1px solid rgba(255,255,255,0.3); border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.08); color: #fff; cursor: pointer; display: flex; align-items: center; gap: 4px;
+  position: relative;
+}
+.mospi-icon-btn:hover { background: rgba(255,255,255,0.18); }
+.mospi-badge {
+  position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; padding: 0 3px; border-radius: 9px;
+  background: var(--sev-high); color: #fff; font-size: 10px; font-weight: 700; line-height: 17px; text-align: center;
+  border: 1.5px solid var(--accent);
+}
+.mospi-profile-trigger { padding-left: 5px; padding-right: 6px; }
+.mospi-profile-avatar {
+  width: 28px; height: 28px; border-radius: 50%; background: var(--gold); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600; flex: none;
+}
+.mospi-profile-chevron { width: 14px; height: 14px; transition: transform 0.15s; }
+.mospi-profile-trigger[aria-expanded='true'] .mospi-profile-chevron { transform: rotate(-90deg); }
+
+/* the two nav-bar popovers (alerts / account) - anchored under their own
+   trigger, floating above everything else on the page. */
+.mospi-popover {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 50; width: 320px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop); padding: 14px; font-size: 13px;
+}
+.mospi-popover-header { font-size: 12px; font-weight: 700; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px; }
+.mospi-popover-header-scope { text-transform: none; letter-spacing: normal; font-weight: 500; }
+.mospi-popover-empty { margin: 0; padding: 6px 2px 2px; color: var(--ink-muted); font-size: 12.5px; line-height: 1.5; }
+.mospi-alert-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow-y: auto; }
+.mospi-alert-item {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 10px; width: 100%;
+  text-align: left; padding: 9px 6px; border: none; border-radius: var(--radius-sm); background: none; cursor: pointer; font-family: inherit;
+}
+.mospi-alert-item:hover { background: var(--surface-sunken); }
+.mospi-alert-tag { grid-column: 1 / -1; font-size: 11px; font-weight: 700; color: var(--sev-high); }
+.mospi-alert-meta { font-size: 12px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mospi-alert-amount { font-size: 12.5px; font-weight: 600; }
+
+.mospi-profile-identity { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; }
+.mospi-profile-identity .mospi-profile-avatar { width: 34px; height: 34px; font-size: 14px; }
+.mospi-profile-identity > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.mospi-profile-identity .mospi-profile-name { font-size: 13.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mospi-profile-identity .mospi-profile-role { font-size: 11.5px; color: var(--ink-muted); }
+.mospi-popover-note { font-size: 11.5px; color: var(--ink-faint); padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+.mospi-popover-section { margin-bottom: 12px; }
+.mospi-popover-label { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--ink-muted); margin-bottom: 8px; }
+.mospi-lang-switch { display: flex; gap: 6px; }
+.mospi-lang-switch button {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 8px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink-muted);
+  font-family: inherit; font-size: 12.5px; cursor: pointer;
+}
+.mospi-lang-switch button.active { border-color: var(--accent); background: var(--accent-wash); color: var(--accent); font-weight: 600; cursor: default; }
+.mospi-lang-switch button:disabled { cursor: not-allowed; opacity: 0.7; }
+.mospi-lang-switch button span {
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-faint);
+  border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px;
+}
+.mospi-popover-logout {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--surface); color: var(--sev-high); font-family: inherit;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.mospi-popover-logout:hover { background: var(--sev-high-bg); border-color: var(--sev-high); }
+
+/* the persistent left rail (icons collapsed, icon+label expanded) - starts
+   below the nav (never shares its row, so no z-index tension with it) and
+   overlays page content only while expanded (a scrim behind it closes it on
+   an outside click, same interaction the old overlay drawer used). */
+.app-rail {
+  position: fixed; top: 68px; bottom: 0; left: 0; z-index: 40; width: var(--rail-w);
+  display: flex; flex-direction: column; background: var(--accent-hover);
+  border-right: 1px solid rgba(255,255,255,0.12); overflow: hidden;
+  transition: width 0.16s ease;
+}
+.app-rail.open { width: var(--rail-w-expanded); overflow-y: auto; box-shadow: var(--shadow-pop); }
+.app-rail-links { flex: 1; padding: 10px 0; }
+.app-rail-link {
+  display: flex; align-items: center; gap: 14px; width: 100%; height: 46px; padding: 0 0 0 21px;
+  border: none; background: none; color: rgba(255,255,255,0.82); font-family: inherit; font-size: 14.5px;
+  cursor: pointer; white-space: nowrap;
+}
+.app-rail-link svg { flex: none; }
+.app-rail-link:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.app-rail-link-label { opacity: 0; transition: opacity 0.1s; }
+.app-rail.open .app-rail-link-label { opacity: 1; }
+.app-rail-toggle {
+  display: flex; align-items: center; gap: 14px; width: 100%; height: 46px; padding: 0 0 0 21px; margin-top: auto;
+  border: none; border-top: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.12);
+  color: rgba(255,255,255,0.7); font-family: inherit; font-size: 13.5px; cursor: pointer; flex: none; white-space: nowrap;
+}
+.app-rail-toggle:hover { background: rgba(0,0,0,0.22); color: #fff; }
+.app-rail-toggle-icon { flex: none; transition: transform 0.16s; }
+.app-rail.open .app-rail-toggle-icon { transform: rotate(180deg); }
+.app-rail-scrim { position: fixed; inset: 68px 0 0 0; background: rgba(20, 24, 20, 0.25); z-index: 39; }
 
 .mospi-body { padding: 92px 24px 40px; max-width: 1440px; margin: 0 auto; }
 #mospi-overview, #mospi-map, #mospi-analytics, #mospi-queue { scroll-margin-top: 84px; }
@@ -121,7 +201,7 @@
    never overflows the screen either: header takes its natural height, the
    map takes 100% of whatever is left via flex, full width. */
 .mospi-map-page-body {
-  position: fixed; top: 68px; left: 0; right: 0; bottom: 0;
+  position: fixed; top: 68px; left: var(--rail-w); right: 0; bottom: 0;
   display: flex; flex-direction: column; padding: 16px 24px 20px;
   /* originally sized for exactly the 3-column map row (each of its own
      panels already scrolls independently below) - StateView/DistrictView/
@@ -644,6 +724,10 @@
   .mospi-charts-grid { grid-template-columns: 1fr; }
   .mospi-stats { grid-template-columns: 1fr 1fr; }
   .mospi-nav-subtitle { display: none; }
-  .mospi-search { max-width: none; }
-  .mospi-drawer { width: 240px; }
+  /* no room left in the actions cluster once search sits alongside the
+     bell + profile trigger at this width - dropped rather than squeezed;
+     every entity search would otherwise still resolve, just via clicking
+     into it from a list instead of typing its name here. */
+  .mospi-search { display: none; }
+  .app-rail.open { width: min(var(--rail-w-expanded), 78vw); }
 }

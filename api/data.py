@@ -102,10 +102,10 @@ class Store:
         self.date_max = self.spine["rec_RECOMMENDATION_DATE"].max()
 
         crosswalk_path = GEO_DIR / "constituency_crosswalk.json"
-        self.crosswalk: dict[str, int] = json.loads(crosswalk_path.read_text()) if crosswalk_path.exists() else {}
+        self.crosswalk: dict[str, int] = json.loads(crosswalk_path.read_text(encoding="utf-8")) if crosswalk_path.exists() else {}
 
         geojson_path = GEO_DIR / "india_pc_2019_simplified.geojson"
-        self.geojson = json.loads(geojson_path.read_text()) if geojson_path.exists() else None
+        self.geojson = json.loads(geojson_path.read_text(encoding="utf-8")) if geojson_path.exists() else None
 
         # dissolved one-polygon-per-district boundaries (engine/geo_dissolve.py),
         # loaded once and indexed for O(1) lookup - a district's page needs
@@ -115,7 +115,7 @@ class Store:
         district_geo_path = GEO_DIR / "india_districts_simplified.geojson"
         self._district_boundary: dict[tuple[str, str], dict] = {}
         if district_geo_path.exists():
-            for f in json.loads(district_geo_path.read_text())["features"]:
+            for f in json.loads(district_geo_path.read_text(encoding="utf-8"))["features"]:
                 key = (f["properties"]["state"].casefold(), f["properties"]["district"].casefold())
                 self._district_boundary[key] = f
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, formatRupees } from '../api'
+import { api, fetchGeo, formatRupees } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
@@ -34,7 +34,7 @@ export function StateMapView() {
   const [valueMode, setValueMode] = useState('amount')
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}) }, [])
-  useEffect(() => { fetch('/static/geo/india_pc_2019_simplified.geojson').then((r) => r.json()).then(setPcGeojson) }, [])
+  useEffect(() => { fetchGeo('india_pc_2019_simplified.geojson').then(setPcGeojson) }, [])
   useEffect(() => { api.constituencies(scope).then(setConstituencies).catch(() => {}) }, [scope])
 
   useEffect(() => {

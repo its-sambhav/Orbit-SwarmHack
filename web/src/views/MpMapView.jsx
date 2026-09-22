@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, formatDate, formatRupees } from '../api'
+import { api, fetchGeo, formatDate, formatRupees } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { Breadcrumb } from '../components/Breadcrumb'
@@ -32,7 +32,7 @@ export function MpMapView() {
   const [categoryFilter, setCategoryFilter] = useState('')
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}) }, [])
-  useEffect(() => { fetch('/static/geo/india_pc_2019_simplified.geojson').then((r) => r.json()).then(setGeojson) }, [])
+  useEffect(() => { fetchGeo('india_pc_2019_simplified.geojson').then(setGeojson) }, [])
   useEffect(() => { api.constituencies(scope).then(setConstituencies).catch(() => {}) }, [scope])
 
   useEffect(() => {

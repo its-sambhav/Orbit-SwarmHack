@@ -70,6 +70,22 @@ async function get(path, params = {}) {
   return promise
 }
 
+// map boundary files (data/geo, served at /static/geo) are optional at
+// runtime. A missing one comes back as the API's 404 JSON body, which parses
+// fine and used to reach <IndiaMap> as if it were a FeatureCollection (no
+// `.features`), unmounting the whole page. Resolve to null on any failure or
+// wrong shape instead, so every map view just renders without boundaries.
+export async function fetchGeo(file) {
+  try {
+    const res = await fetch(`/static/geo/${file}`)
+    if (!res.ok) return null
+    const json = await res.json()
+    return Array.isArray(json?.features) ? json : null
+  } catch {
+    return null
+  }
+}
+
 // same request as get(), deliberately bypassing getCache - for resources
 // this app itself mutates (e.g. finding_status, set via postJson below),
 // where a stale cached read after our own write would silently show
@@ -104,7 +120,9 @@ async function postJson(path, body) {
   })
   if (!res.ok) {
     const errBody = await res.json().catch(() => ({}))
-    throw new Error(errBody.detail || `${res.status} ${res.statusText}`)
+    // status rides along so a caller can tell failures apart (the login page
+    // needs 400 "entity required" vs 401 "wrong password").
+    throw Object.assign(new Error(errBody.detail || `${res.status} ${res.statusText}`), { status: res.status })
   }
   return res.json()
 }
@@ -165,6 +183,12 @@ export const api = {
   // goes through getFresh, never the GET cache above.
   findingStatuses: () => getFresh('/findings/status'),
   setFindingStatus: (findingId, body) => postJson(`/findings/${encodeURIComponent(findingId)}/status`, body),
+  // the nav bar's alert bell - a push-shaped digest of newly-surfaced
+  // high-severity findings (engine/alerts.py), refreshed once per pipeline
+  // run, not a live feed. getFresh (not the GET cache): a stale "0 new
+  // alerts" cached from an earlier page must never survive a later run's
+  // fresh digest landing on disk mid-session.
+  alertsLatest: () => getFresh('/alerts/latest'),
 }
 
 export function formatRupees(amount) {

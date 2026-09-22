@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, formatRupees } from '../api'
+import { api, fetchGeo, formatRupees } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
@@ -42,10 +42,10 @@ export function DistrictMapView() {
   const [stateDistricts, setStateDistricts] = useState(null)
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}) }, [])
-  useEffect(() => { fetch('/static/geo/india_pc_2019_simplified.geojson').then((r) => r.json()).then(setPcGeojson) }, [])
+  useEffect(() => { fetchGeo('india_pc_2019_simplified.geojson').then(setPcGeojson) }, [])
   useEffect(() => {
     if (isRoleView) return
-    fetch('/static/geo/india_districts_simplified.geojson').then((r) => r.json()).then(setDistrictsGeojson)
+    fetchGeo('india_districts_simplified.geojson').then(setDistrictsGeojson)
   }, [isRoleView])
 
   useEffect(() => {

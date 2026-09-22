@@ -128,7 +128,6 @@ export function NationalView() {
         drawerLinks={[
           { label: 'Overview', onClick: () => scrollToId('mospi-overview') },
           { label: 'Map', onClick: () => navigate('/mospi/map') },
-          { label: 'Analytics', onClick: () => scrollToId('mospi-analytics') },
           { label: 'MP Audits', onClick: () => navigate('/mp-audits') },
           { label: 'Reports', onClick: () => navigate('/reports') },
         ]}
@@ -169,6 +168,7 @@ export function NationalView() {
               <EntityRiskPanel
                 entities={stateEntities}
                 entityType="States & UTs"
+                entityLabel="State / UT"
                 title="Top states by risk"
                 onSelect={(s) => navigate(`/mospi/map?state=${encodeURIComponent(s.name)}`)}
               />

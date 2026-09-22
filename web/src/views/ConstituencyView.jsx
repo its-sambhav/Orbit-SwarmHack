@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, formatRupees, mapCategoryBreakdown } from '../api'
+import { api, fetchGeo, formatRupees, mapCategoryBreakdown } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
@@ -42,7 +42,7 @@ export function ConstituencyView() {
   }, [id, scope])
 
   useEffect(() => {
-    fetch('/static/geo/india_pc_2019_simplified.geojson').then((r) => r.json()).then(setGeojson)
+    fetchGeo('india_pc_2019_simplified.geojson').then(setGeojson)
   }, [])
 
   // the nationwide risk list already has real works_total/works_flagged/

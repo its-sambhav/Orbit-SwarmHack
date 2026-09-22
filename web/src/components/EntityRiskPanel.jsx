@@ -14,6 +14,13 @@ function badgeColor(name) {
   return BADGE_COLORS[h % BADGE_COLORS.length]
 }
 
+// name-column header: the singular of entityType. Just stripping the "s"
+// turned "Agencies" into "Agencie", so "ies" is handled too; an entityType
+// that isn't a plain plural ("States & UTs") passes `entityLabel` instead.
+function singular(plural) {
+  return plural.replace(/ies$/, 'y').replace(/s$/, '')
+}
+
 const SORTS = {
   risk: { label: 'Highest risk', fn: (a, b) => b.risk_score - a.risk_score },
   volume: { label: 'Highest volume', fn: (a, b) => b.works_total - a.works_total },
@@ -33,12 +40,14 @@ const SORTS = {
  * entityType: plural noun for the search placeholder/empty state/table
  *   header ("States & UTs", "Districts", "Agencies"), and the default title
  *   ("{entityType} by risk (N)") when `title` isn't given.
+ * entityLabel: optional override for the name-column header when the singular
+ *   of entityType isn't just entityType minus its plural ending ("State / UT").
  * title: optional override for the heading (kept exact on the National
  *   dashboard - "Top states by risk (N)" - rather than switching its
  *   existing wording just because this component is now shared).
  * onSelect(entity): click handler, receives one entity from the array as-is.
  */
-export function EntityRiskPanel({ entities, entityType, title, onSelect }) {
+export function EntityRiskPanel({ entities, entityType, entityLabel, title, onSelect }) {
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState('risk')
   const listRef = useRef(null)
@@ -72,7 +81,7 @@ export function EntityRiskPanel({ entities, entityType, title, onSelect }) {
       {filtered.length ? (
         <>
           <div className="states-panel-head">
-            <span /><span>{entityType.replace(/s$/, '')}</span><span>Total</span><span>Flagged</span><span>Risk %</span>
+            <span /><span>{entityLabel || singular(entityType)}</span><span>Total</span><span>Flagged</span><span>Risk %</span>
           </div>
           <div className="rank-list states-panel-list" ref={listRef}>
             {filtered.map((e) => (

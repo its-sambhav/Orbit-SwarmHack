@@ -62,7 +62,7 @@ def finish(dissolved):
 
 
 def build_state_geojson() -> dict:
-    geo = json.loads(GEOJSON_PATH.read_text())
+    geo = json.loads(GEOJSON_PATH.read_text(encoding="utf-8"))
 
     groups: dict[str, list] = {}
     for f in geo["features"]:
@@ -92,9 +92,9 @@ def build_district_geojson() -> dict:
     constituency whose recommendations that IDA handles - not any single
     constituency's own shape, and not a second, differently-sourced district
     boundary file (same alignment problem the state dissolve avoids)."""
-    geo = json.loads(GEOJSON_PATH.read_text())
+    geo = json.loads(GEOJSON_PATH.read_text(encoding="utf-8"))
     geoms_by_pcid = {f["properties"]["pc_id"]: shape(f["geometry"]) for f in geo["features"]}
-    crosswalk: dict[str, int] = json.loads(CROSSWALK_PATH.read_text())
+    crosswalk: dict[str, int] = json.loads(CROSSWALK_PATH.read_text(encoding="utf-8"))
 
     spine = pd.read_parquet(DATA_PROCESSED / "spine.parquet", columns=["DISTRICT", "STATE_NAME", "CONSTITUENCY_ID"])
     spine = spine.dropna(subset=["DISTRICT", "STATE_NAME", "CONSTITUENCY_ID"])
