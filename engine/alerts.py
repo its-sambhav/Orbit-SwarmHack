@@ -33,7 +33,7 @@ def load_previous_finding_ids() -> set[str] | None:
     if not path.exists():
         return None
     ids = set()
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -97,8 +97,8 @@ def write_digest(digest: dict) -> Path:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     path = DATA_ALERTS / f"digest_{stamp}.json"
     text = json.dumps(digest, indent=2, default=str)
-    path.write_text(text)
-    (DATA_ALERTS / "latest.json").write_text(text)
+    path.write_text(text, encoding="utf-8")
+    (DATA_ALERTS / "latest.json").write_text(text, encoding="utf-8")
     print(f"  wrote alert digest ({digest['national']['new_high_severity_count']:,} new high-severity findings) -> {path.name}")
     return path
 

@@ -15,7 +15,7 @@ def write_findings(findings: list[dict]) -> pd.DataFrame:
     dup_count = len(ids) - len(set(ids))
     assert dup_count == 0, f"{dup_count} duplicate finding_id(s) - refusing to export silently"
 
-    with open(DATA_FINDINGS / "findings.jsonl", "w") as f:
+    with open(DATA_FINDINGS / "findings.jsonl", "w", encoding="utf-8") as f:
         for finding in findings:
             f.write(json.dumps(finding, default=str) + "\n")
 
@@ -81,7 +81,7 @@ def demo():
     run(findings, work_risk, constituency_risk, district_risk, state_risk)
 
     # round-trip checks
-    jsonl_lines = sum(1 for _ in open(DATA_FINDINGS / "findings.jsonl"))
+    jsonl_lines = sum(1 for _ in open(DATA_FINDINGS / "findings.jsonl", encoding="utf-8"))
     findings_pq = pd.read_parquet(DATA_FINDINGS / "findings.parquet")
     assert jsonl_lines == len(findings_pq) == len(findings), (
         f"row-count mismatch: jsonl={jsonl_lines} parquet={len(findings_pq)} source={len(findings)}"

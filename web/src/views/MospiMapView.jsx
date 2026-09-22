@@ -164,6 +164,7 @@ export function MospiMapView() {
         drawerLinks={[
           { label: 'Overview', onClick: () => navigate('/mospi') },
           { label: 'Map (all India)', onClick: backToIndia },
+          { label: 'Anomalies', onClick: () => navigate('/anomalies') },
           { label: 'MP Audits', onClick: () => navigate('/mp-audits') },
           { label: 'Reports', onClick: () => navigate('/reports') },
         ]}

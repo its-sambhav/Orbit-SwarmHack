@@ -80,7 +80,7 @@ def build_state_geojson() -> dict:
         })
 
     out = {"type": "FeatureCollection", "features": features}
-    OUT_PATH.write_text(json.dumps(out))
+    OUT_PATH.write_text(json.dumps(out), encoding="utf-8")
     print(f"  wrote {OUT_PATH} ({len(features)} states, dissolved from {len(geo['features'])} PCs)")
     return out
 
@@ -119,7 +119,7 @@ def build_district_geojson() -> dict:
         })
 
     out = {"type": "FeatureCollection", "features": features}
-    DISTRICT_OUT_PATH.write_text(json.dumps(out))
+    DISTRICT_OUT_PATH.write_text(json.dumps(out), encoding="utf-8")
     print(f"  wrote {DISTRICT_OUT_PATH} ({len(features)} districts, {len(unmatched)} with no matched boundary)")
     if unmatched:
         print(f"  unmatched: {unmatched}")

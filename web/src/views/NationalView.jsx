@@ -128,6 +128,7 @@ export function NationalView() {
         drawerLinks={[
           { label: 'Overview', onClick: () => scrollToId('mospi-overview') },
           { label: 'Map', onClick: () => navigate('/mospi/map') },
+          { label: 'Anomalies', onClick: () => navigate('/anomalies') },
           { label: 'MP Audits', onClick: () => navigate('/mp-audits') },
           { label: 'Reports', onClick: () => navigate('/reports') },
         ]}

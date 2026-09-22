@@ -133,6 +133,7 @@ export function DistrictView() {
         ] : [
           { label: 'Overview', onClick: () => navigate('/mospi') },
           { label: 'Map', onClick: () => navigate(mapUrl) },
+          { label: 'Anomalies', onClick: () => navigate('/anomalies') },
           { label: 'Reports', onClick: () => navigate('/reports') },
         ]}
       />

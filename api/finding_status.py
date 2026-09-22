@@ -21,12 +21,12 @@ STATUSES = ("verified", "dismissed", "under_investigation")
 def _load() -> list[dict]:
     if not FINDING_STATUS_PATH.exists():
         return []
-    return json.loads(FINDING_STATUS_PATH.read_text())
+    return json.loads(FINDING_STATUS_PATH.read_text(encoding="utf-8"))
 
 
 def _save(statuses: list[dict]) -> None:
     FINDING_STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    FINDING_STATUS_PATH.write_text(json.dumps(statuses, indent=2))
+    FINDING_STATUS_PATH.write_text(json.dumps(statuses, indent=2), encoding="utf-8")
 
 
 def list_statuses() -> list[dict]:

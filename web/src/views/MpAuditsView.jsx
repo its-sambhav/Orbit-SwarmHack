@@ -8,6 +8,7 @@ import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 export const MP_DRAWER_LINKS = (navigate) => [
   { label: 'Overview', onClick: () => navigate('/mospi') },
   { label: 'Map', onClick: () => navigate('/mospi/map') },
+  { label: 'Anomalies', onClick: () => navigate('/anomalies') },
   { label: 'MP Audits', onClick: () => navigate('/mp-audits') },
 ]
 

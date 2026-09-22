@@ -11,4 +11,4 @@ LATEST_PATH = DATA_ALERTS / "latest.json"
 def get_latest_digest() -> dict | None:
     if not LATEST_PATH.exists():
         return None
-    return json.loads(LATEST_PATH.read_text())
+    return json.loads(LATEST_PATH.read_text(encoding="utf-8"))

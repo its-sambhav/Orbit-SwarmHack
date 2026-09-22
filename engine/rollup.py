@@ -21,7 +21,6 @@ def build_work_risk(findings_df: pd.DataFrame, spine: pd.DataFrame, demo_scopes:
         detectors=("detector", lambda s: sorted(set(s))),
         finding_count=("finding_id", "size"),
         max_severity=("severity", lambda s: max(s, key=lambda v: SEV_RANK[v])),
-        total_exposure=("financial_exposure", "sum"),          # sum across this work's findings
         priority=("priority_score", "max"),                     # max, not sum - avoids one work's
                                                                   # several findings compounding into
                                                                   # an inflated rank
@@ -30,12 +29,32 @@ def build_work_risk(findings_df: pd.DataFrame, spine: pd.DataFrame, demo_scopes:
     spine_subset = spine[["WORK_RECOMMENDATION_DTL_ID", "SCOPE_HOUSE", "SCOPE_TENURE",
                            "STATE_NAME", "CONSTITUENCY", "CONSTITUENCY_ID", "MP_NAME",
                            "DISTRICT", "IDA_NAME_CLEAN",
+                           "SANCTION_AMOUNT", "rec_RECOMMENDED_AMOUNT",
                            "exp_top_ia", "exp_top_vendor", "exp_vendor_count"]].copy()
     spine_subset["work_number"] = spine_subset["WORK_RECOMMENDATION_DTL_ID"].astype("int64").astype(str)
     spine_subset = spine_subset.rename(columns={"SCOPE_HOUSE": "scope_house", "SCOPE_TENURE": "scope_tenure"})
     spine_subset = spine_subset.drop(columns=["WORK_RECOMMENDATION_DTL_ID"])
 
     work_risk = work_risk.merge(spine_subset, on=["work_number", "scope_house", "scope_tenure"], how="left")
+
+    # This work's OWN money - not derived from its findings' financial_exposure
+    # at all. A finding's exposure answers "how big is this issue", and for 3 of
+    # the 13 detectors (STATUTORY_SC_ST_DEFICIT, OVER_ALLOCATION,
+    # AGENCY_CONCENTRATION) that is an MP-portfolio or district-agency aggregate
+    # merely anchored to one representative work - so neither summing nor
+    # maxing those ever yields "what this work is worth". Summing also
+    # double-counted the same rupees whenever two per-work detectors flagged
+    # the identical payment (GHOST_ASSET + COST_OUTLIER routinely do).
+    # Sanctioned, falling back to recommended (the same `best_value` coalesce
+    # detect_agency_concentration uses): covers 100% of spine rows, and
+    # completed/disbursed exceed it in 1 row out of 202,766. The per-finding
+    # exposure figures stay intact in findings.parquet and are what the case
+    # file shows, each labelled with its own scope.
+    work_risk["total_exposure"] = (
+        work_risk["SANCTION_AMOUNT"].fillna(work_risk["rec_RECOMMENDED_AMOUNT"]).fillna(0.0)
+    )
+    work_risk = work_risk.drop(columns=["SANCTION_AMOUNT", "rec_RECOMMENDED_AMOUNT"])
+
     work_risk["in_demo_scope"] = work_risk["scope_tenure"].isin(demo_scopes)
     return work_risk
 

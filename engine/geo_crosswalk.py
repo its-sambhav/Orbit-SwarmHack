@@ -129,7 +129,7 @@ def build_crosswalk() -> dict:
     if unmatched:
         print(f"  unmatched ({len(unmatched)}): {unmatched}")
 
-    CROSSWALK_PATH.write_text(json.dumps(crosswalk, indent=2))
+    CROSSWALK_PATH.write_text(json.dumps(crosswalk, indent=2), encoding="utf-8")
     print(f"  wrote {CROSSWALK_PATH}")
     return crosswalk
 

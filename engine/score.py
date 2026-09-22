@@ -9,7 +9,7 @@ from engine.paths import CONFIG_DIR
 
 
 def load_routing() -> dict:
-    with open(CONFIG_DIR / "routing.yaml") as f:
+    with open(CONFIG_DIR / "routing.yaml", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 

@@ -66,11 +66,10 @@
   --shadow-float: 0 2px 10px rgba(20, 24, 20, 0.10);
   --shadow-pop: 0 10px 32px rgba(20, 24, 20, 0.20);
 
-  /* the persistent left rail (components/MospiNav.jsx) - collapsed width is
-     reserved permanently in every dashboard's own layout (.mospi-page /
-     .mospi-map-page-body), so it must stay a single source of truth here
-     rather than a number repeated at each call site. */
-  --rail-w: 64px;
+  /* the left rail (components/MospiNav.jsx) - a hidden-by-default overlay
+     drawer now (toggled by the nav bar's own menu button, not a
+     permanently-reserved margin), so only its opened width needs a shared
+     token. */
   --rail-w-expanded: 236px;
 
   --font: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;

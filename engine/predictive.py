@@ -70,13 +70,30 @@ def train_model() -> dict:
     if len(df) < 1000:
         df = spine.copy()
 
-    # Define ground truth target: did the work experience excessive sanction or completion delay?
-    # Guideline target: sanction <= 45 days, completion <= 365 days
+    # Ground truth target: is this work unusually slow relative to its own
+    # real population, not a fixed day-count. engine/detectors.py's own delay
+    # detectors went through exactly this recalibration already (see
+    # docs/SCHEMA.md's "Flag-rate recalibration") after finding the fixed
+    # MPLADS guideline (45 days to sanction, 365 to complete) is missed by
+    # 28-69% of real works - failing the guideline is this system's norm, not
+    # a deviation from it. An earlier version of this file trained the
+    # target against that same fixed guideline: ~79% of the 17th Lok Sabha
+    # training population came out "delayed", so the classifier correctly
+    # learned to output a high probability for most works - an accurate fit
+    # to a miscalibrated target, not a modelling bug, but it made the
+    # resulting risk tier read as "High" for the large majority of works
+    # (verified: 84% of a live 18th Lok Sabha sample), which defeats the
+    # point of a differentiating risk signal. Gating each delay metric on
+    # its own 90th percentile (same convention as detectors.py's
+    # dynamic_gate()) fixes the target at its source instead of just
+    # relabelling the output - about 1 in 5 works ends up "delayed" by this
+    # definition, matching the rest of the system's p90-based severity gates.
     san_delay = (df["san_SANCTION_DATE"] - df["rec_RECOMMENDATION_DATE"]).dt.days
     exec_delay = (df["comp_ACTUAL_END_DATE"] - df["san_SANCTION_DATE"]).dt.days
+    san_gate = san_delay.dropna().quantile(0.90)
+    exec_gate = exec_delay.dropna().quantile(0.90)
 
-    # Target: 1 if delayed past guideline SLAs, 0 if on time
-    is_delayed = ((san_delay > 45) | (exec_delay > 365) | (df["has_recommended"] & ~df["has_sanctioned"])).astype(int)
+    is_delayed = ((san_delay > san_gate) | (exec_delay > exec_gate) | (df["has_recommended"] & ~df["has_sanctioned"])).astype(int)
     df["target"] = is_delayed
 
     X, activity_counts, state_counts = build_features(df)

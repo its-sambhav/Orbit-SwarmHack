@@ -21,12 +21,12 @@ REPORTS_DIR = ROOT / "data" / "reports"
 def _load() -> list[dict]:
     if not REPORTS_PATH.exists():
         return []
-    return json.loads(REPORTS_PATH.read_text())
+    return json.loads(REPORTS_PATH.read_text(encoding="utf-8"))
 
 
 def _save(reports: list[dict]) -> None:
     REPORTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORTS_PATH.write_text(json.dumps(reports, indent=2))
+    REPORTS_PATH.write_text(json.dumps(reports, indent=2), encoding="utf-8")
 
 
 def pdf_path(report_id: str):

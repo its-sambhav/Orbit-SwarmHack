@@ -102,7 +102,7 @@ def run() -> list[dict]:
         df.to_parquet(DATA_INTERIM / f"{key}.parquet", engine="pyarrow", index=False)
 
     report_path = DATA_INTERIM / "_validation_report.json"
-    with open(report_path, "w") as f:
+    with open(report_path, "w", encoding="utf-8") as f:
         json.dump(all_results, f, indent=2, default=str)
 
     for r in all_results:

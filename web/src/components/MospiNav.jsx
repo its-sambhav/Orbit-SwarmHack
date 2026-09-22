@@ -6,7 +6,7 @@ const iconProps = {
   width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
   strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true,
 }
-const ChevronIcon = (p) => <svg {...iconProps} {...p}><path d="M9 6l6 6-6 6" /></svg>
+const MenuIcon = () => <svg {...iconProps}><path d="M4 7h16M4 12h16M4 17h16" /></svg>
 const HomeIcon = () => <svg {...iconProps}><path d="M4 11.5 12 4l8 7.5" /><path d="M6 10v9h5v-5h2v5h5v-9" /></svg>
 const MapPinIcon = () => (
   <svg {...iconProps}><path d="M12 21s7-6.3 7-11.5A7 7 0 0 0 5 9.5C5 14.7 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.4" /></svg>
@@ -18,6 +18,11 @@ const DocumentIcon = () => (
   <svg {...iconProps}><path d="M7 3h7l4 4v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><path d="M14 3v4h4M9 13h6M9 17h6" /></svg>
 )
 const DotIcon = () => <svg {...iconProps}><circle cx="12" cy="12" r="3" /></svg>
+const WarningIcon = () => (
+  <svg {...iconProps}>
+    <path d="M12 3 2 20h20L12 3z" /><path d="M12 10v4" /><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none" />
+  </svg>
+)
 const BellIcon = () => (
   <svg {...iconProps}><path d="M6 10a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 14 6 10z" /><path d="M10 19a2 2 0 0 0 4 0" /></svg>
 )
@@ -33,6 +38,7 @@ const NAV_ICON = {
   Overview: HomeIcon,
   Map: MapPinIcon,
   'Map (all India)': MapPinIcon,
+  Anomalies: WarningIcon,
   'MP Audits': ClipboardIcon,
   Reports: DocumentIcon,
 }
@@ -78,9 +84,9 @@ function scopedAlerts(digest, auth) {
   return { kind: 'unsupported' }
 }
 
-/** Fixed nav + persistent left rail shared by every page - MoSPI's own pages
- * (Overview, Map, MP Audits, CaseFile, Constituency) keep the "MoSPI
- * Authority / Government of India" identity, national search, and
+/** Fixed nav + a hidden-by-default left rail shared by every page - MoSPI's
+ * own pages (Overview, Map, MP Audits, CaseFile, Constituency) keep the
+ * "MoSPI Authority / Government of India" identity, national search, and
  * cross-page navigation by leaving the role-identity/search props at their
  * defaults. A role-scoped dashboard (State/District/Agency/MP) passes its
  * own identity, turns the search bar off (it has nothing in scope to search
@@ -88,14 +94,13 @@ function scopedAlerts(digest, auth) {
  * links to another role's pages, since a role has no authorized access to
  * MoSPI's or another role's data.
  *
- * The rail (this file's <aside>) renders those same drawerLinks as a
- * persistent, collapsible sidebar instead of the old click-to-open overlay
- * drawer: collapsed it's icons only, expanded (its own toggle, bottom of the
- * rail) it shows icon + label. Every page's own root (.mospi-page) reserves
- * --rail-w of left margin for its collapsed width; app.css's
- * .mospi-map-page-body does the same explicitly (it's position:fixed, so it
- * doesn't inherit that margin). Account switching now lives inside the
- * profile menu as "Log out", not a standing nav-bar link. */
+ * The rail (this file's <aside>) renders those same drawerLinks as an
+ * overlay drawer, toggled solely by the menu button in the nav bar itself
+ * (no in-rail toggle, no hover-to-open) - closed it's zero-width and reserves
+ * no page margin anywhere, open it shows icon + label and overlays whatever
+ * page is underneath (a scrim behind it closes it on an outside click).
+ * Account switching now lives inside the profile menu as "Log out", not a
+ * standing nav-bar link. */
 export function MospiNav({
   // scopeWorksTotal: no longer rendered (it lived in the old drawer's
   // "Scope" section, dropped when the drawer became a pure nav rail - every
@@ -161,6 +166,13 @@ export function MospiNav({
   return (
     <>
       <nav className="mospi-nav">
+        <button
+          type="button" className="mospi-icon-btn" aria-label={railOpen ? 'Close menu' : 'Open menu'}
+          aria-expanded={railOpen} onClick={() => setRailOpen((v) => !v)}
+        >
+          <MenuIcon />
+        </button>
+
         <img className="mospi-nav-emblem" src="/emblem.svg" alt="Government of India" />
 
         <div className="mospi-nav-brand">
@@ -234,7 +246,6 @@ export function MospiNav({
               aria-haspopup="true" aria-expanded={profileOpen} onClick={() => { setProfileOpen((v) => !v); setAlertsOpen(false) }}
             >
               <span className="mospi-profile-avatar">{avatarLetter}</span>
-              <ChevronIcon className="mospi-profile-chevron" />
             </button>
             {profileOpen && (
               <div className="mospi-popover mospi-profile-popover" role="menu">
@@ -280,12 +291,6 @@ export function MospiNav({
             </button>
           ))}
         </nav>
-        <button
-          type="button" className="app-rail-toggle" aria-expanded={railOpen}
-          aria-label={railOpen ? 'Collapse menu' : 'Expand menu'} onClick={() => setRailOpen((v) => !v)}
-        >
-          <ChevronIcon className="app-rail-toggle-icon" />
-        </button>
       </aside>
       {railOpen && <div className="app-rail-scrim" onClick={() => setRailOpen(false)} />}
     </>

@@ -5,7 +5,7 @@ function daysBetween(a, b) {
   return Math.round((new Date(b) - new Date(a)) / 86400000)
 }
 
-export function LifecycleTimeline({ lifecycle }) {
+export function LifecycleTimeline({ lifecycle, horizontal = false }) {
   const stages = [
     {
       key: 'recommended', label: 'Recommended', date: lifecycle.recommended.date, amount: lifecycle.recommended.amount,
@@ -29,7 +29,7 @@ export function LifecycleTimeline({ lifecycle }) {
   ]
 
   return (
-    <ol className="timeline">
+    <ol className={`timeline${horizontal ? ' timeline-horizontal' : ''}`}>
       {stages.map((s, i) => {
         const prev = stages[i - 1]
         const gap = prev ? daysBetween(prev.date, s.date) : null

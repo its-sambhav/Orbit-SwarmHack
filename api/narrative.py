@@ -158,7 +158,7 @@ def generate_narrative(finding: dict) -> dict:
     key = _cache_key(finding)
     cache_file = _cache_path(key)
     if cache_file.exists():
-        result = json.loads(cache_file.read_text())
+        result = json.loads(cache_file.read_text(encoding="utf-8"))
         result["cached"] = True
         return result
 
@@ -179,7 +179,7 @@ def generate_narrative(finding: dict) -> dict:
     except Exception as e:
         result = {"generated": False, "narrative": None, "reason": f"LLM call failed: {e}"}
 
-    cache_file.write_text(json.dumps(result))
+    cache_file.write_text(json.dumps(result), encoding="utf-8")
     result["cached"] = False
     return result
 

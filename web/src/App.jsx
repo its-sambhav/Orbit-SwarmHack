@@ -16,6 +16,7 @@ import { CaseFileView } from './views/CaseFileView'
 import { MpAuditsView } from './views/MpAuditsView'
 import { MpProfileView } from './views/MpProfileView'
 import { ReportsView } from './views/ReportsView'
+import { AnomaliesView } from './views/AnomaliesView'
 
 // Every role dashboard (State/District/Agency/MP) and every MoSPI page now
 // shares the same MospiNav fixed-nav-+-drawer chrome - the old generic
@@ -30,6 +31,7 @@ export default function App() {
       <Route path="/mp-audits" element={<MpAuditsView />} />
       <Route path="/mp-audits/:mpName" element={<MpProfileView />} />
       <Route path="/reports" element={<ReportsView />} />
+      <Route path="/anomalies" element={<AnomaliesView />} />
       <Route path="/state/:stateName" element={<StateView />} />
       {/* the Overview/Map split MoSPI's own NationalView/MospiMapView use -
           every "Overview" dashboard below gets its own separate Map page

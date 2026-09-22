@@ -27,11 +27,11 @@
 .scope-toggle-btn:hover:not(.active) { color: var(--ink); }
 
 /* ---------- MoSPI landing page ---------- */
-/* every dashboard's own root reserves the collapsed rail's width on its
-   left - a normal-flow margin, so this one rule covers all 14 dashboards
-   that share MospiNav without touching each view's own body markup. The
-   rail itself (position:fixed) paints that reserved strip. */
-.mospi-page { min-height: 100vh; background: var(--bg); margin-left: var(--rail-w); }
+/* the rail is a hidden-by-default overlay (position:fixed, toggled by the
+   nav bar's own menu button) - no page reserves margin for it anymore, so
+   every one of the 14 dashboards sharing MospiNav gets its full width back
+   regardless of the rail's open/closed state. */
+.mospi-page { min-height: 100vh; background: var(--bg); }
 
 /* official navy chrome (nav + rail share it, gold rule along the bottom of
    the nav) - this is the "this is a government system" cue; the content
@@ -61,7 +61,7 @@
    rather than one that grows to fill whatever room is left. */
 .mospi-nav-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; flex: none; }
 .mospi-search {
-  flex: none; width: 240px; display: flex; align-items: center; gap: 8px;
+  flex: none; width: 300px; display: flex; align-items: center; gap: 8px;
   padding: 0 10px; border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.3);
   background: rgba(255,255,255,0.94); color: var(--ink-muted);
 }
@@ -78,7 +78,7 @@
 
 .mospi-popover-anchor { position: relative; }
 .mospi-icon-btn {
-  flex: none; height: 38px; padding: 0 8px; border: 1px solid rgba(255,255,255,0.3); border-radius: var(--radius-sm);
+  flex: none; height: 38px; padding: 0 8px; border: none; border-radius: var(--radius-sm);
   background: rgba(255,255,255,0.08); color: #fff; cursor: pointer; display: flex; align-items: center; gap: 4px;
   position: relative;
 }
@@ -93,9 +93,6 @@
   width: 28px; height: 28px; border-radius: 50%; background: var(--gold); color: #fff;
   display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600; flex: none;
 }
-.mospi-profile-chevron { width: 14px; height: 14px; transition: transform 0.15s; }
-.mospi-profile-trigger[aria-expanded='true'] .mospi-profile-chevron { transform: rotate(-90deg); }
-
 /* the two nav-bar popovers (alerts / account) - anchored under their own
    trigger, floating above everything else on the page. */
 .mospi-popover {
@@ -143,17 +140,18 @@
 }
 .mospi-popover-logout:hover { background: var(--sev-high-bg); border-color: var(--sev-high); }
 
-/* the persistent left rail (icons collapsed, icon+label expanded) - starts
-   below the nav (never shares its row, so no z-index tension with it) and
-   overlays page content only while expanded (a scrim behind it closes it on
-   an outside click, same interaction the old overlay drawer used). */
+/* the left rail - hidden by default (width:0, no permanent page margin
+   reserved for it anywhere), opened only by the nav bar's own menu button
+   and overlaying page content while open (a scrim behind it closes it on
+   an outside click, same as Escape or the menu button again). */
 .app-rail {
-  position: fixed; top: 68px; bottom: 0; left: 0; z-index: 40; width: var(--rail-w);
+  position: fixed; top: 68px; bottom: 0; left: 0; z-index: 40; width: 0;
   display: flex; flex-direction: column; background: var(--accent-hover);
-  border-right: 1px solid rgba(255,255,255,0.12); overflow: hidden;
-  transition: width 0.16s ease;
+  overflow: hidden; transition: width 0.16s ease;
 }
-.app-rail.open, .app-rail:hover { width: var(--rail-w-expanded); overflow-y: auto; box-shadow: var(--shadow-pop); }
+/* border only while open - at width:0 a border would still render as a
+   1px seam down the left edge of every page, closed or not. */
+.app-rail.open { width: var(--rail-w-expanded); overflow-y: auto; box-shadow: var(--shadow-pop); border-right: 1px solid rgba(255,255,255,0.12); }
 .app-rail-links { flex: 1; padding: 10px 0; }
 .app-rail-link {
   display: flex; align-items: center; gap: 14px; width: 100%; height: 46px; padding: 0 0 0 21px;
@@ -162,16 +160,6 @@
 }
 .app-rail-link svg { flex: none; }
 .app-rail-link:hover { background: rgba(255,255,255,0.12); color: #fff; }
-.app-rail-link-label { opacity: 0; transition: opacity 0.1s; }
-.app-rail.open .app-rail-link-label, .app-rail:hover .app-rail-link-label { opacity: 1; }
-.app-rail-toggle {
-  display: flex; align-items: center; gap: 14px; width: 100%; height: 46px; padding: 0 0 0 21px; margin-top: auto;
-  border: none; border-top: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.12);
-  color: rgba(255,255,255,0.7); font-family: inherit; font-size: 13.5px; cursor: pointer; flex: none; white-space: nowrap;
-}
-.app-rail-toggle:hover { background: rgba(0,0,0,0.22); color: #fff; }
-.app-rail-toggle-icon { flex: none; transition: transform 0.16s; }
-.app-rail.open .app-rail-toggle-icon, .app-rail:hover .app-rail-toggle-icon { transform: rotate(180deg); }
 .app-rail-scrim { position: fixed; inset: 68px 0 0 0; background: rgba(20, 24, 20, 0.25); z-index: 39; }
 
 .mospi-body { padding: 92px 24px 40px; max-width: 1440px; margin: 0 auto; }
@@ -204,7 +192,7 @@
    never overflows the screen either: header takes its natural height, the
    map takes 100% of whatever is left via flex, full width. */
 .mospi-map-page-body {
-  position: fixed; top: 68px; left: var(--rail-w); right: 0; bottom: 0;
+  position: fixed; top: 68px; left: 0; right: 0; bottom: 0;
   display: flex; flex-direction: column; padding: 16px 24px 20px;
   /* originally sized for exactly the 3-column map row (each of its own
      panels already scrolls independently below) - StateView/DistrictView/
@@ -516,6 +504,14 @@
 }
 .filters input[type="search"] { flex: 1; min-width: 220px; }
 
+/* server-side offset pager (AnomaliesView) - a "Load more"-style list would
+   have to refetch and re-render an ever-growing DOM as pages pile up; the
+   underlying queue is large enough (hundreds of thousands of works across
+   the whole system) that Prev/Next over real limit/offset stays responsive
+   regardless of how far in a reviewer pages. */
+.pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 18px; }
+.pager-label { font-size: 12.5px; color: var(--ink-muted); }
+
 /* ---------- date-range filter + report generation ---------- */
 .report-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
 .date-filter { position: relative; }
@@ -622,6 +618,18 @@
 .timeline-gap-note { font-size: 11px; color: var(--ink-faint); margin-top: 6px; font-style: italic; }
 .timeline-gap-anomaly { color: var(--sev-high); font-style: normal; font-weight: 500; }
 
+/* timeline - horizontal variant (CaseFileView): same 4 stages read left to
+   right instead of top to bottom - the rail rotates so the node sits above
+   its stage's text and the connector becomes the horizontal line joining
+   one node to the next, rather than restyling a second component. */
+.timeline-horizontal { display: flex; align-items: flex-start; }
+.timeline-horizontal .timeline-step { flex: 1; flex-direction: column; align-items: stretch; }
+.timeline-horizontal .timeline-rail { flex-direction: row; align-items: center; width: auto; margin-bottom: 12px; }
+.timeline-horizontal .timeline-node { margin-top: 0; }
+.timeline-horizontal .timeline-connector { width: auto; height: 1px; min-height: 0; flex: 1; margin-top: 0; }
+.timeline-horizontal .timeline-body { padding: 0 16px 0 0; }
+.timeline-horizontal .timeline-step:last-child .timeline-body { padding-right: 0; }
+
 /* findings list within case file */
 .finding-card { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 12px; }
 .finding-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
@@ -647,11 +655,33 @@
 }
 .narrative-btn:hover { background: var(--accent-hover); }
 
-/* AI predictive risk panel (CaseFileView) */
-.ai-risk-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-.ai-risk-prob { font-size: 13.5px; font-weight: 600; }
-.ai-risk-drivers { margin: 0 0 12px; padding-left: 18px; font-size: 12.5px; color: var(--ink-muted); line-height: 1.6; }
+/* AI predictive risk (CaseFileView, center column) - two independent
+   models (a narrow pre-sanction delay predictor, and a broader post-hoc
+   risk+anomaly model) shown as two clearly separated, labelled blocks of
+   stat tiles rather than one run-on paragraph, so it's obvious which
+   number belongs to which model instead of it reading as one blob. */
+.ai-risk-block-title { font-size: 12.5px; font-weight: 600; color: var(--ink); margin-bottom: 10px; }
+.ai-risk-stats { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.ai-risk-stat {
+  flex: 1; min-width: 130px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-sunken); padding: 12px 14px;
+}
+.ai-risk-stat-top { margin-bottom: 8px; }
+.ai-risk-stat-value { font-size: 24px; font-weight: 600; line-height: 1; }
+.ai-risk-stat-label { font-size: 11.5px; color: var(--ink-muted); margin-top: 5px; line-height: 1.4; }
+.ai-risk-why { font-size: 11px; font-weight: 600; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .03em; margin: 0 0 6px; }
+.ai-risk-drivers { margin: 0 0 12px; padding-left: 18px; font-size: 12.5px; color: var(--ink); line-height: 1.6; }
+.ai-risk-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+.ai-risk-empty { font-size: 12.5px; color: var(--ink-muted); }
 .narrative-btn:disabled { opacity: .5; cursor: default; }
+
+/* per-finding card (CaseFileView, right column) - evidence and the
+   reviewer's own update form for that SAME finding now live in one card
+   (previously two separate parallel lists in different columns that had
+   to be matched up by list position) - "Review" is the internal divider
+   between the two halves. */
+.finding-card-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0 14px; }
+.finding-card-section-title { font-size: 11px; font-weight: 600; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .03em; margin: 0 0 10px; }
 
 /* actions */
 .actions-row { display: flex; gap: 8px; }
@@ -692,6 +722,24 @@
    never collapses to nothing on the new ones. */
 .map-drill-row { display: grid; grid-template-columns: 340px 1fr 380px; gap: 16px; flex: 1; min-height: 480px; }
 .map-drill-row-2col { grid-template-columns: 340px 1fr; }
+/* CaseFileView's own layout: a full-width row for the work description +
+   horizontal timeline (its content reads left-to-right now, so it wants
+   the full row rather than being boxed into one of 3 side-by-side
+   columns), then AI predictive risk and Findings split evenly beneath it -
+   two panels answering two different questions ("what might happen" vs
+   "what already did"), given equal visual weight.
+   Unlike the map-drill pages (whose 3 columns share one fixed-height row
+   and each scroll independently within it - .map-drill-details etc.'s own
+   overflow-y:auto below), this page's panels take their natural content
+   height and the page itself scrolls as one unit (.mospi-map-page-body's
+   own overflow-y:auto) - no nested scrollbars, since a finding list and an
+   AI summary of very different lengths sitting in separate little
+   scroll-boxes read as broken, not as intentional. */
+.case-file-layout { display: flex; flex-direction: column; gap: 16px; }
+.case-file-timeline-panel, .case-file-split .map-drill-center, .case-file-split .map-drill-findings {
+  overflow-y: visible; min-height: 0;
+}
+.case-file-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 
 .map-drill-details, .map-drill-findings, .map-drill-center {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
@@ -724,6 +772,12 @@
   .map-drill-row { display: block; }
   .map-drill-details, .map-drill-findings, .map-drill-center { overflow-y: visible; margin-bottom: 16px; }
   .map-drill-map { height: 420px; margin-bottom: 16px; }
+  .case-file-split { display: block; }
+  .timeline-horizontal { display: block; }
+  .timeline-horizontal .timeline-step { display: flex; align-items: stretch; }
+  .timeline-horizontal .timeline-rail { flex-direction: column; width: 20px; margin-bottom: 0; }
+  .timeline-horizontal .timeline-connector { width: 1px; height: auto; min-height: 28px; flex: 1; margin-top: 4px; }
+  .timeline-horizontal .timeline-body { padding: 0 0 26px 12px; }
   .mospi-charts-grid { grid-template-columns: 1fr; }
   .mospi-stats { grid-template-columns: 1fr 1fr; }
   .mospi-nav-subtitle { display: none; }

@@ -24,7 +24,7 @@ WORK_KEY = ["WORK_RECOMMENDATION_DTL_ID", "SCOPE_HOUSE", "SCOPE_TENURE"]
 
 
 def load_config() -> dict:
-    with open(CONFIG_DIR / "detectors.yaml") as f:
+    with open(CONFIG_DIR / "detectors.yaml", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 

@@ -14,12 +14,19 @@ import { Loading, ErrorView } from '../components/StateViews'
 // same kind of signal.
 const RISK_TIER_SEVERITY = { High: 'high', Medium: 'medium', Low: 'low' }
 
-// A separate, independent AI signal from the rule-based findings below it -
+// A separate, independent AI signal from the rule-based findings list -
 // predicts this work's OWN chance of severe delay (engine/predictive.py, a
 // scikit-learn model trained on historical works), fed from its own real
 // recommended amount/state/activity/month, never a hypothetical the viewer
 // has to supply. Fails silently (returns null, not an error banner) since
 // this is a supplementary read, not required to review the case file.
+//
+// Two independent models feed this, shown as two clearly separated,
+// labelled blocks rather than one run-on paragraph - it should always be
+// obvious which model produced which number: a narrow pre-sanction delay
+// predictor (fires at recommendation time, before money moves), and a
+// broader post-hoc risk+anomaly model (scored against every detector's
+// output, once there's a real lifecycle to look at).
 function AiRiskPanel({ workNumber, scopeHouse, scopeTenure }) {
   const [assessment, setAssessment] = useState(null)
 
@@ -28,39 +35,57 @@ function AiRiskPanel({ workNumber, scopeHouse, scopeTenure }) {
     api.aiAssessment(workNumber, scopeHouse, scopeTenure).then(setAssessment).catch(() => {})
   }, [workNumber, scopeHouse, scopeTenure])
 
-  if (!assessment) return null
+  if (!assessment) return <p className="ai-risk-empty">Loading…</p>
   const pred = assessment.predicted_delay_risk
   const risk = assessment.risk_assessment
 
   return (
-    <div className="panel" style={{ marginTop: 12 }}>
-      <h2>AI predictive risk</h2>
-      <div className="ai-risk-row">
-        <SeverityChip severity={RISK_TIER_SEVERITY[pred.risk_tier] || 'medium'} />
-        <span className="ai-risk-prob num">{Math.round(pred.predicted_delay_probability * 100)}% predicted delay probability</span>
+    <>
+      <div className="ai-risk-block-title">Pre-sanction delay risk</div>
+      <div className="ai-risk-stats">
+        <div className="ai-risk-stat">
+          <div className="ai-risk-stat-top"><SeverityChip severity={RISK_TIER_SEVERITY[pred.risk_tier] || 'medium'} /></div>
+          <div className="ai-risk-stat-value num">{Math.round(pred.predicted_delay_probability * 100)}%</div>
+          <div className="ai-risk-stat-label">predicted probability of severe sanction/completion delay</div>
+        </div>
       </div>
       {pred.drivers.length > 0 && (
-        <ul className="ai-risk-drivers">
-          {pred.drivers.map((d, i) => <li key={i}>{d}</li>)}
-        </ul>
+        <>
+          <p className="ai-risk-why">Why</p>
+          <ul className="ai-risk-drivers">
+            {pred.drivers.map((d, i) => <li key={i}>{d}</li>)}
+          </ul>
+        </>
       )}
       <p className="panel-note">
         Model AUC {pred.model_auc.toFixed(2)} on held-out historical works - predicts this work's OWN
         delay risk before/at recommendation, a separate signal from the {assessment.rule_based_findings.length} rule-based
-        finding{assessment.rule_based_findings.length === 1 ? '' : 's'} below, not a replacement for them.
+        finding{assessment.rule_based_findings.length === 1 ? '' : 's'} in the findings list, not a replacement for them.
       </p>
+
       {risk && risk.risk_score !== null && (
         <>
-          <div className="ai-risk-row">
-            <SeverityChip severity={RISK_TIER_SEVERITY[risk.risk_tier] || 'medium'} />
-            <span className="ai-risk-prob num">{Math.round(risk.risk_score * 100)}% overall risk score</span>
-            <SeverityChip severity={risk.is_anomalous ? 'high' : 'low'} />
-            <span className="ai-risk-prob num">{Math.round(risk.anomaly_score * 100)}% anomaly score</span>
+          <hr className="ai-risk-divider" />
+          <div className="ai-risk-block-title">Overall risk &amp; anomaly (all detectors)</div>
+          <div className="ai-risk-stats">
+            <div className="ai-risk-stat">
+              <div className="ai-risk-stat-top"><SeverityChip severity={RISK_TIER_SEVERITY[risk.risk_tier] || 'medium'} /></div>
+              <div className="ai-risk-stat-value num">{Math.round(risk.risk_score * 100)}%</div>
+              <div className="ai-risk-stat-label">overall risk score</div>
+            </div>
+            <div className="ai-risk-stat">
+              <div className="ai-risk-stat-top"><SeverityChip severity={risk.is_anomalous ? 'high' : 'low'} /></div>
+              <div className="ai-risk-stat-value num">{Math.round(risk.anomaly_score * 100)}%</div>
+              <div className="ai-risk-stat-label">anomaly score (unsupervised)</div>
+            </div>
           </div>
           {risk.top_drivers.length > 0 && (
-            <ul className="ai-risk-drivers">
-              {risk.top_drivers.map((d, i) => <li key={i}>{d}</li>)}
-            </ul>
+            <>
+              <p className="ai-risk-why">Why</p>
+              <ul className="ai-risk-drivers">
+                {risk.top_drivers.map((d, i) => <li key={i}>{d}</li>)}
+              </ul>
+            </>
           )}
           <p className="panel-note" style={{ marginBottom: 0 }}>
             Model AUC {risk.model_auc.toFixed(2)} - a broader model trained on ~21 features engineered from
@@ -72,7 +97,7 @@ function AiRiskPanel({ workNumber, scopeHouse, scopeTenure }) {
           </p>
         </>
       )}
-    </div>
+    </>
   )
 }
 
@@ -126,34 +151,15 @@ function NarrativeBlock({ finding, workNumber, scopeHouse, scopeTenure }) {
   )
 }
 
-// the facts flagging this work as an anomaly: detector, evidence, and the
-// plain-language note formatted from that same evidence - nothing here is
-// an action taken, only what was observed.
-function FindingEvidence({ finding, workNumber, scopeHouse, scopeTenure }) {
-  return (
-    <div className="finding-card">
-      <div className="finding-card-top">
-        <span className="finding-card-name">{finding.detector.replaceAll('_', ' ')}</span>
-        <SeverityChip severity={finding.severity} />
-        <TagChip tag={finding.tag} />
-        {finding.suppressed && <SuppressedChip />}
-        <span style={{ marginLeft: 'auto' }} className="num">{formatRupees(finding.financial_exposure)}</span>
-      </div>
-      <EvidenceTable finding={finding} />
-      <div className="finding-card-route">Confidence: {finding.confidence}</div>
-      <div className="panel" style={{ marginTop: 12, marginBottom: 0 }}>
-        <h2>Case-file note</h2>
-        <NarrativeBlock finding={finding} workNumber={workNumber} scopeHouse={scopeHouse} scopeTenure={scopeTenure} />
-      </div>
-    </div>
-  )
-}
-
-// updates taken on this anomaly - which desk it's routed to (real, from the
-// engine's routing table) and a reviewer's own recorded verdict, persisted
-// server-side (api/finding_status.py) so it survives a reload and is the
-// same for every viewer of this case file, not just this browser tab.
-function FindingUpdate({ finding, workNumber, scopeHouse, scopeTenure, statusRecord, onSaved }) {
+// One card per finding: the evidence (detector, severity, tag, amount,
+// evidence table, case-file note - what was observed, no action taken)
+// stacked above the "Review" section (which desk it's routed to, and a
+// reviewer's own recorded verdict, persisted server-side via
+// api/finding_status.py so it survives a reload and is the same for every
+// viewer of this case file). These used to be two separate parallel lists
+// in different columns, matched up only by list position - one card per
+// finding means there's nothing left to cross-reference.
+function FindingCard({ finding, workNumber, scopeHouse, scopeTenure, statusRecord, onSaved }) {
   const [status, setStatus] = useState(statusRecord?.status || '')
   const [reviewerName, setReviewerName] = useState(statusRecord?.reviewer_name || '')
   const [note, setNote] = useState(statusRecord?.note || '')
@@ -189,8 +195,20 @@ function FindingUpdate({ finding, workNumber, scopeHouse, scopeTenure, statusRec
       <div className="finding-card-top">
         <span className="finding-card-name">{finding.detector.replaceAll('_', ' ')}</span>
         <SeverityChip severity={finding.severity} />
+        <TagChip tag={finding.tag} />
+        {finding.suppressed && <SuppressedChip />}
+        <span style={{ marginLeft: 'auto' }} className="num">{formatRupees(finding.financial_exposure)}</span>
       </div>
-      <div className="finding-card-route">Routed to {finding.routed_to}</div>
+      <EvidenceTable finding={finding} />
+      <div className="finding-card-route">Confidence: {finding.confidence}</div>
+      <div className="panel" style={{ marginTop: 12, marginBottom: 0 }}>
+        <h2>Case-file note</h2>
+        <NarrativeBlock finding={finding} workNumber={workNumber} scopeHouse={scopeHouse} scopeTenure={scopeTenure} />
+      </div>
+
+      <hr className="finding-card-divider" />
+      <p className="finding-card-section-title">Review</p>
+      <div className="finding-card-route" style={{ marginTop: 0 }}>Routed to {finding.routed_to}</div>
       <div className="update-status">
         {statusRecord
           ? `${STATUS_LABEL[statusRecord.status]} · ${statusRecord.reviewer_name}`
@@ -305,6 +323,7 @@ export function CaseFileView() {
         drawerLinks={role ? [] : [
           { label: 'Overview', onClick: () => navigate('/mospi') },
           { label: 'Map', onClick: () => navigate('/mospi/map') },
+          { label: 'Anomalies', onClick: () => navigate('/anomalies') },
           { label: 'MP Audits', onClick: () => navigate('/mp-audits') },
           { label: 'Reports', onClick: () => navigate('/reports') },
         ]}
@@ -319,29 +338,33 @@ export function CaseFileView() {
         </div>
       </div>
 
-      <div className="map-drill-row">
-        <div className="map-drill-details">
-          <h3>Lifecycle</h3>
-          <LifecycleTimeline lifecycle={work.lifecycle} />
-          <AiRiskPanel workNumber={work.work_number} scopeHouse={scopeHouse} scopeTenure={scopeTenure} />
+      <div className="case-file-layout">
+        <div className="map-drill-details case-file-timeline-panel">
+          <h3>Work description</h3>
+          {work.work_description
+            ? <p className="fact-line">{work.work_description}</p>
+            : <p className="fact-line" style={{ color: 'var(--ink-faint)' }}>No description on record.</p>}
+
+          <h3>Timeline</h3>
+          <LifecycleTimeline lifecycle={work.lifecycle} horizontal />
         </div>
 
-        <div className="map-drill-center">
-          <h3>Findings ({work.findings.length})</h3>
-          {work.findings.map((f) => (
-            <FindingEvidence key={f.finding_id} finding={f} workNumber={work.work_number} scopeHouse={scopeHouse} scopeTenure={scopeTenure} />
-          ))}
-        </div>
+        <div className="case-file-split">
+          <div className="map-drill-center">
+            <h3>AI predictive risk</h3>
+            <AiRiskPanel workNumber={work.work_number} scopeHouse={scopeHouse} scopeTenure={scopeTenure} />
+          </div>
 
-        <div className="map-drill-findings">
-          <h3>Updates</h3>
-          {work.findings.map((f) => (
-            <FindingUpdate
-              key={f.finding_id} finding={f}
-              workNumber={work.work_number} scopeHouse={scopeHouse} scopeTenure={scopeTenure}
-              statusRecord={statuses[f.finding_id]} onSaved={handleStatusSaved}
-            />
-          ))}
+          <div className="map-drill-findings">
+            <h3>Findings ({work.findings.length})</h3>
+            {work.findings.map((f) => (
+              <FindingCard
+                key={f.finding_id} finding={f}
+                workNumber={work.work_number} scopeHouse={scopeHouse} scopeTenure={scopeTenure}
+                statusRecord={statuses[f.finding_id]} onSaved={handleStatusSaved}
+              />
+            ))}
+          </div>
         </div>
       </div>
       </div>

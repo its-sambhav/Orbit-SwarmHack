@@ -137,6 +137,7 @@ export function DistrictMapView() {
           { label: 'Overview', onClick: () => navigate(overviewUrl) },
         ] : [
           { label: 'Overview', onClick: () => navigate(overviewUrl) },
+          { label: 'Anomalies', onClick: () => navigate('/anomalies') },
           { label: 'Reports', onClick: () => navigate('/reports') },
         ]}
       />

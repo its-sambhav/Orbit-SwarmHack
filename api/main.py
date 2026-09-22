@@ -368,12 +368,23 @@ def get_work(
                     "authority": work.get("exp_top_vendor"), "authority_role": "Vendor",
                     "vendor_count": work.get("exp_vendor_count")},
     }
+    # rec_/san_/comp_ each carry their own copy of the free-text description
+    # from that stage's own source row - coalesced the same way this file
+    # already coalesces activity names, since a work not yet sanctioned/
+    # completed only has the recommendation-stage copy populated.
+    work_description = next(
+        (work.get(c) for c in ("rec_WORK_DESCRIPTION", "san_WORK_DESCRIPTION", "comp_WORK_DESCRIPTION")
+         if pd.notna(work.get(c))),
+        None,
+    )
+
     return clean({
         "work_number": work_number, "scope_house": scope_house, "scope_tenure": scope_tenure,
         "state": work.get("STATE_NAME"), "constituency": work.get("CONSTITUENCY"),
         "district": work.get("DISTRICT"),
         "constituency_id": work.get("CONSTITUENCY_ID"), "mp_name": work.get("MP_NAME"),
         "work_stage": work.get("WORK_STAGE_RESOLVED"),
+        "work_description": work_description,
         "has_recommended": work.get("has_recommended"), "has_sanctioned": work.get("has_sanctioned"),
         "has_completed": work.get("has_completed"), "has_expenditure": work.get("has_expenditure"),
         "lifecycle": lifecycle,

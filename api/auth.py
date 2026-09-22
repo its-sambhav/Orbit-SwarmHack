@@ -41,7 +41,7 @@ def _secret() -> bytes:
 
 
 def load_role_passwords() -> dict[str, str]:
-    with open(AUTH_CONFIG_PATH) as f:
+    with open(AUTH_CONFIG_PATH, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     return cfg["roles"]
 
