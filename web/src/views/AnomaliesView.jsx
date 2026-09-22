@@ -29,20 +29,31 @@ export function AnomaliesView() {
   const [scope, setScope] = useState('all')
   const [severity, setSeverity] = useState('')
   const [tag, setTag] = useState('')
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [offset, setOffset] = useState(0)
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
 
+  // this queue is the real, unpaginated-anywhere-else dataset (hundreds of
+  // thousands of works), so search runs server-side via /api/queue's own
+  // `q` param rather than filtering whatever page happens to be loaded -
+  // debounced so it doesn't fire a request per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
   // any filter change restarts at the first page - a stale offset from a
   // previous, larger result set could otherwise land past the end of a
   // newly-narrowed one.
-  useEffect(() => { setOffset(0) }, [scope, severity, tag])
+  useEffect(() => { setOffset(0) }, [scope, severity, tag, debouncedSearch])
 
   useEffect(() => {
     setData(null)
-    api.queue({ scope, severity: severity || undefined, tag: tag || undefined, limit: PAGE_SIZE, offset })
+    api.queue({ scope, q: debouncedSearch || undefined, severity: severity || undefined, tag: tag || undefined, limit: PAGE_SIZE, offset })
       .then(setData).catch((e) => setError(e.message))
-  }, [scope, severity, tag, offset])
+  }, [scope, severity, tag, debouncedSearch, offset])
 
   if (error) return <ErrorView message={error} onRetry={() => window.location.reload()} />
 
@@ -74,6 +85,10 @@ export function AnomaliesView() {
         <div className="panel">
           <div className="filters">
             <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
+            <input
+              type="search" placeholder="Search works…" aria-label="Search works"
+              value={search} onChange={(e) => setSearch(e.target.value)}
+            />
             <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
               <option value="">All severities</option>
               <option value="high">High</option>
@@ -105,9 +120,10 @@ export function AnomaliesView() {
                         </span>
                         <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
                       </div>
-                      {(item.mp_name || item.routed_to) && (
-                        <div className="queue-item-meta">{[item.mp_name, item.routed_to].filter(Boolean).join(' · ')}</div>
-                      )}
+                      {item.work_description && <p className="queue-item-desc">{item.work_description}</p>}
+                      <div className="queue-item-meta">
+                        {[item.mp_name, `Work #${item.work_number}`, item.routed_to].filter(Boolean).join(' · ')}
+                      </div>
                       <div className="queue-item-chips">
                         <SeverityChip severity={item.max_severity} />
                         {item.tags.map((t) => <TagChip key={t} tag={t} />)}

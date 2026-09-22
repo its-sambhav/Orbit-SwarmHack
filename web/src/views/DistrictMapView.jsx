@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, fetchGeo, formatRupees } from '../api'
+import { api, fetchGeo, formatRupees, queueItemMatches } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
@@ -30,6 +30,7 @@ export function DistrictMapView() {
   const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
   const [severityFilter, setSeverityFilter] = useState('')
+  const [queueSearch, setQueueSearch] = useState('')
   const [valueMode, setValueMode] = useState('amount')
 
   const [pcGeojson, setPcGeojson] = useState(null)
@@ -120,7 +121,9 @@ export function DistrictMapView() {
   if (error) return <ErrorView message={error} />
   if (!data) return <Loading label="Loading map" />
 
-  const filteredQueue = severityFilter ? data.queue.filter((i) => i.max_severity === severityFilter) : data.queue
+  const filteredQueue = data.queue
+    .filter((i) => !severityFilter || i.max_severity === severityFilter)
+    .filter((i) => queueItemMatches(i, queueSearch))
   const overviewUrl = `${isRoleView ? `/district-authority/${encodeURIComponent(stateName)}/${encodeURIComponent(districtName)}` : `/district/${encodeURIComponent(stateName)}/${encodeURIComponent(districtName)}`}?${params.toString()}`
 
   return (
@@ -152,11 +155,12 @@ export function DistrictMapView() {
               { label: data.district, to: overviewUrl },
               { label: 'Map' },
             ]} />
-            <h1 style={{ margin: '4px 0 2px' }}>{data.district} — {isRoleView ? 'anomaly map' : 'district map'}</h1>
-            <div className="mospi-page-sub-row">
-              <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13, flex: 1, minWidth: 240 }}>
-                {isRoleView ? 'District Authority' : 'MoSPI'} · {data.state} · {scopeLabel(scope)}
-                {!isRoleView && ' · Click another district on the map to switch'}
+            <div className="mospi-header-row">
+              <div>
+                <h1 style={{ margin: 0 }}>{data.district} — {isRoleView ? 'anomaly map' : 'district map'}</h1>
+                <div className="mospi-header-meta">
+                  {isRoleView ? 'District Authority' : 'MoSPI'} · {data.state} · {scopeLabel(scope)}
+                </div>
               </div>
               <div className="report-toolbar">
                 <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
@@ -177,7 +181,7 @@ export function DistrictMapView() {
                 <h3 style={{ margin: 0 }}>{data.district} scorecard</h3>
                 <ScopeToggle
                   scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
-                  value={valueMode} onChange={setValueMode} includeAll={false}
+                  value={valueMode} onChange={setValueMode} includeAll={false} size="sm"
                 />
               </div>
               <div className="scorecard-grid">
@@ -279,6 +283,10 @@ export function DistrictMapView() {
                   <option value="low">Low</option>
                 </select>
               </div>
+              <input
+                type="search" className="queue-search-input" placeholder="Search works…" aria-label="Search works"
+                value={queueSearch} onChange={(e) => setQueueSearch(e.target.value)}
+              />
               {filteredQueue.length ? (
                 <div className="queue-list">
                   {filteredQueue.map((item) => (
@@ -294,7 +302,7 @@ export function DistrictMapView() {
                         <span className="queue-item-title">{item.constituency}</span>
                         <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
                       </div>
-                      <div className="queue-item-meta">{item.mp_name} · Work #{item.work_number}</div>
+                      {item.work_description && <p className="queue-item-desc">{item.work_description}</p>}
                       <div className="queue-item-chips">
                         <SeverityChip severity={item.max_severity} />
                         {item.tags.map((t) => <TagChip key={t} tag={t} />)}
@@ -303,7 +311,7 @@ export function DistrictMapView() {
                   ))}
                 </div>
               ) : (
-                <EmptyState title="Nothing needs action" subtitle={severityFilter ? 'No flagged works at this severity for this scope.' : 'This district has no flagged works for this scope.'} />
+                <EmptyState title="Nothing needs action" subtitle={severityFilter || queueSearch ? 'No flagged works match these filters.' : 'This district has no flagged works for this scope.'} />
               )}
             </div>
           </div>

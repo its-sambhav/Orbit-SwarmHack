@@ -234,6 +234,23 @@ export function formatDate(iso) {
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+// shared by every review-queue/findings panel that gets its own search box
+// (MospiMapView, StateMapView, DistrictMapView, ConstituencyView) - these
+// each already hold their full (already-fetched, unpaginated) list of up to
+// a couple hundred works client-side, so a plain substring filter over the
+// fields a reviewer would actually type - constituency, MP, work number, the
+// work's own description - is enough; no round trip needed. AnomaliesView is
+// the one exception (its queue is the real, hundreds-of-thousands-strong
+// dataset, paginated server-side), so it searches via /api/queue's own `q`
+// param instead of this.
+export function queueItemMatches(item, query) {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  return [item.constituency, item.state, item.district, item.mp_name, item.work_number, item.work_description]
+    .filter(Boolean)
+    .some((v) => String(v).toLowerCase().includes(q))
+}
+
 // shared by every MoSPI page that has a search bar - one entry per real
 // constituency/state name already present in an /api/constituencies response.
 export function buildSearchIndex(constituencies) {

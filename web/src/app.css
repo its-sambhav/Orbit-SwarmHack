@@ -25,6 +25,11 @@
 }
 .scope-toggle-btn.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 .scope-toggle-btn:hover:not(.active) { color: var(--ink); }
+/* compact variant - the Amount/Projects value-mode toggle next to a card's
+   own h3 (scorecard panels) reads as a secondary, in-card control, not a
+   page-level filter like the scope/tenure toggle - smaller to match. */
+.scope-toggle-sm { padding: 1px; gap: 1px; }
+.scope-toggle-sm .scope-toggle-btn { padding: 3px 8px; font-size: 11px; }
 
 /* ---------- MoSPI landing page ---------- */
 /* the rail is a hidden-by-default overlay (position:fixed, toggled by the
@@ -79,7 +84,7 @@
 .mospi-popover-anchor { position: relative; }
 .mospi-icon-btn {
   flex: none; height: 38px; padding: 0 8px; border: none; border-radius: var(--radius-sm);
-  background: rgba(255,255,255,0.08); color: #fff; cursor: pointer; display: flex; align-items: center; gap: 4px;
+  background: none; color: #fff; cursor: pointer; display: flex; align-items: center; gap: 4px;
   position: relative;
 }
 .mospi-icon-btn:hover { background: rgba(255,255,255,0.18); }
@@ -214,6 +219,18 @@
 .mospi-page-sub-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
 .mospi-page-sub-row .mospi-page-sub { margin-bottom: 0; flex: 1; min-width: 240px; }
 .mospi-page-sub-row .report-toolbar { margin-bottom: 0; }
+
+/* page-level title row (drill-down views): the H1 and its scope/date/report
+   toolbar share one line instead of the title sitting on its own row above
+   a second row for the toolbar - one less row of vertical space before the
+   map/scorecard content starts, and the header reads as one control strip
+   instead of two. Any small meta line (entity name, counts) that used to
+   sit next to the toolbar now sits directly under the title instead, still
+   scoped to the same row's left-hand column. */
+.mospi-header-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.mospi-header-row h1, .mospi-header-row .mospi-page-title { margin: 0; }
+.mospi-header-row .report-toolbar { margin-bottom: 0; }
+.mospi-header-meta { font-size: 13px; color: var(--ink-muted); margin-top: 3px; }
 /* .map-drill-header is a flex item (column child of .map-drill-view), which
    establishes its own block-formatting context - its last child's own
    bottom margin no longer collapses with the header's own margin-bottom the
@@ -551,6 +568,15 @@
 .report-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
 
 /* ---------- queue ---------- */
+/* filters the panel's own already-fetched list client-side (see
+   queueItemMatches in api.js) - flex:none so it stays put above the
+   scrolling .queue-list rather than growing with it. */
+.queue-search-input {
+  flex: none; width: 100%; font-family: inherit; font-size: 12.5px; padding: 7px 10px; margin-bottom: 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink);
+}
+.queue-search-input:focus { outline: none; border-color: var(--accent); }
+.queue-search-input::-webkit-search-cancel-button { -webkit-appearance: none; }
 .queue-list { overflow-y: auto; flex: 1; min-height: 0; }
 .queue-item {
   display: block; width: 100%; text-align: left; padding: 10px 18px; border: none; border-bottom: 1px solid var(--border);
@@ -561,7 +587,29 @@
 .queue-item-title { font-size: 14.5px; font-weight: 500; }
 .queue-item-amount { font-size: 14px; font-weight: 600; white-space: nowrap; }
 .queue-item-meta { font-size: 11.5px; color: var(--ink-muted); margin-bottom: 6px; }
-.queue-item-chips { display: flex; gap: 5px; flex-wrap: wrap; }
+/* the plain-English reason this work's single highest-priority finding was
+   flagged (evidence.deviation) - what a tag chip alone can't say (a chip
+   names a category, "STATUTORY COMPLIANCE"; this says what actually
+   happened, "MP portfolio allocated 0.0% to SC... - Rs54,401,895 cumulative
+   quota shortfall"). Without this, a reviewer can't tell what a card is
+   even about until they click through to the case file. */
+.queue-item-headline { font-size: 12.5px; color: var(--ink); line-height: 1.45; margin: 2px 0 6px; }
+/* the work's own free-text description (AnomaliesView) - the finding's
+   plain-English reason is already legible from the severity/tag chips
+   below, so this line answers "what is this work" instead of repeating
+   "why was it flagged". Clamped to 2 lines (descriptions run long and
+   unclamped) with the browser's own ellipsis, not a manually truncated
+   string, so it always breaks at a whole word. */
+.queue-item-desc {
+  font-size: 12.5px; color: var(--ink); line-height: 1.45; margin: 2px 0 6px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.queue-item-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+/* smaller than the standard .chip used elsewhere (findings evidence, MP
+   status) - a review-queue card already packs area name/work id/amount/
+   headline/routing into a tight space, so its own tag chips read as a
+   quick-scan strip, not a primary element competing with that text. */
+.queue-item-chips .chip { padding: 2px 7px; font-size: 10.5px; line-height: 1.5; }
 
 /* ---------- chips ---------- */
 .chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: var(--radius-sm); font-size: 12.5px; font-weight: 500; line-height: 1.6; white-space: nowrap; }
@@ -588,6 +636,18 @@
 
 /* ---------- breadcrumb (India / State / Constituency / Work) ---------- */
 .breadcrumb { display: flex; flex-wrap: wrap; align-items: center; font-size: 13px; margin-bottom: 8px; }
+/* one level up from wherever this drill-down page is - shown only past the
+   top of a drill-down (the breadcrumb has more than one item), so a fresh
+   arrival at a root page like India never shows a back arrow with nowhere
+   useful to go. */
+.breadcrumb-back {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; margin-right: 8px; flex: none;
+  border: 1px solid var(--border); border-radius: 50%; background: var(--surface);
+  color: var(--ink-muted); text-decoration: none; cursor: pointer; font-family: inherit;
+}
+.breadcrumb-back:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-wash); }
+.breadcrumb-back svg { width: 14px; height: 14px; }
 .breadcrumb-segment { display: inline-flex; align-items: center; }
 .breadcrumb a, .breadcrumb-link {
   color: var(--ink-muted); text-decoration: none; background: none; border: none; padding: 0;
@@ -708,7 +768,7 @@
    column holds evidence instead of a map), so every drill level - down to
    one anomaly - reads as the same composition. */
 .map-drill-view { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 20px 24px; }
-.map-drill-header { flex: none; margin-bottom: 16px; }
+.map-drill-header { flex: none; margin-bottom: 14px; }
 /* min-height:0 (not the flex-item default of auto) is what let this row
    fill "whatever's left" on the original map-only pages, shrinking below
    its own content's natural size if the fixed-height parent above it left
@@ -761,6 +821,42 @@
 .scorecard-cell .value { font-size: 19px; font-weight: 600; }
 .comparison-row { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-top: 1px solid var(--border); }
 .comparison-row .value { font-weight: 600; }
+
+/* ---------- scrollbars ---------- */
+/* every panel that scrolls its own content (map-drill side panels, queue
+   lists, rank lists, popovers, the map page itself) shares one slim,
+   low-contrast scrollbar instead of each browser's full-width default bar,
+   which read as a heavy, unstyled seam against these otherwise flat cards.
+   Firefox via scrollbar-width/-color, Chrome/Safari/Edge via the
+   -webkit-scrollbar pseudo-elements - track transparent (no visible rail
+   until there's something to scroll), thumb only a touch darker than the
+   border it sits inside so it reads as a subtle affordance, not a UI chrome
+   element competing with the content. */
+.map-drill-details, .map-drill-findings, .map-drill-center,
+.queue-list, .rank-list, .mospi-alert-list, .mospi-map-page-body, .casefile-view {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.map-drill-details::-webkit-scrollbar, .map-drill-findings::-webkit-scrollbar, .map-drill-center::-webkit-scrollbar,
+.queue-list::-webkit-scrollbar, .rank-list::-webkit-scrollbar, .mospi-alert-list::-webkit-scrollbar,
+.mospi-map-page-body::-webkit-scrollbar, .casefile-view::-webkit-scrollbar {
+  width: 7px; height: 7px;
+}
+.map-drill-details::-webkit-scrollbar-track, .map-drill-findings::-webkit-scrollbar-track, .map-drill-center::-webkit-scrollbar-track,
+.queue-list::-webkit-scrollbar-track, .rank-list::-webkit-scrollbar-track, .mospi-alert-list::-webkit-scrollbar-track,
+.mospi-map-page-body::-webkit-scrollbar-track, .casefile-view::-webkit-scrollbar-track {
+  background: transparent;
+}
+.map-drill-details::-webkit-scrollbar-thumb, .map-drill-findings::-webkit-scrollbar-thumb, .map-drill-center::-webkit-scrollbar-thumb,
+.queue-list::-webkit-scrollbar-thumb, .rank-list::-webkit-scrollbar-thumb, .mospi-alert-list::-webkit-scrollbar-thumb,
+.mospi-map-page-body::-webkit-scrollbar-thumb, .casefile-view::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box;
+}
+.map-drill-details::-webkit-scrollbar-thumb:hover, .map-drill-findings::-webkit-scrollbar-thumb:hover, .map-drill-center::-webkit-scrollbar-thumb:hover,
+.queue-list::-webkit-scrollbar-thumb:hover, .rank-list::-webkit-scrollbar-thumb:hover, .mospi-alert-list::-webkit-scrollbar-thumb:hover,
+.mospi-map-page-body::-webkit-scrollbar-thumb:hover, .casefile-view::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-faint);
+}
 
 @media (max-width: 900px) {
   /* stacked layout needs the page to scroll normally, not fight for space

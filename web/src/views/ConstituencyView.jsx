@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, fetchGeo, formatRupees, mapCategoryBreakdown } from '../api'
+import { api, fetchGeo, formatRupees, queueItemMatches } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
-import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip } from '../components/Chips'
-import { GenerateReportButton } from '../components/ReportTools'
+import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 
 const ROLE_LABEL = { state: 'State Nodal Authority', district: 'District Authority' }
 const ROLE_AVATAR = { state: 'S', district: 'D' }
+const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 
 // MoSPI's own constituency drill-down (from the map, or from an MP Audits
 // profile page) - India > state > here - and ALSO where a State/District
@@ -25,25 +25,44 @@ const ROLE_AVATAR = { state: 'S', district: 'D' }
 // /mp/:id), not this page.
 export function ConstituencyView() {
   const { id } = useParams()
-  const [params] = useSearchParams()
+  const [params, setSearchParams] = useSearchParams()
   const scope = params.get('scope') || '18th Lok Sabha'
+  const dateFrom = params.get('date_from') || null
+  const dateTo = params.get('date_to') || null
   const role = params.get('role')
   const roleName = params.get('role_name')
   const navigate = useNavigate()
   const [data, setData] = useState(null)
+  const [meta, setMeta] = useState(null)
   const [geojson, setGeojson] = useState(null)
   const [constituencies, setConstituencies] = useState(null)
   const [error, setError] = useState(null)
   const [valueMode, setValueMode] = useState('amount')
+  const [queueSearch, setQueueSearch] = useState('')
 
   useEffect(() => {
     setData(null)
-    api.constituency(id, scope).then(setData).catch((e) => setError(e.message))
-  }, [id, scope])
+    api.constituency(id, scope, { dateFrom, dateTo }).then(setData).catch((e) => setError(e.message))
+  }, [id, scope, dateFrom, dateTo])
 
   useEffect(() => {
     fetchGeo('india_pc_2019_simplified.geojson').then(setGeojson)
   }, [])
+
+  useEffect(() => { api.meta().then(setMeta).catch(() => {}) }, [])
+
+  function setScope(next) {
+    const p = new URLSearchParams(params)
+    p.set('scope', next)
+    setSearchParams(p)
+  }
+
+  function setRange(from, to) {
+    const p = new URLSearchParams(params)
+    if (from) p.set('date_from', from); else p.delete('date_from')
+    if (to) p.set('date_to', to); else p.delete('date_to')
+    setSearchParams(p)
+  }
 
   // the nationwide risk list already has real works_total/works_flagged/
   // breach_rate/risk_score per constituency - the same list the search bar
@@ -108,7 +127,6 @@ export function ConstituencyView() {
   const completionDelta = scorecard?.completion_rate != null && scorecard?.national_median_completion_rate != null
     ? scorecard.completion_rate - scorecard.national_median_completion_rate
     : null
-  const lifecycleSectors = data ? mapCategoryBreakdown(data.category_breakdown) : []
 
   // the drill-down trail continues within the role's own authorized scope -
   // back to the state/district page the role itself owns, never back out to
@@ -153,10 +171,11 @@ export function ConstituencyView() {
       <div className="map-drill-view" style={{ padding: 0, height: '100%' }}>
       <div className="map-drill-header">
         <Breadcrumb items={breadcrumbItems} />
-        <h1 style={{ margin: '4px 0 2px' }}>{data ? data.constituency : 'Loading…'}</h1>
-        <div className="mospi-page-sub-row">
-          <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>{data ? `${data.state} · ${scope}` : scope}</div>
+        <div className="mospi-header-row">
+          <h1 style={{ margin: 0 }}>{data ? data.constituency : 'Loading…'}</h1>
           <div className="report-toolbar">
+            <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
+            <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
             {data && (
               <GenerateReportButton
                 level="constituency" scope={scope} state={data.state}
@@ -172,10 +191,10 @@ export function ConstituencyView() {
           {data ? (
             <>
               <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
-                <h3 style={{ margin: 0 }}>MP scorecard</h3>
+                <h3 style={{ margin: 0 }}>{data.constituency} scorecard</h3>
                 <ScopeToggle
                   scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
-                  value={valueMode} onChange={setValueMode} includeAll={false}
+                  value={valueMode} onChange={setValueMode} includeAll={false} size="sm"
                 />
               </div>
               <p className="fact-line">{data.mp_name || 'MP not on record for this scope'}</p>
@@ -209,8 +228,6 @@ export function ConstituencyView() {
                 </p>
               )}
 
-              <ProjectLifecycleBarChart title="Project Lifecycle & Risk Breakdown" sectors={lifecycleSectors} />
-
               <h3>By tag</h3>
               <div className="tag-breakdown">
                 {Object.entries(data.tag_breakdown).map(([tag, n]) => (
@@ -231,8 +248,16 @@ export function ConstituencyView() {
                   nameProp="pc_name"
                   dataByKey={constituencyDataByKey}
                   focusKey={data.pc_id}
+                  grayscaleUnfocused
+                  onSelect={(risk) => {
+                    if (risk.constituency_id == null || String(risk.constituency_id) === String(data.constituency_id)) return
+                    navigate(
+                      `/constituency/${risk.constituency_id}?scope=${encodeURIComponent(scope)}`
+                      + (dateFrom ? `&date_from=${dateFrom}` : '') + (dateTo ? `&date_to=${dateTo}` : '') + roleQuery
+                    )
+                  }}
                 />
-                <MapLegend />
+                <MapLegend grayscaleUnfocused />
               </>
             ) : (
               <EmptyState title="No boundary matched for this constituency" subtitle="Falls in the unmatched tail of the name crosswalk between this dataset and the boundary source." />
@@ -247,24 +272,35 @@ export function ConstituencyView() {
             <>
               <h3>Findings ({data.findings.length})</h3>
               {data.findings.length ? (
-                <div className="queue-list">
-                  {data.findings.map((f) => (
-                    <button
-                      key={`${f.work_number}-${f.scope_house}-${f.scope_tenure}`}
-                      className="queue-item"
-                      onClick={() => navigate(`/work/${f.work_number}?scope_house=${encodeURIComponent(f.scope_house)}&scope_tenure=${encodeURIComponent(f.scope_tenure)}${roleQuery}`)}
-                    >
-                      <div className="queue-item-top">
-                        <span className="queue-item-title">Work #{f.work_number}</span>
-                        <span className="queue-item-amount num">{formatRupees(f.total_exposure)}</span>
-                      </div>
-                      <div className="queue-item-chips">
-                        <SeverityChip severity={f.max_severity} />
-                        {f.tags.map((t) => <TagChip key={t} tag={t} />)}
-                      </div>
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <input
+                    type="search" className="queue-search-input" placeholder="Search works…" aria-label="Search works"
+                    value={queueSearch} onChange={(e) => setQueueSearch(e.target.value)}
+                  />
+                  {data.findings.filter((f) => queueItemMatches(f, queueSearch)).length ? (
+                    <div className="queue-list">
+                      {data.findings.filter((f) => queueItemMatches(f, queueSearch)).map((f) => (
+                        <button
+                          key={`${f.work_number}-${f.scope_house}-${f.scope_tenure}`}
+                          className="queue-item"
+                          onClick={() => navigate(`/work/${f.work_number}?scope_house=${encodeURIComponent(f.scope_house)}&scope_tenure=${encodeURIComponent(f.scope_tenure)}${roleQuery}`)}
+                        >
+                          <div className="queue-item-top">
+                            <span className="queue-item-title">{f.district ? `${f.district} district` : `Work #${f.work_number}`}</span>
+                            <span className="queue-item-amount num">{formatRupees(f.total_exposure)}</span>
+                          </div>
+                          {f.work_description && <p className="queue-item-desc">{f.work_description}</p>}
+                          <div className="queue-item-chips">
+                            <SeverityChip severity={f.max_severity} />
+                            {f.tags.map((t) => <TagChip key={t} tag={t} />)}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState title="No works match your search" subtitle="Try a different work number or keyword." />
+                  )}
+                </>
               ) : (
                 <EmptyState title="No findings above the queue threshold here" subtitle="This constituency has no work currently past its review floor for this scope." />
               )}

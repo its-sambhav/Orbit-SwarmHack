@@ -128,10 +128,12 @@ export function MpMapView() {
               { label: data.mp_name, to: overviewUrl },
               { label: 'Map' },
             ]} />
-            <h1 style={{ margin: '4px 0 2px' }}>{data.mp_name} — constituency map</h1>
-            <div className="mospi-page-sub-row">
-              <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13, flex: 1, minWidth: 240 }}>
-                {data.constituency}, {data.state} · {scopeLabel(scope)} · {data.status}
+            <div className="mospi-header-row">
+              <div>
+                <h1 style={{ margin: 0 }}>{data.mp_name} — constituency map</h1>
+                <div className="mospi-header-meta">
+                  {data.constituency}, {data.state} · {scopeLabel(scope)} · {data.status}
+                </div>
               </div>
               <div className="report-toolbar">
                 <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />

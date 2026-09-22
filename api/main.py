@@ -279,9 +279,26 @@ def get_constituencies(scope: str = Query("all")):
     })
 
 
+def top_finding_lookup(s):
+    """Per-work lookup keyed on this work's single highest-priority finding -
+    used to label a review-queue card with a plain-English reason it was
+    flagged (evidence.deviation, e.g. "649 days - slower than 90% of 30,717
+    comparable works...") rather than just an abstract tag chip
+    (STATUTORY COMPLIANCE, AGENCY CONCENTRATION) that names a category but
+    never says what actually happened. Shared by /api/queue and
+    /api/constituency/{id}, the two endpoints that render this kind of card."""
+    top = (s.findings.sort_values("priority_score", ascending=False)
+           .drop_duplicates(subset=["work_number", "scope_house", "scope_tenure"])
+           .set_index(["work_number", "scope_house", "scope_tenure"]))
+    routed = top["routed_to"]
+    headline = top["evidence"].apply(lambda e: e.get("deviation") if isinstance(e, dict) else None)
+    return routed, headline
+
+
 @app.get("/api/queue")
 def get_queue(
     scope: str = Query("all"),
+    q: str | None = None,
     tag: str | None = None,
     severity: str | None = None,
     state: str | None = None,
@@ -300,6 +317,20 @@ def get_queue(
     if date_to:
         wr = wr[wr["date"] <= pd.Timestamp(date_to)]
 
+    if q:
+        # a reviewer types a work number, an MP/constituency name, or a
+        # word from the work's own description - one case-insensitive
+        # substring match across all of them, not a separate field picker,
+        # since this is the "full" queue browser and a reviewer rarely
+        # knows in advance which field their search term lives in.
+        needle = q.strip().casefold()
+        if needle:
+            haystack = (
+                wr["work_number"].astype(str) + " " + wr["CONSTITUENCY"].fillna("") + " "
+                + wr["STATE_NAME"].fillna("") + " " + wr["MP_NAME"].fillna("") + " "
+                + wr["work_description"].fillna("")
+            ).str.casefold()
+            wr = wr[haystack.str.contains(needle, regex=False)]
     if tag:
         wr = wr[wr["tags"].apply(lambda t: tag in t)]
     if severity:
@@ -318,10 +349,7 @@ def get_queue(
     total = len(wr)
     page = wr.iloc[offset:offset + limit]
 
-    # primary routed_to per work = the routed_to of its highest-priority finding
-    top_finding = (s.findings.sort_values("priority_score", ascending=False)
-                   .drop_duplicates(subset=["work_number", "scope_house", "scope_tenure"]))
-    routed = top_finding.set_index(["work_number", "scope_house", "scope_tenure"])["routed_to"]
+    routed, headline = top_finding_lookup(s)
 
     items = []
     for _, row in page.iterrows():
@@ -334,6 +362,8 @@ def get_queue(
             "finding_count": int(row["finding_count"]), "total_exposure": float(row["total_exposure"]),
             "priority": round(float(row["priority"]), 2),
             "routed_to": routed.get(key, None),
+            "headline": headline.get(key, None),
+            "work_description": row.get("work_description"),
         })
     return clean({"scope": scope, "total": total, "offset": offset, "limit": limit, "items": items})
 
@@ -517,10 +547,15 @@ def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha"),
     mp_name = mp_names[0] if mp_names else None
 
     wr = wr_all[wr_all["CONSTITUENCY_ID"].astype("Int64").astype(str) == constituency_id].sort_values("priority", ascending=False)
+    routed, headline = top_finding_lookup(s)
     ranked = [{
         "work_number": r["work_number"], "scope_house": r["scope_house"], "scope_tenure": r["scope_tenure"],
+        "district": r.get("DISTRICT"),
         "tags": list(r["tags"]), "max_severity": r["max_severity"], "total_exposure": float(r["total_exposure"]),
         "priority": round(float(r["priority"]), 2),
+        "routed_to": routed.get((r["work_number"], r["scope_house"], r["scope_tenure"]), None),
+        "headline": headline.get((r["work_number"], r["scope_house"], r["scope_tenure"]), None),
+        "work_description": r.get("work_description"),
     } for _, r in wr.iterrows()]
 
     return clean({
@@ -619,11 +654,15 @@ def get_state(
         })
 
     wr = wr_all[wr_all["STATE_NAME"].str.casefold() == state_name.casefold()].sort_values("priority", ascending=False)
+    routed, headline = top_finding_lookup(s)
     queue = [{
         "work_number": r["work_number"], "scope_house": r["scope_house"], "scope_tenure": r["scope_tenure"],
         "district": r["DISTRICT"], "constituency": r["CONSTITUENCY"], "mp_name": r["MP_NAME"],
         "tags": list(r["tags"]), "max_severity": r["max_severity"], "total_exposure": float(r["total_exposure"]),
         "priority": round(float(r["priority"]), 2),
+        "routed_to": routed.get((r["work_number"], r["scope_house"], r["scope_tenure"]), None),
+        "headline": headline.get((r["work_number"], r["scope_house"], r["scope_tenure"]), None),
+        "work_description": r.get("work_description"),
     } for _, r in wr.head(200).iterrows()]
 
     return clean({
@@ -869,11 +908,15 @@ def get_district(
 
     wr = wr_all[(wr_all["DISTRICT"].str.casefold() == district_name.casefold())
                 & (wr_all["STATE_NAME"].str.casefold() == state_name.casefold())].sort_values("priority", ascending=False)
+    routed, headline = top_finding_lookup(s)
     queue = [{
         "work_number": r["work_number"], "scope_house": r["scope_house"], "scope_tenure": r["scope_tenure"],
         "constituency": r["CONSTITUENCY"], "mp_name": r["MP_NAME"], "tags": list(r["tags"]),
         "max_severity": r["max_severity"], "total_exposure": float(r["total_exposure"]),
         "priority": round(float(r["priority"]), 2),
+        "routed_to": routed.get((r["work_number"], r["scope_house"], r["scope_tenure"]), None),
+        "headline": headline.get((r["work_number"], r["scope_house"], r["scope_tenure"]), None),
+        "work_description": r.get("work_description"),
     } for _, r in wr.iterrows()]
 
     f = s.findings_for_scope(scope)
@@ -1014,11 +1057,14 @@ def get_agency(
         f = f[f["date"] <= pd.Timestamp(date_to)]
     tag_breakdown = f["tag"].value_counts().to_dict()
 
+    routed, headline = top_finding_lookup(s)
     queue = [{
         "work_number": r["work_number"], "scope_house": r["scope_house"], "scope_tenure": r["scope_tenure"],
         "state": r["STATE_NAME"], "district": r["DISTRICT"], "constituency": r["CONSTITUENCY"], "mp_name": r["MP_NAME"],
         "tags": list(r["tags"]), "max_severity": r["max_severity"], "total_exposure": float(r["total_exposure"]),
         "priority": round(float(r["priority"]), 2),
+        "routed_to": routed.get((r["work_number"], r["scope_house"], r["scope_tenure"]), None),
+        "headline": headline.get((r["work_number"], r["scope_house"], r["scope_tenure"]), None),
     } for _, r in wr.iterrows()]
 
     return clean({

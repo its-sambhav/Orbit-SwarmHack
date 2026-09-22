@@ -95,6 +95,19 @@ class Store:
             ["work_number", "scope_house", "scope_tenure"]
         ).index.map(category_lookup)
 
+        # this work's own free-text description - same rec_/san_/comp_
+        # coalesce get_work already does per-request, done once here and
+        # joined onto work_risk so /api/queue can show a review card what
+        # the work actually IS, not just the finding's own deviation stat
+        # (which is what "headline" below already covers).
+        self.spine["WORK_DESCRIPTION"] = self.spine["rec_WORK_DESCRIPTION"] \
+            .fillna(self.spine["san_WORK_DESCRIPTION"]) \
+            .fillna(self.spine["comp_WORK_DESCRIPTION"])
+        description_lookup = self.spine.set_index(["work_number", "SCOPE_HOUSE", "SCOPE_TENURE"])["WORK_DESCRIPTION"]
+        self.work_risk["work_description"] = self.work_risk.set_index(
+            ["work_number", "scope_house", "scope_tenure"]
+        ).index.map(description_lookup)
+
         self.findings["date"] = self.findings.set_index(
             ["work_number", "scope_house", "scope_tenure"]
         ).index.map(date_lookup)

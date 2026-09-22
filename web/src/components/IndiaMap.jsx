@@ -40,6 +40,13 @@ function FitBounds({ geojson, keyProp, focusKey }) {
 // red, clearly separated from the light-gray no-data fill at the low end.
 const RAMP_STOPS = ['#FED976', '#FEB24C', '#FD8D3C', '#F03B20', '#BD0026']
 const NO_DATA_FILL = '#E3E6E2'
+// neutral light->dark gray, same 5-stop shape as RAMP_STOPS - used instead of
+// the amber/red ramp for every feature except the one this map is focused on
+// (ConstituencyView's "this seat in context" map), so the focused seat is the
+// only thing on screen still in the risk-severity color, and its neighbours
+// read purely as a dimmed-out backdrop that still shows relative anomaly
+// volume through shade alone, never competing with the focused seat's color.
+const GRAY_RAMP_STOPS = ['#EDEFEC', '#D4D8D1', '#A8AFA3', '#767F73', '#3A3F37']
 
 function hexToRgb(hex) {
   const n = parseInt(hex.slice(1), 16)
@@ -49,11 +56,17 @@ function lerp(a, b, t) {
   const pa = hexToRgb(a), pb = hexToRgb(b)
   return `rgb(${Math.round(pa.r + (pb.r - pa.r) * t)},${Math.round(pa.g + (pb.g - pa.g) * t)},${Math.round(pa.b + (pb.b - pa.b) * t)})`
 }
-function colorForPercentile(t) {
-  const segments = RAMP_STOPS.length - 1
+function colorFromStops(stops, t) {
+  const segments = stops.length - 1
   const scaled = Math.min(Math.max(t, 0), 1) * segments
   const i = Math.min(Math.floor(scaled), segments - 1)
-  return lerp(RAMP_STOPS[i], RAMP_STOPS[i + 1], scaled - i)
+  return lerp(stops[i], stops[i + 1], scaled - i)
+}
+function colorForPercentile(t) {
+  return colorFromStops(RAMP_STOPS, t)
+}
+function colorForPercentileGray(t) {
+  return colorFromStops(GRAY_RAMP_STOPS, t)
 }
 
 /** Rank-based (quantile) scale, not linear-to-max: a linear scale gets
@@ -112,8 +125,9 @@ function usePercentileRanks(dataByKey) {
  * tooltipRenderer(risk, name): optional override for the hover tooltip's HTML string, for callers whose dataByKey isn't the works_flagged/works_total/breach_rate shape (falls back to that default when omitted)
  * overlayGeojson: an optional second FeatureCollection drawn on top, non-interactive, styled as one dominant unfilled boundary (the same focus-boundary look used everywhere else in the app) - e.g. a district's own boundary over its constituency-level choropleth
  * backdropGeojson: an optional FeatureCollection drawn *underneath* the main layer, filled solid - for when the main layer's own features (e.g. a district's individual constituencies) are simplified/sourced slightly differently than this true outline and don't tile it edge-to-edge; the backdrop shows through any sliver gap instead of the page background, so the composite still reads as one correctly-shaped region
+ * grayscaleUnfocused: when true (and focusKey is set), every feature other than focusKey is shaded on the neutral gray ramp instead of the amber/red risk ramp - the focused seat stays the one colored shape on screen, its neighbours read as a dimmed backdrop that still encodes relative anomaly volume through shade (ConstituencyView's own map only).
  */
-export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSelect, selectedKey, tooltipRenderer, overlayGeojson, backdropGeojson }) {
+export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSelect, selectedKey, tooltipRenderer, overlayGeojson, backdropGeojson, grayscaleUnfocused }) {
   const layerRef = useRef(null)
   const ranks = usePercentileRanks(dataByKey)
 
@@ -121,8 +135,9 @@ export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSe
     const key = feature.properties[keyProp]
     const risk = dataByKey[key]
     const isFocus = focusKey ? key === focusKey : key === selectedKey
+    const useGray = grayscaleUnfocused && focusKey && !isFocus
     return {
-      fillColor: risk ? colorForPercentile(ranks[key] ?? 0) : NO_DATA_FILL,
+      fillColor: risk ? (useGray ? colorForPercentileGray(ranks[key] ?? 0) : colorForPercentile(ranks[key] ?? 0)) : NO_DATA_FILL,
       fillOpacity: risk ? 0.88 : 0.45,
       color: isFocus ? '#2C4A66' : '#FFFFFF',
       weight: isFocus ? 2.5 : 0.6,
@@ -186,8 +201,8 @@ export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSe
   }
 
   const dataKey = useMemo(
-    () => `${keyProp}-${geojson?.features?.length ?? 0}-${focusKey ?? 'all'}-${Object.keys(dataByKey).length}-${selectedKey ?? ''}`,
-    [keyProp, geojson, focusKey, dataByKey, selectedKey]
+    () => `${keyProp}-${geojson?.features?.length ?? 0}-${focusKey ?? 'all'}-${Object.keys(dataByKey).length}-${selectedKey ?? ''}-${grayscaleUnfocused ? 'g' : ''}`,
+    [keyProp, geojson, focusKey, dataByKey, selectedKey, grayscaleUnfocused]
   )
 
   return (
@@ -227,7 +242,7 @@ export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSe
   )
 }
 
-export function MapLegend() {
+export function MapLegend({ grayscaleUnfocused }) {
   return (
     <div className="map-legend">
       <div className="map-legend-ramp" />
@@ -236,6 +251,11 @@ export function MapLegend() {
         <span>High risk</span>
       </div>
       <div className="map-legend-swatch"><span className="swatch-nodata" /> No data</div>
+      {grayscaleUnfocused && (
+        <div className="map-legend-swatch">
+          <span className="swatch-nodata" style={{ background: '#767F73' }} /> Other seats (darker = more anomalies)
+        </div>
+      )}
     </div>
   )
 }

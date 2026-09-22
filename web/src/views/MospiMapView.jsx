@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { api, buildSearchIndex, fetchGeo, formatRupees } from '../api'
+import { api, buildSearchIndex, fetchGeo, formatRupees, queueItemMatches } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
@@ -16,31 +16,41 @@ const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
 
 function QueueList({ items, navigate }) {
+  const [search, setSearch] = useState('')
   if (!items.length) {
     return <EmptyState title="No findings above the queue threshold here" subtitle="Try a different scope or wait for the next pipeline run." />
   }
+  const filtered = items.filter((item) => queueItemMatches(item, search))
   return (
-    <div className="queue-list">
-      {items.map((item) => (
-        <button
-          key={`${item.work_number}-${item.scope_house}-${item.scope_tenure}`}
-          className="queue-item"
-          onClick={() => navigate(`/work/${item.work_number}?scope_house=${encodeURIComponent(item.scope_house)}&scope_tenure=${encodeURIComponent(item.scope_tenure)}`)}
-        >
-          <div className="queue-item-top">
-            <span className="queue-item-title">{item.constituency ? `${item.constituency}, ${item.state ?? ''}` : `Work #${item.work_number}`}</span>
-            <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
-          </div>
-          {(item.mp_name || item.routed_to) && (
-            <div className="queue-item-meta">{[item.mp_name, item.routed_to].filter(Boolean).join(' · ')}</div>
-          )}
-          <div className="queue-item-chips">
-            <SeverityChip severity={item.max_severity} />
-            {item.tags.map((t) => <TagChip key={t} tag={t} />)}
-          </div>
-        </button>
-      ))}
-    </div>
+    <>
+      <input
+        type="search" className="queue-search-input" placeholder="Search works…" aria-label="Search works"
+        value={search} onChange={(e) => setSearch(e.target.value)}
+      />
+      {filtered.length ? (
+        <div className="queue-list">
+          {filtered.map((item) => (
+            <button
+              key={`${item.work_number}-${item.scope_house}-${item.scope_tenure}`}
+              className="queue-item"
+              onClick={() => navigate(`/work/${item.work_number}?scope_house=${encodeURIComponent(item.scope_house)}&scope_tenure=${encodeURIComponent(item.scope_tenure)}`)}
+            >
+              <div className="queue-item-top">
+                <span className="queue-item-title">{item.constituency ? `${item.constituency}, ${item.state ?? ''}` : `Work #${item.work_number}`}</span>
+                <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
+              </div>
+              {item.work_description && <p className="queue-item-desc">{item.work_description}</p>}
+              <div className="queue-item-chips">
+                <SeverityChip severity={item.max_severity} />
+                {item.tags.map((t) => <TagChip key={t} tag={t} />)}
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No works match your search" subtitle="Try a different name, work number, or keyword." />
+      )}
+    </>
   )
 }
 
@@ -175,11 +185,8 @@ export function MospiMapView() {
           {level === 'india' ? (
             <>
               <Breadcrumb items={[{ label: 'India' }]} />
-              <h1 className="mospi-page-title">India risk map</h1>
-              <div className="mospi-page-sub-row">
-                <p className="mospi-page-sub">
-                  State-level breach rate, {scopeLabel(scope)}. Click a state to see its constituencies.
-                </p>
+              <div className="mospi-header-row">
+                <h1 className="mospi-page-title">India risk map</h1>
                 <div className="report-toolbar">
                   <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
                   <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
@@ -193,11 +200,8 @@ export function MospiMapView() {
           ) : (
             <>
               <Breadcrumb items={[{ label: 'India', onClick: backToIndia }, { label: selectedState }]} />
-              <h1 className="mospi-page-title">{selectedState}</h1>
-              <div className="mospi-page-sub-row">
-                <p className="mospi-page-sub">
-                  Constituency-level breach rate, ranked within {selectedState}. Click a constituency for its full scorecard.
-                </p>
+              <div className="mospi-header-row">
+                <h1 className="mospi-page-title">{selectedState}</h1>
                 <div className="report-toolbar">
                   <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
                   <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
@@ -220,7 +224,7 @@ export function MospiMapView() {
                     <h3 style={{ margin: 0 }}>National scorecard</h3>
                     <ScopeToggle
                       scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
-                      value={valueMode} onChange={setValueMode} includeAll={false}
+                      value={valueMode} onChange={setValueMode} includeAll={false} size="sm"
                     />
                   </div>
                   <div className="scorecard-grid">
@@ -271,7 +275,7 @@ export function MospiMapView() {
                     <h3 style={{ margin: 0 }}>{selectedState} scorecard</h3>
                     <ScopeToggle
                       scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
-                      value={valueMode} onChange={setValueMode} includeAll={false}
+                      value={valueMode} onChange={setValueMode} includeAll={false} size="sm"
                     />
                   </div>
                   <div className="scorecard-grid">

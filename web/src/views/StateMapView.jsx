@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, fetchGeo, formatRupees } from '../api'
+import { api, fetchGeo, formatRupees, queueItemMatches } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
@@ -32,6 +32,7 @@ export function StateMapView() {
   const [pcGeojson, setPcGeojson] = useState(null)
   const [constituencies, setConstituencies] = useState(null)
   const [valueMode, setValueMode] = useState('amount')
+  const [queueSearch, setQueueSearch] = useState('')
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}) }, [])
   useEffect(() => { fetchGeo('india_pc_2019_simplified.geojson').then(setPcGeojson) }, [])
@@ -77,6 +78,11 @@ export function StateMapView() {
     [stateConstituencies]
   )
 
+  const filteredQueue = useMemo(
+    () => (data ? data.queue.filter((item) => queueItemMatches(item, queueSearch)) : []),
+    [data, queueSearch]
+  )
+
   if (error) return <ErrorView message={error} />
 
   // data resets to null on every stateName change (a different state, or
@@ -109,10 +115,12 @@ export function StateMapView() {
               { label: stateLabel, to: `/state/${encodeURIComponent(stateLabel)}?${params.toString()}` },
               { label: 'Map' },
             ]} />
-            <h1 style={{ margin: '4px 0 2px' }}>{stateLabel} — constituency map</h1>
-            <div className="mospi-page-sub-row">
-              <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13, flex: 1, minWidth: 240 }}>
-                State Nodal Authority · {stateConstituencies.length} constituencies · {scopeLabel(scope)}
+            <div className="mospi-header-row">
+              <div>
+                <h1 style={{ margin: 0 }}>{stateLabel} — constituency map</h1>
+                <div className="mospi-header-meta">
+                  State Nodal Authority · {stateConstituencies.length} constituencies · {scopeLabel(scope)}
+                </div>
               </div>
               <div className="report-toolbar">
                 <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
@@ -135,7 +143,7 @@ export function StateMapView() {
                     <h3 style={{ margin: 0 }}>{data.state} overview</h3>
                     <ScopeToggle
                       scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
-                      value={valueMode} onChange={setValueMode} includeAll={false}
+                      value={valueMode} onChange={setValueMode} includeAll={false} size="sm"
                     />
                   </div>
                   <div className="scorecard-grid">
@@ -203,25 +211,35 @@ export function StateMapView() {
                 <>
                   <h3>Anomalies ({data.queue.length})</h3>
                   {data.queue.length ? (
-                    <div className="queue-list">
-                      {data.queue.map((item) => (
-                        <button
-                          key={`${item.work_number}-${item.scope_house}-${item.scope_tenure}`}
-                          className="queue-item"
-                          onClick={() => navigate(`/work/${item.work_number}?scope_house=${encodeURIComponent(item.scope_house)}&scope_tenure=${encodeURIComponent(item.scope_tenure)}&role=state&role_name=${encodeURIComponent(data.state)}`)}
-                        >
-                          <div className="queue-item-top">
-                            <span className="queue-item-title">{item.constituency}, {item.district}</span>
-                            <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
-                          </div>
-                          <div className="queue-item-meta">{item.mp_name} · Work #{item.work_number}</div>
-                          <div className="queue-item-chips">
-                            <SeverityChip severity={item.max_severity} />
-                            {item.tags.map((t) => <TagChip key={t} tag={t} />)}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
+                    <>
+                      <input
+                        type="search" className="queue-search-input" placeholder="Search works…" aria-label="Search works"
+                        value={queueSearch} onChange={(e) => setQueueSearch(e.target.value)}
+                      />
+                      {filteredQueue.length ? (
+                        <div className="queue-list">
+                          {filteredQueue.map((item) => (
+                            <button
+                              key={`${item.work_number}-${item.scope_house}-${item.scope_tenure}`}
+                              className="queue-item"
+                              onClick={() => navigate(`/work/${item.work_number}?scope_house=${encodeURIComponent(item.scope_house)}&scope_tenure=${encodeURIComponent(item.scope_tenure)}&role=state&role_name=${encodeURIComponent(data.state)}`)}
+                            >
+                              <div className="queue-item-top">
+                                <span className="queue-item-title">{item.constituency}, {item.district}</span>
+                                <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
+                              </div>
+                              {item.work_description && <p className="queue-item-desc">{item.work_description}</p>}
+                              <div className="queue-item-chips">
+                                <SeverityChip severity={item.max_severity} />
+                                {item.tags.map((t) => <TagChip key={t} tag={t} />)}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <EmptyState title="No works match your search" subtitle="Try a different name, work number, or keyword." />
+                      )}
+                    </>
                   ) : (
                     <EmptyState title="No anomalies" subtitle="No flagged works for this scope." />
                   )}

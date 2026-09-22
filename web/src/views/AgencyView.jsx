@@ -201,7 +201,8 @@ export function AgencyView() {
                         <span className="queue-item-title">{item.constituency}, {item.state}</span>
                         <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
                       </div>
-                      <div className="queue-item-meta">{item.mp_name} · Work #{item.work_number}</div>
+                      {item.headline && <p className="queue-item-headline">{item.headline}</p>}
+                      <div className="queue-item-meta">{[item.mp_name, `Work #${item.work_number}`, item.routed_to].filter(Boolean).join(' · ')}</div>
                       <div className="queue-item-chips">
                         <SeverityChip severity={item.max_severity} />
                         {item.tags.map((t) => <TagChip key={t} tag={t} />)}
