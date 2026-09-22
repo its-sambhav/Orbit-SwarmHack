@@ -94,38 +94,48 @@ export function ConstituencyView() {
   }, [geojson, data, constituencies])
 
   if (error) return <ErrorView message={error} />
-  if (!data) return <Loading label="Loading constituency" />
 
-  const { scorecard } = data
-  const completionDelta = scorecard.completion_rate != null && scorecard.national_median_completion_rate != null
+  // data loads async after every route change into this page (a fresh
+  // constituency id, or the same page reached from a different state/
+  // district) - the nav/breadcrumb/header shell renders immediately below
+  // regardless, and only the three content panels fall back to an inline
+  // Loading each, the same progressive pattern MospiMapView's own state-level
+  // drill-in already uses. Blanking the whole page (nav included) behind one
+  // centered spinner on every drill-down was the "it just reloads" jank this
+  // replaces - the frame around the content should never disappear, only the
+  // content within it.
+  const scorecard = data?.scorecard ?? null
+  const completionDelta = scorecard?.completion_rate != null && scorecard?.national_median_completion_rate != null
     ? scorecard.completion_rate - scorecard.national_median_completion_rate
     : null
-  const lifecycleSectors = mapCategoryBreakdown(data.category_breakdown)
+  const lifecycleSectors = data ? mapCategoryBreakdown(data.category_breakdown) : []
 
   // the drill-down trail continues within the role's own authorized scope -
   // back to the state/district page the role itself owns, never back out to
   // a MoSPI-only page - rather than dead-ending with no way to go "up" a level.
   const roleParentLink = role === 'state'
     ? `/state/${encodeURIComponent(roleName)}`
-    : role === 'district'
+    : role === 'district' && data
     ? `/district-authority/${encodeURIComponent(data.state)}/${encodeURIComponent(roleName)}`
     : null
   const roleQuery = role ? `&role=${role}&role_name=${encodeURIComponent(roleName)}` : ''
 
   const breadcrumbItems = role ? [
     { label: roleName, to: roleParentLink },
-    { label: data.constituency },
+    { label: data ? data.constituency : '…' },
   ] : [
     { label: 'India', to: '/mospi/map' },
-    { label: data.state, to: `/mospi/map?state=${encodeURIComponent(data.state)}` },
-    { label: data.constituency },
+    { label: data ? data.state : '…', to: data ? `/mospi/map?state=${encodeURIComponent(data.state)}` : undefined },
+    { label: data ? data.constituency : '…' },
   ]
 
   return (
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle={role ? `${ROLE_LABEL[role]} · ${data.constituency}` : `MoSPI · ${data.constituency} · ${scope}`}
+        subtitle={role
+          ? `${ROLE_LABEL[role]} · ${data ? data.constituency : 'Loading…'}`
+          : `MoSPI · ${data ? data.constituency : 'Loading…'} · ${scope}`}
         searchIndex={[]}
         showSearch={!role}
         profileName={role ? roleName : undefined}
@@ -142,109 +152,123 @@ export function ConstituencyView() {
       <div className="map-drill-view" style={{ padding: 0, height: '100%' }}>
       <div className="map-drill-header">
         <Breadcrumb items={breadcrumbItems} />
-        <h1 style={{ margin: '4px 0 2px' }}>{data.constituency}</h1>
+        <h1 style={{ margin: '4px 0 2px' }}>{data ? data.constituency : 'Loading…'}</h1>
         <div className="mospi-page-sub-row">
-          <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>{data.state} · {scope}</div>
+          <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>{data ? `${data.state} · ${scope}` : scope}</div>
           <div className="report-toolbar">
-            <GenerateReportButton
-              level="constituency" scope={scope} state={data.state}
-              title={`${data.constituency} — ${scope}`} summary={scorecard}
-            />
+            {data && (
+              <GenerateReportButton
+                level="constituency" scope={scope} state={data.state}
+                title={`${data.constituency} — ${scope}`} summary={scorecard}
+              />
+            )}
           </div>
         </div>
       </div>
 
       <div className="map-drill-row">
         <div className="map-drill-details">
-          <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>MP scorecard</h3>
-            <ScopeToggle
-              scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
-              value={valueMode} onChange={setValueMode} includeAll={false}
-            />
-          </div>
-          <p className="fact-line">{data.mp_name || 'MP not on record for this scope'}</p>
-          <div className="scorecard-grid">
-            <ScorecardCell label="Allocated" value={scorecard.allocated} count={scorecard.works_total} mode={valueMode} />
-            <ScorecardCell label="Recommended" value={scorecard.recommended} count={scorecard.recommended_count} mode={valueMode} />
-            <ScorecardCell label="Sanctioned" value={scorecard.sanctioned} count={scorecard.sanctioned_count} mode={valueMode} />
-            <ScorecardCell label="Completed" value={scorecard.completed} count={scorecard.completed_count} mode={valueMode} />
-            <ScorecardCell label="Paid" value={scorecard.paid} count={scorecard.paid_count} mode={valueMode} />
-            <div className="scorecard-cell">
-              <div className="label">Works flagged</div>
-              <div className="value num">{scorecard.works_flagged.toLocaleString('en-IN')} / {scorecard.works_total.toLocaleString('en-IN')}</div>
-            </div>
-          </div>
+          {data ? (
+            <>
+              <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
+                <h3 style={{ margin: 0 }}>MP scorecard</h3>
+                <ScopeToggle
+                  scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
+                  value={valueMode} onChange={setValueMode} includeAll={false}
+                />
+              </div>
+              <p className="fact-line">{data.mp_name || 'MP not on record for this scope'}</p>
+              <div className="scorecard-grid">
+                <ScorecardCell label="Allocated" value={scorecard.allocated} count={scorecard.works_total} mode={valueMode} />
+                <ScorecardCell label="Recommended" value={scorecard.recommended} count={scorecard.recommended_count} mode={valueMode} />
+                <ScorecardCell label="Sanctioned" value={scorecard.sanctioned} count={scorecard.sanctioned_count} mode={valueMode} />
+                <ScorecardCell label="Completed" value={scorecard.completed} count={scorecard.completed_count} mode={valueMode} />
+                <ScorecardCell label="Paid" value={scorecard.paid} count={scorecard.paid_count} mode={valueMode} />
+                <div className="scorecard-cell">
+                  <div className="label">Works flagged</div>
+                  <div className="value num">{scorecard.works_flagged.toLocaleString('en-IN')} / {scorecard.works_total.toLocaleString('en-IN')}</div>
+                </div>
+              </div>
 
-          <div className="comparison-row">
-            <span>Completion rate here</span>
-            <span className="value num">{scorecard.completion_rate != null ? `${scorecard.completion_rate.toFixed(0)}%` : '—'}</span>
-          </div>
-          <div className="comparison-row">
-            <span>National median</span>
-            <span className="value num">{scorecard.national_median_completion_rate != null ? `${scorecard.national_median_completion_rate.toFixed(0)}%` : '—'}</span>
-          </div>
-          <div className="comparison-row">
-            <span>State median ({data.state})</span>
-            <span className="value num">{scorecard.state_median_completion_rate != null ? `${scorecard.state_median_completion_rate.toFixed(0)}%` : '—'}</span>
-          </div>
-          {completionDelta != null && (
-            <p style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 6 }}>
-              {completionDelta >= 0 ? 'Above' : 'Below'} national median by {Math.abs(completionDelta).toFixed(0)} points.
-            </p>
-          )}
+              <div className="comparison-row">
+                <span>Completion rate here</span>
+                <span className="value num">{scorecard.completion_rate != null ? `${scorecard.completion_rate.toFixed(0)}%` : '—'}</span>
+              </div>
+              <div className="comparison-row">
+                <span>National median</span>
+                <span className="value num">{scorecard.national_median_completion_rate != null ? `${scorecard.national_median_completion_rate.toFixed(0)}%` : '—'}</span>
+              </div>
+              <div className="comparison-row">
+                <span>State median ({data.state})</span>
+                <span className="value num">{scorecard.state_median_completion_rate != null ? `${scorecard.state_median_completion_rate.toFixed(0)}%` : '—'}</span>
+              </div>
+              {completionDelta != null && (
+                <p style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 6 }}>
+                  {completionDelta >= 0 ? 'Above' : 'Below'} national median by {Math.abs(completionDelta).toFixed(0)} points.
+                </p>
+              )}
 
-          <ProjectLifecycleBarChart title="Project Lifecycle & Risk Breakdown" sectors={lifecycleSectors} />
+              <ProjectLifecycleBarChart title="Project Lifecycle & Risk Breakdown" sectors={lifecycleSectors} />
 
-          <h3>By tag</h3>
-          <div className="tag-breakdown">
-            {Object.entries(data.tag_breakdown).map(([tag, n]) => (
-              <div key={tag} className="tag-breakdown-row"><TagChip tag={tag} /><span className="num">{n.toLocaleString('en-IN')}</span></div>
-            ))}
-          </div>
+              <h3>By tag</h3>
+              <div className="tag-breakdown">
+                {Object.entries(data.tag_breakdown).map(([tag, n]) => (
+                  <div key={tag} className="tag-breakdown-row"><TagChip tag={tag} /><span className="num">{n.toLocaleString('en-IN')}</span></div>
+                ))}
+              </div>
+            </>
+          ) : <Loading label="Loading constituency" />}
         </div>
 
         <div className="map-drill-map">
-          {data.pc_id && geojson ? (
-            <>
-              <IndiaMap
-                geojson={stateFilteredPcGeojson || geojson}
-                keyProp="pc_id"
-                nameProp="pc_name"
-                dataByKey={constituencyDataByKey}
-                focusKey={data.pc_id}
-              />
-              <MapLegend />
-            </>
+          {data ? (
+            data.pc_id && geojson ? (
+              <>
+                <IndiaMap
+                  geojson={stateFilteredPcGeojson || geojson}
+                  keyProp="pc_id"
+                  nameProp="pc_name"
+                  dataByKey={constituencyDataByKey}
+                  focusKey={data.pc_id}
+                />
+                <MapLegend />
+              </>
+            ) : (
+              <EmptyState title="No boundary matched for this constituency" subtitle="Falls in the unmatched tail of the name crosswalk between this dataset and the boundary source." />
+            )
           ) : (
-            <EmptyState title="No boundary matched for this constituency" subtitle="Falls in the unmatched tail of the name crosswalk between this dataset and the boundary source." />
+            <div className="map-pane-fallback"><Loading label="Loading map" /></div>
           )}
         </div>
 
         <div className="map-drill-findings">
-          <h3>Findings ({data.findings.length})</h3>
-          {data.findings.length ? (
-            <div className="queue-list">
-              {data.findings.map((f) => (
-                <button
-                  key={`${f.work_number}-${f.scope_house}-${f.scope_tenure}`}
-                  className="queue-item"
-                  onClick={() => navigate(`/work/${f.work_number}?scope_house=${encodeURIComponent(f.scope_house)}&scope_tenure=${encodeURIComponent(f.scope_tenure)}${roleQuery}`)}
-                >
-                  <div className="queue-item-top">
-                    <span className="queue-item-title">Work #{f.work_number}</span>
-                    <span className="queue-item-amount num">{formatRupees(f.total_exposure)}</span>
-                  </div>
-                  <div className="queue-item-chips">
-                    <SeverityChip severity={f.max_severity} />
-                    {f.tags.map((t) => <TagChip key={t} tag={t} />)}
-                  </div>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <EmptyState title="No findings above the queue threshold here" subtitle="This constituency has no work currently past its review floor for this scope." />
-          )}
+          {data ? (
+            <>
+              <h3>Findings ({data.findings.length})</h3>
+              {data.findings.length ? (
+                <div className="queue-list">
+                  {data.findings.map((f) => (
+                    <button
+                      key={`${f.work_number}-${f.scope_house}-${f.scope_tenure}`}
+                      className="queue-item"
+                      onClick={() => navigate(`/work/${f.work_number}?scope_house=${encodeURIComponent(f.scope_house)}&scope_tenure=${encodeURIComponent(f.scope_tenure)}${roleQuery}`)}
+                    >
+                      <div className="queue-item-top">
+                        <span className="queue-item-title">Work #{f.work_number}</span>
+                        <span className="queue-item-amount num">{formatRupees(f.total_exposure)}</span>
+                      </div>
+                      <div className="queue-item-chips">
+                        <SeverityChip severity={f.max_severity} />
+                        {f.tags.map((t) => <TagChip key={t} tag={t} />)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="No findings above the queue threshold here" subtitle="This constituency has no work currently past its review floor for this scope." />
+              )}
+            </>
+          ) : <Loading label="Loading findings" />}
         </div>
       </div>
       </div>

@@ -154,8 +154,16 @@ class Store:
 
     def _build_mp_directory(self) -> pd.DataFrame:
         """One row per (MP_NAME, SCOPE_TENURE) - allocated.parquet is the
-        canonical MP roster (one lifetime row per MP per tenure, verified in
-        docs/SCHEMA.md), joined with real aggregate stats from spine/work_risk.
+        canonical MP roster (543 seats/tenure, one clean row per MP, verified
+        in docs/SCHEMA.md) and the base of this directory. Real aggregate
+        stats from spine/work_risk are left-joined onto that roster, not the
+        other way around: grouping spine.parquet as the base (the previous
+        approach) silently dropped any MP with zero rows there - a real,
+        currently-serving MP who simply hasn't had a work recommended yet -
+        from the directory entirely, rather than showing them with an honest
+        all-zero scorecard. state/constituency come from the roster itself
+        for the same reason (a work-table groupby has nothing to offer for
+        an MP with no works at all).
         No separate MP-status field exists anywhere in the source data (no
         "deceased"/"retired" flag) - status is the one honestly derivable
         signal: whether this exact MP_NAME also holds an 18th Lok Sabha seat
@@ -169,7 +177,6 @@ class Store:
         grouped = sp.assign(_rec_amt=rec_amt, _san_amt=san_amt, _comp_amt=comp_amt).groupby(
             ["MP_NAME", "SCOPE_TENURE"], as_index=False
         ).agg(
-            state=("STATE_NAME", "first"), constituency=("CONSTITUENCY", "first"),
             works_total=("WORK_RECOMMENDATION_DTL_ID", "size"),
             recommended=("has_recommended", "sum"), recommended_amount=("_rec_amt", "sum"),
             sanctioned=("has_sanctioned", "sum"), sanctioned_amount=("_san_amt", "sum"),
@@ -181,13 +188,19 @@ class Store:
             works_flagged=("work_number", "nunique"), total_exposure=("total_exposure", "sum"),
         ).rename(columns={"scope_tenure": "SCOPE_TENURE"})
 
-        directory = grouped.merge(wr_grouped, on=["MP_NAME", "SCOPE_TENURE"], how="left")
-        directory["works_flagged"] = directory["works_flagged"].fillna(0).astype(int)
-        directory["total_exposure"] = directory["total_exposure"].fillna(0.0)
-        directory["breach_rate"] = directory["works_flagged"] / directory["works_total"].replace(0, pd.NA)
+        alloc = self.allocated[[
+            "MP_NAME", "SCOPE_TENURE", "STATE_NAME", "CONSTITUENCY",
+            "ALLOCATED_AMT", "TENURE_START_DATE", "TENURE_END_DATE",
+        ]].rename(columns={"STATE_NAME": "state", "CONSTITUENCY": "constituency"})
 
-        alloc = self.allocated[["MP_NAME", "SCOPE_TENURE", "ALLOCATED_AMT", "TENURE_START_DATE", "TENURE_END_DATE"]]
-        directory = directory.merge(alloc, on=["MP_NAME", "SCOPE_TENURE"], how="left")
+        directory = alloc.merge(grouped, on=["MP_NAME", "SCOPE_TENURE"], how="left")
+        directory = directory.merge(wr_grouped, on=["MP_NAME", "SCOPE_TENURE"], how="left")
+
+        for col in ("works_total", "recommended", "sanctioned", "completed", "works_flagged"):
+            directory[col] = directory[col].fillna(0).astype(int)
+        for col in ("recommended_amount", "sanctioned_amount", "completed_amount", "paid", "total_exposure"):
+            directory[col] = directory[col].fillna(0.0)
+        directory["breach_rate"] = directory["works_flagged"] / directory["works_total"].replace(0, pd.NA)
 
         active_names = set(self.allocated.loc[self.allocated["SCOPE_TENURE"] == "18th Lok Sabha", "MP_NAME"])
         directory["status"] = directory.apply(

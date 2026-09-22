@@ -75,12 +75,24 @@ async function get(path, params = {}) {
 // fine and used to reach <IndiaMap> as if it were a FeatureCollection (no
 // `.features`), unmounting the whole page. Resolve to null on any failure or
 // wrong shape instead, so every map view just renders without boundaries.
+//
+// These files are the same handful of static boundary shapes reused by every
+// map view (state/constituency/district) - cached in memory once fetched so
+// drilling from one map page into another (a route change, so the component
+// remounts) doesn't re-download and re-parse a multi-hundred-KB geojson it
+// already has. Only a successful, well-shaped result is cached - a failed
+// attempt returns null without being cached, so a later retry can still
+// succeed instead of permanently remembering a transient failure.
+const geoCache = new Map()
 export async function fetchGeo(file) {
+  if (geoCache.has(file)) return geoCache.get(file)
   try {
     const res = await fetch(`/static/geo/${file}`)
     if (!res.ok) return null
     const json = await res.json()
-    return Array.isArray(json?.features) ? json : null
+    const result = Array.isArray(json?.features) ? json : null
+    if (result) geoCache.set(file, result)
+    return result
   } catch {
     return null
   }

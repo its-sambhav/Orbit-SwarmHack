@@ -78,30 +78,38 @@ export function StateMapView() {
   )
 
   if (error) return <ErrorView message={error} />
-  if (!data) return <Loading label="Loading map" />
+
+  // data resets to null on every stateName change (a different state, or
+  // this same page reached fresh from elsewhere) - the nav/breadcrumb/header
+  // shell below renders immediately regardless, with only the three content
+  // panels falling back to an inline Loading each. Previously the whole page
+  // (nav included) blanked to one centered spinner on every visit, which read
+  // as a full reload rather than a drill-down - the frame should stay put,
+  // only the content within it should show its own loading state.
+  const stateLabel = data ? data.state : stateName
 
   return (
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle={`State Nodal Authority · ${data.state} · Map`}
+        subtitle={`State Nodal Authority · ${stateLabel} · Map`}
         searchIndex={[]}
         showSearch={false}
-        profileName={data.state}
+        profileName={stateLabel}
         profileRole="State Nodal Authority"
         avatarLetter="S"
         drawerLinks={[
-          { label: 'Overview', onClick: () => navigate(`/state/${encodeURIComponent(data.state)}?${params.toString()}`) },
+          { label: 'Overview', onClick: () => navigate(`/state/${encodeURIComponent(stateLabel)}?${params.toString()}`) },
         ]}
       />
       <div className="mospi-map-page-body" id="report-capture">
         <div className="map-drill-view" style={{ padding: 0, height: '100%' }}>
           <div className="map-drill-header">
             <Breadcrumb items={[
-              { label: data.state, to: `/state/${encodeURIComponent(data.state)}?${params.toString()}` },
+              { label: stateLabel, to: `/state/${encodeURIComponent(stateLabel)}?${params.toString()}` },
               { label: 'Map' },
             ]} />
-            <h1 style={{ margin: '4px 0 2px' }}>{data.state} — constituency map</h1>
+            <h1 style={{ margin: '4px 0 2px' }}>{stateLabel} — constituency map</h1>
             <div className="mospi-page-sub-row">
               <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13, flex: 1, minWidth: 240 }}>
                 State Nodal Authority · {stateConstituencies.length} constituencies · {scopeLabel(scope)}
@@ -109,62 +117,68 @@ export function StateMapView() {
               <div className="report-toolbar">
                 <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
                 <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
-                <GenerateReportButton
-                  level="state" scope={scope} dateFrom={dateFrom} dateTo={dateTo} state={data.state}
-                  title={`${data.state} — ${scopeLabel(scope)}`} summary={data.scorecard}
-                />
+                {data && (
+                  <GenerateReportButton
+                    level="state" scope={scope} dateFrom={dateFrom} dateTo={dateTo} state={data.state}
+                    title={`${data.state} — ${scopeLabel(scope)}`} summary={data.scorecard}
+                  />
+                )}
               </div>
             </div>
           </div>
 
           <div className="map-drill-row">
             <div className="map-drill-details">
-              <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
-                <h3 style={{ margin: 0 }}>{data.state} overview</h3>
-                <ScopeToggle
-                  scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
-                  value={valueMode} onChange={setValueMode} includeAll={false}
-                />
-              </div>
-              <div className="scorecard-grid">
-                <ScorecardCell label="Allocated" value={data.scorecard.allocated} count={data.scorecard.works_total} mode={valueMode} />
-                <ScorecardCell label="Recommended" value={data.scorecard.recommended} count={data.scorecard.recommended_count} mode={valueMode} />
-                <ScorecardCell label="Sanctioned" value={data.scorecard.sanctioned} count={data.scorecard.sanctioned_count} mode={valueMode} />
-                <ScorecardCell label="Completed" value={data.scorecard.completed} count={data.scorecard.completed_count} mode={valueMode} />
-                <ScorecardCell label="Paid" value={data.scorecard.paid} count={data.scorecard.paid_count} mode={valueMode} />
-                <div className="scorecard-cell">
-                  <div className="label">Works flagged</div>
-                  <div className="value num">{data.scorecard.works_flagged.toLocaleString('en-IN')} / {data.scorecard.works_total.toLocaleString('en-IN')}</div>
-                </div>
-              </div>
-              <div className="comparison-row">
-                <span>Completion rate</span>
-                <span className="value num">{data.scorecard.completion_rate != null ? `${data.scorecard.completion_rate.toFixed(0)}%` : '—'}</span>
-              </div>
-              <div className="comparison-row">
-                <span>National median</span>
-                <span className="value num">{data.scorecard.national_median_completion_rate != null ? `${data.scorecard.national_median_completion_rate.toFixed(0)}%` : '—'}</span>
-              </div>
-              <div className="comparison-row">
-                <span>Breach rate</span>
-                <span className="value num">{(data.breach_rate * 100).toFixed(0)}%</span>
-              </div>
+              {data ? (
+                <>
+                  <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
+                    <h3 style={{ margin: 0 }}>{data.state} overview</h3>
+                    <ScopeToggle
+                      scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
+                      value={valueMode} onChange={setValueMode} includeAll={false}
+                    />
+                  </div>
+                  <div className="scorecard-grid">
+                    <ScorecardCell label="Allocated" value={data.scorecard.allocated} count={data.scorecard.works_total} mode={valueMode} />
+                    <ScorecardCell label="Recommended" value={data.scorecard.recommended} count={data.scorecard.recommended_count} mode={valueMode} />
+                    <ScorecardCell label="Sanctioned" value={data.scorecard.sanctioned} count={data.scorecard.sanctioned_count} mode={valueMode} />
+                    <ScorecardCell label="Completed" value={data.scorecard.completed} count={data.scorecard.completed_count} mode={valueMode} />
+                    <ScorecardCell label="Paid" value={data.scorecard.paid} count={data.scorecard.paid_count} mode={valueMode} />
+                    <div className="scorecard-cell">
+                      <div className="label">Works flagged</div>
+                      <div className="value num">{data.scorecard.works_flagged.toLocaleString('en-IN')} / {data.scorecard.works_total.toLocaleString('en-IN')}</div>
+                    </div>
+                  </div>
+                  <div className="comparison-row">
+                    <span>Completion rate</span>
+                    <span className="value num">{data.scorecard.completion_rate != null ? `${data.scorecard.completion_rate.toFixed(0)}%` : '—'}</span>
+                  </div>
+                  <div className="comparison-row">
+                    <span>National median</span>
+                    <span className="value num">{data.scorecard.national_median_completion_rate != null ? `${data.scorecard.national_median_completion_rate.toFixed(0)}%` : '—'}</span>
+                  </div>
+                  <div className="comparison-row">
+                    <span>Breach rate</span>
+                    <span className="value num">{(data.breach_rate * 100).toFixed(0)}%</span>
+                  </div>
 
-              <h3>Constituencies ({sortedConstituencies.length})</h3>
-              <div className="rank-list rank-list-compact">
-                {sortedConstituencies.map((c) => (
-                  <button
-                    key={c.constituency_id}
-                    type="button"
-                    className="rank-item"
-                    onClick={() => navigate(`/constituency/${c.constituency_id}?scope=${encodeURIComponent(scope)}&role=state&role_name=${encodeURIComponent(data.state)}`)}
-                  >
-                    <span className="rank-item-name">{c.constituency}</span>
-                    <span className="rank-item-meta num">{c.works_flagged.toLocaleString('en-IN')} flagged</span>
-                    <span className="rank-item-bar"><span style={{ width: `${Math.max(c.breach_rate * 100, 3)}%` }} /></span>
-                  </button>
-                ))}
-              </div>
+                  <h3>Constituencies ({sortedConstituencies.length})</h3>
+                  <div className="rank-list rank-list-compact">
+                    {sortedConstituencies.map((c) => (
+                      <button
+                        key={c.constituency_id}
+                        type="button"
+                        className="rank-item"
+                        onClick={() => navigate(`/constituency/${c.constituency_id}?scope=${encodeURIComponent(scope)}&role=state&role_name=${encodeURIComponent(data.state)}`)}
+                      >
+                        <span className="rank-item-name">{c.constituency}</span>
+                        <span className="rank-item-meta num">{c.works_flagged.toLocaleString('en-IN')} flagged</span>
+                        <span className="rank-item-bar"><span style={{ width: `${Math.max(c.breach_rate * 100, 3)}%` }} /></span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : <Loading label="Loading state overview" />}
             </div>
 
             <div className="map-drill-map">
@@ -185,30 +199,34 @@ export function StateMapView() {
             </div>
 
             <div className="map-drill-findings">
-              <h3>Anomalies ({data.queue.length})</h3>
-              {data.queue.length ? (
-                <div className="queue-list">
-                  {data.queue.map((item) => (
-                    <button
-                      key={`${item.work_number}-${item.scope_house}-${item.scope_tenure}`}
-                      className="queue-item"
-                      onClick={() => navigate(`/work/${item.work_number}?scope_house=${encodeURIComponent(item.scope_house)}&scope_tenure=${encodeURIComponent(item.scope_tenure)}&role=state&role_name=${encodeURIComponent(data.state)}`)}
-                    >
-                      <div className="queue-item-top">
-                        <span className="queue-item-title">{item.constituency}, {item.district}</span>
-                        <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
-                      </div>
-                      <div className="queue-item-meta">{item.mp_name} · Work #{item.work_number}</div>
-                      <div className="queue-item-chips">
-                        <SeverityChip severity={item.max_severity} />
-                        {item.tags.map((t) => <TagChip key={t} tag={t} />)}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <EmptyState title="No anomalies" subtitle="No flagged works for this scope." />
-              )}
+              {data ? (
+                <>
+                  <h3>Anomalies ({data.queue.length})</h3>
+                  {data.queue.length ? (
+                    <div className="queue-list">
+                      {data.queue.map((item) => (
+                        <button
+                          key={`${item.work_number}-${item.scope_house}-${item.scope_tenure}`}
+                          className="queue-item"
+                          onClick={() => navigate(`/work/${item.work_number}?scope_house=${encodeURIComponent(item.scope_house)}&scope_tenure=${encodeURIComponent(item.scope_tenure)}&role=state&role_name=${encodeURIComponent(data.state)}`)}
+                        >
+                          <div className="queue-item-top">
+                            <span className="queue-item-title">{item.constituency}, {item.district}</span>
+                            <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
+                          </div>
+                          <div className="queue-item-meta">{item.mp_name} · Work #{item.work_number}</div>
+                          <div className="queue-item-chips">
+                            <SeverityChip severity={item.max_severity} />
+                            {item.tags.map((t) => <TagChip key={t} tag={t} />)}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState title="No anomalies" subtitle="No flagged works for this scope." />
+                  )}
+                </>
+              ) : <Loading label="Loading anomalies" />}
             </div>
           </div>
         </div>

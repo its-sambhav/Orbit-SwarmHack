@@ -285,7 +285,6 @@ export function MospiNav({
           aria-label={railOpen ? 'Collapse menu' : 'Expand menu'} onClick={() => setRailOpen((v) => !v)}
         >
           <ChevronIcon className="app-rail-toggle-icon" />
-          <span className="app-rail-link-label">Collapse</span>
         </button>
       </aside>
       {railOpen && <div className="app-rail-scrim" onClick={() => setRailOpen(false)} />}

@@ -45,7 +45,10 @@
   background: var(--accent); border-bottom: 3px solid var(--gold);
   box-shadow: var(--shadow-float);
 }
-.mospi-nav-emblem { flex: none; height: 36px; width: auto; }
+/* the source emblem art is multi-colored (Ashoka Chakra blue etc.) - this
+   turns any image into a solid white silhouette regardless of its original
+   colors, rather than trying to recolor individual paths inside the SVG. */
+.mospi-nav-emblem { flex: none; height: 36px; width: auto; filter: brightness(0) invert(1); }
 .mospi-nav-brand { flex: none; min-width: 0; }
 .mospi-nav-title { font-weight: 600; font-size: 18px; letter-spacing: -0.01em; color: #fff; }
 .mospi-nav-subtitle {
@@ -150,7 +153,7 @@
   border-right: 1px solid rgba(255,255,255,0.12); overflow: hidden;
   transition: width 0.16s ease;
 }
-.app-rail.open { width: var(--rail-w-expanded); overflow-y: auto; box-shadow: var(--shadow-pop); }
+.app-rail.open, .app-rail:hover { width: var(--rail-w-expanded); overflow-y: auto; box-shadow: var(--shadow-pop); }
 .app-rail-links { flex: 1; padding: 10px 0; }
 .app-rail-link {
   display: flex; align-items: center; gap: 14px; width: 100%; height: 46px; padding: 0 0 0 21px;
@@ -160,7 +163,7 @@
 .app-rail-link svg { flex: none; }
 .app-rail-link:hover { background: rgba(255,255,255,0.12); color: #fff; }
 .app-rail-link-label { opacity: 0; transition: opacity 0.1s; }
-.app-rail.open .app-rail-link-label { opacity: 1; }
+.app-rail.open .app-rail-link-label, .app-rail:hover .app-rail-link-label { opacity: 1; }
 .app-rail-toggle {
   display: flex; align-items: center; gap: 14px; width: 100%; height: 46px; padding: 0 0 0 21px; margin-top: auto;
   border: none; border-top: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.12);
@@ -168,7 +171,7 @@
 }
 .app-rail-toggle:hover { background: rgba(0,0,0,0.22); color: #fff; }
 .app-rail-toggle-icon { flex: none; transition: transform 0.16s; }
-.app-rail.open .app-rail-toggle-icon { transform: rotate(180deg); }
+.app-rail.open .app-rail-toggle-icon, .app-rail:hover .app-rail-toggle-icon { transform: rotate(180deg); }
 .app-rail-scrim { position: fixed; inset: 68px 0 0 0; background: rgba(20, 24, 20, 0.25); z-index: 39; }
 
 .mospi-body { padding: 92px 24px 40px; max-width: 1440px; margin: 0 auto; }
