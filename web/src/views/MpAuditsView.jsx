@@ -4,6 +4,7 @@ import { api } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { TagChip, StatusChip, RiskChip } from '../components/Chips'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
+import { useLanguage } from '../i18n'
 
 export const MP_DRAWER_LINKS = (navigate) => [
   { label: 'Overview', onClick: () => navigate('/mospi') },
@@ -14,6 +15,7 @@ export const MP_DRAWER_LINKS = (navigate) => [
 
 export function MpAuditsView() {
   const navigate = useNavigate()
+  const { t } = useLanguage()
   const [scope, setScope] = useState('all')
   const [status, setStatus] = useState('')
   const [query, setQuery] = useState('')
@@ -52,7 +54,7 @@ export function MpAuditsView() {
       />
 
       <div className="mospi-body">
-        <h1 className="mospi-page-title">MP Audits</h1>
+        <h1 className="mospi-page-title">{t('drawer.mpAudits')}</h1>
         <p className="mospi-page-sub">
           Every Member of Parliament on record, 17th and 18th Lok Sabha, with their recommendation history and flagged-work rate.
         </p>

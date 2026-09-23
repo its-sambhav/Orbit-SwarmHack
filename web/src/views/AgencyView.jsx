@@ -5,6 +5,7 @@ import { MospiNav } from '../components/MospiNav'
 import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart'
 import { RankChart } from '../components/RankChart'
 import { DonutCard } from '../components/DonutCard'
+import { StatCard } from '../components/StatCard'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip, TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
@@ -13,6 +14,10 @@ import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
+
+function scrollToId(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 // A work-management console, not another geographic government dashboard -
 // the work table is the hero, the map is skipped entirely (spec: "optional,
@@ -148,11 +153,10 @@ export function AgencyView() {
 
           <div className="mospi-stats">
             {cards.map((c) => (
-              <div className="mospi-stat-card" key={c.label}>
-                <div className="mospi-stat-label">{c.label}</div>
-                <div className="mospi-stat-value num">{c.value}</div>
-                <div className="mospi-stat-amount num">{c.sub}</div>
-              </div>
+              <StatCard
+                key={c.label} label={c.label} value={c.value} sub={c.sub}
+                onClick={c.label === 'Works flagged' ? () => scrollToId('agency-assigned-works') : undefined}
+              />
             ))}
           </div>
 
@@ -175,7 +179,7 @@ export function AgencyView() {
               </div>
             </div>
 
-            <div className="map-drill-findings">
+            <div className="map-drill-findings" id="agency-assigned-works">
               <h3>Assigned works ({filteredQueue.length})</h3>
               <div className="filters" style={{ marginBottom: 10 }}>
                 <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)}>

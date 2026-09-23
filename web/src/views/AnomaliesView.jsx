@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, formatRupees } from '../api'
+import { useLanguage } from '../i18n'
 import { MospiNav } from '../components/MospiNav'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { SeverityChip, TagChip } from '../components/Chips'
@@ -26,7 +27,15 @@ export const ANOMALIES_LINK = (navigate) => ({ label: 'Anomalies', onClick: () =
 // the complete list those are previews of.
 export function AnomaliesView() {
   const navigate = useNavigate()
-  const [scope, setScope] = useState('all')
+  const { t } = useLanguage()
+  // a ?state= param scopes this same queue to one State Nodal Authority's
+  // own anomalies (linked from StateView/StateMapView's side menu) instead
+  // of MoSPI's all-India queue - read once on mount, same as scope below,
+  // since this page owns its own filter state from then on rather than
+  // staying synced to the URL.
+  const [searchParams] = useSearchParams()
+  const stateFilter = searchParams.get('state') || ''
+  const [scope, setScope] = useState(searchParams.get('scope') || 'all')
   const [severity, setSeverity] = useState('')
   const [tag, setTag] = useState('')
   const [search, setSearch] = useState('')
@@ -51,9 +60,11 @@ export function AnomaliesView() {
 
   useEffect(() => {
     setData(null)
-    api.queue({ scope, q: debouncedSearch || undefined, severity: severity || undefined, tag: tag || undefined, limit: PAGE_SIZE, offset })
-      .then(setData).catch((e) => setError(e.message))
-  }, [scope, severity, tag, debouncedSearch, offset])
+    api.queue({
+      scope, q: debouncedSearch || undefined, severity: severity || undefined, tag: tag || undefined,
+      state: stateFilter || undefined, limit: PAGE_SIZE, offset,
+    }).then(setData).catch((e) => setError(e.message))
+  }, [scope, severity, tag, debouncedSearch, offset, stateFilter])
 
   if (error) return <ErrorView message={error} onRetry={() => window.location.reload()} />
 
@@ -64,9 +75,17 @@ export function AnomaliesView() {
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle="MoSPI · Anomalies"
+        subtitle={stateFilter ? `State Nodal Authority · ${stateFilter} · Anomalies` : 'MoSPI · Anomalies'}
         searchIndex={[]}
-        drawerLinks={[
+        showSearch={!stateFilter}
+        profileName={stateFilter || undefined}
+        profileRole={stateFilter ? 'State Nodal Authority' : undefined}
+        avatarLetter={stateFilter ? 'S' : undefined}
+        drawerLinks={stateFilter ? [
+          { label: 'Overview', onClick: () => navigate(`/state/${encodeURIComponent(stateFilter)}`) },
+          { label: 'Map', onClick: () => navigate(`/state/${encodeURIComponent(stateFilter)}/map`) },
+          { label: 'Anomalies', onClick: () => navigate(`/anomalies?state=${encodeURIComponent(stateFilter)}`) },
+        ] : [
           { label: 'Overview', onClick: () => navigate('/mospi') },
           { label: 'Map', onClick: () => navigate('/mospi/map') },
           ANOMALIES_LINK(navigate),
@@ -76,10 +95,11 @@ export function AnomaliesView() {
       />
 
       <div className="mospi-body">
-        <h1 className="mospi-page-title">Anomalies</h1>
+        <h1 className="mospi-page-title">{stateFilter ? `${t('drawer.anomalies')} — ${stateFilter}` : t('drawer.anomalies')}</h1>
         <p className="mospi-page-sub">
-          Every flagged work across India, ranked by priority - the full review queue the Overview and
-          Map pages each surface only a slice of.
+          {stateFilter
+            ? `Every flagged work in ${stateFilter}, ranked by priority - the full review queue this state's own Overview and Map pages each surface only a slice of.`
+            : 'Every flagged work across India, ranked by priority - the full review queue the Overview and Map pages each surface only a slice of.'}
         </p>
 
         <div className="panel">

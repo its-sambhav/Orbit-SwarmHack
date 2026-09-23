@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { api, formatRupees, formatDate } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
+import { useLanguage } from '../i18n'
 
 const LEVEL_LABEL = { overview: 'Overview', india: 'India (map)', state: 'State', district: 'District' }
 
@@ -60,6 +61,7 @@ function ReportCard({ report, onDelete }) {
 
 export function ReportsView() {
   const navigate = useNavigate()
+  const { t } = useLanguage()
   const [reports, setReports] = useState(null)
   const [error, setError] = useState(null)
 
@@ -89,7 +91,7 @@ export function ReportsView() {
         ]}
       />
       <div className="mospi-body">
-        <h1 className="mospi-page-title">Reports</h1>
+        <h1 className="mospi-page-title">{t('drawer.reports')}</h1>
         <p className="mospi-page-sub">
           Snapshots generated from the Overview and Map pages - each one is frozen to the numbers and date range at the moment it was made.
         </p>

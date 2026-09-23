@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, clearAuthToken, formatRupees, getAuthInfo } from '../api'
+import { useLanguage } from '../i18n'
 
 const iconProps = {
   width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
@@ -43,6 +44,20 @@ const NAV_ICON = {
   Reports: DocumentIcon,
 }
 const iconFor = (label) => { const Icon = NAV_ICON[label] || DotIcon; return <Icon /> }
+
+// callers (NationalView, StateView, StateMapView, ...) still pass every
+// drawerLinks label and profileRole in plain English, same as NAV_ICON's own
+// lookup above - translating here, by matching that one fixed English
+// vocabulary to a STRINGS key, means every one of those view files keeps
+// working unchanged instead of importing i18n itself.
+const DRAWER_LABEL_KEY = {
+  Overview: 'drawer.overview', Map: 'drawer.map', 'Map (all India)': 'drawer.mapAllIndia',
+  Anomalies: 'drawer.anomalies', 'MP Audits': 'drawer.mpAudits', Reports: 'drawer.reports',
+}
+const ROLE_LABEL_KEY = {
+  'State Nodal Authority': 'role.state', 'District Authority': 'role.district',
+  'Implementing Agency': 'role.agency', 'Member of Parliament': 'role.mp',
+}
 
 // this app's tokens sign every issued token with {role, entity, exp} (see
 // api/auth.py's issue_token) - decoding it client-side to show a session
@@ -118,6 +133,7 @@ export function MospiNav({
   const [digest, setDigest] = useState(null)
   const alertsRef = useRef(null)
   const profileRef = useRef(null)
+  const { lang, setLang, languages, t } = useLanguage()
 
   const auth = getAuthInfo()
 
@@ -167,7 +183,7 @@ export function MospiNav({
     <>
       <nav className="mospi-nav">
         <button
-          type="button" className="mospi-icon-btn" aria-label={railOpen ? 'Close menu' : 'Open menu'}
+          type="button" className="mospi-icon-btn" aria-label={railOpen ? t('nav.closeMenu') : t('nav.openMenu')}
           aria-expanded={railOpen} onClick={() => setRailOpen((v) => !v)}
         >
           <MenuIcon />
@@ -186,8 +202,8 @@ export function MospiNav({
               <SearchIcon />
               <input
                 type="search"
-                placeholder="Search state or constituency…"
-                aria-label="Search state or constituency"
+                placeholder={t('nav.searchPlaceholder')}
+                aria-label={t('nav.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -196,7 +212,7 @@ export function MospiNav({
 
           <div className="mospi-popover-anchor" ref={alertsRef}>
             <button
-              type="button" className="mospi-icon-btn" aria-label="Alerts" aria-haspopup="true"
+              type="button" className="mospi-icon-btn" aria-label={t('nav.alertsAria')} aria-haspopup="true"
               aria-expanded={alertsOpen} onClick={() => { setAlertsOpen((v) => !v); setProfileOpen(false) }}
             >
               <BellIcon />
@@ -205,18 +221,18 @@ export function MospiNav({
             {alertsOpen && (
               <div className="mospi-popover mospi-alerts-popover" role="menu">
                 <div className="mospi-popover-header">
-                  New high-severity findings
+                  {t('nav.alertsTitle')}
                   {alerts.kind !== 'national' && alerts.kind !== 'none' && alerts.kind !== 'unsupported' && (
                     <span className="mospi-popover-header-scope"> · {alerts.label}</span>
                   )}
                 </div>
                 {alerts.kind === 'unsupported' && (
-                  <p className="mospi-popover-empty">Alerts aren't scoped for this role yet - see the MoSPI or State dashboard.</p>
+                  <p className="mospi-popover-empty">{t('nav.alertsUnsupported')}</p>
                 )}
-                {alerts.kind === 'none' && <p className="mospi-popover-empty">Loading…</p>}
+                {alerts.kind === 'none' && <p className="mospi-popover-empty">{t('nav.alertsLoading')}</p>}
                 {(alerts.kind === 'national' || alerts.kind === 'state' || alerts.kind === 'district') && (
                   alerts.count === 0 ? (
-                    <p className="mospi-popover-empty">No new high-severity findings since the last pipeline run.</p>
+                    <p className="mospi-popover-empty">{t('nav.alertsEmpty')}</p>
                   ) : (
                     <ul className="mospi-alert-list">
                       {alerts.findings.slice(0, 6).map((f) => (
@@ -242,7 +258,7 @@ export function MospiNav({
 
           <div className="mospi-popover-anchor" ref={profileRef}>
             <button
-              type="button" className="mospi-icon-btn mospi-profile-trigger" aria-label="Account menu"
+              type="button" className="mospi-icon-btn mospi-profile-trigger" aria-label={t('nav.accountAria')}
               aria-haspopup="true" aria-expanded={profileOpen} onClick={() => { setProfileOpen((v) => !v); setAlertsOpen(false) }}
             >
               <span className="mospi-profile-avatar">{avatarLetter}</span>
@@ -253,25 +269,31 @@ export function MospiNav({
                   <span className="mospi-profile-avatar">{avatarLetter}</span>
                   <span>
                     <span className="mospi-profile-name" title={profileName}>{profileName}</span>
-                    <span className="mospi-profile-role">{profileRole}</span>
+                    <span className="mospi-profile-role">{ROLE_LABEL_KEY[profileRole] ? t(ROLE_LABEL_KEY[profileRole]) : profileRole}</span>
                   </span>
                 </div>
                 {expiresAt && (
                   <div className="mospi-popover-note">
-                    Session ends {expiresAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    {t('nav.sessionEnds')} {expiresAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 )}
 
                 <div className="mospi-popover-section">
-                  <div className="mospi-popover-label"><GlobeIcon /> Language</div>
+                  <div className="mospi-popover-label"><GlobeIcon /> {t('nav.language')}</div>
                   <div className="mospi-lang-switch">
-                    <button type="button" className="active" aria-pressed="true">English</button>
-                    <button type="button" disabled title="Not yet available in this prototype">हिन्दी <span>Soon</span></button>
+                    {languages.map((l) => (
+                      <button
+                        key={l.code} type="button" className={lang === l.code ? 'active' : ''}
+                        aria-pressed={lang === l.code} onClick={() => setLang(l.code)}
+                      >
+                        {l.native}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
                 <button type="button" className="mospi-popover-logout" onClick={logout}>
-                  <LogoutIcon /> Log out
+                  <LogoutIcon /> {t('nav.logout')}
                 </button>
               </div>
             )}
@@ -281,15 +303,18 @@ export function MospiNav({
 
       <aside className={`app-rail${railOpen ? ' open' : ''}`} aria-label="Section navigation">
         <nav className="app-rail-links">
-          {drawerLinks.map((l) => (
-            <button
-              key={l.label} type="button" className="app-rail-link" title={l.label}
-              onClick={() => { l.onClick(); setRailOpen(false) }}
-            >
-              {iconFor(l.label)}
-              <span className="app-rail-link-label">{l.label}</span>
-            </button>
-          ))}
+          {drawerLinks.map((l) => {
+            const label = DRAWER_LABEL_KEY[l.label] ? t(DRAWER_LABEL_KEY[l.label]) : l.label
+            return (
+              <button
+                key={l.label} type="button" className="app-rail-link" title={label}
+                onClick={() => { l.onClick(); setRailOpen(false) }}
+              >
+                {iconFor(l.label)}
+                <span className="app-rail-link-label">{label}</span>
+              </button>
+            )
+          })}
         </nav>
       </aside>
       {railOpen && <div className="app-rail-scrim" onClick={() => setRailOpen(false)} />}

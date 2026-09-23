@@ -6,6 +6,7 @@ import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart
 import { RankChart } from '../components/RankChart'
 import { DonutCard } from '../components/DonutCard'
 import { EntityRiskPanel } from '../components/EntityRiskPanel'
+import { StatCard } from '../components/StatCard'
 import { TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
@@ -135,19 +136,21 @@ export function NationalView() {
       />
 
       <div className="mospi-body" id="report-capture">
-        <div className="report-toolbar">
-          <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
-          <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
-          <GenerateReportButton level="overview" scope={scope} dateFrom={dateFrom} dateTo={dateTo} title={`Overview — ${scopeLabel(scope)}`} summary={funnel} />
+        <div className="mospi-header-row">
+          <h1 className="mospi-page-title">India</h1>
+          <div className="report-toolbar">
+            <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
+            <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
+            <GenerateReportButton level="overview" scope={scope} dateFrom={dateFrom} dateTo={dateTo} title={`Overview — ${scopeLabel(scope)}`} summary={funnel} />
+          </div>
         </div>
 
         <div className="mospi-stats" id="mospi-overview">
           {cards.length ? cards.map((c) => (
-            <div className="mospi-stat-card" key={c.label}>
-              <div className="mospi-stat-label">{c.label}</div>
-              <div className="mospi-stat-value num">{c.value}</div>
-              <div className="mospi-stat-amount num">{c.sub}</div>
-            </div>
+            <StatCard
+              key={c.label} label={c.label} value={c.value} sub={c.sub}
+              onClick={c.label === 'Works flagged' ? () => navigate('/anomalies') : undefined}
+            />
           )) : Array.from({ length: 8 }).map((_, i) => (
             <div className="mospi-stat-card" key={i}><Loading label="" /></div>
           ))}

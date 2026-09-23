@@ -106,6 +106,8 @@ export function StateMapView() {
         avatarLetter="S"
         drawerLinks={[
           { label: 'Overview', onClick: () => navigate(`/state/${encodeURIComponent(stateLabel)}?${params.toString()}`) },
+          { label: 'Map', onClick: () => navigate(`/state/${encodeURIComponent(stateLabel)}/map?${params.toString()}`) },
+          { label: 'Anomalies', onClick: () => navigate(`/anomalies?state=${encodeURIComponent(stateLabel)}&scope=${encodeURIComponent(scope)}`) },
         ]}
       />
       <div className="mospi-map-page-body" id="report-capture">
@@ -116,12 +118,7 @@ export function StateMapView() {
               { label: 'Map' },
             ]} />
             <div className="mospi-header-row">
-              <div>
-                <h1 style={{ margin: 0 }}>{stateLabel} — constituency map</h1>
-                <div className="mospi-header-meta">
-                  State Nodal Authority · {stateConstituencies.length} constituencies · {scopeLabel(scope)}
-                </div>
-              </div>
+              <h1 style={{ margin: 0 }}>{stateLabel} — constituency map</h1>
               <div className="report-toolbar">
                 <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
                 <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />

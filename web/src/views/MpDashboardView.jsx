@@ -5,6 +5,7 @@ import { MospiNav } from '../components/MospiNav'
 import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart'
 import { RankChart } from '../components/RankChart'
 import { DonutCard } from '../components/DonutCard'
+import { StatCard } from '../components/StatCard'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
@@ -136,11 +137,10 @@ export function MpDashboardView() {
 
         <div className="mospi-stats">
           {cards.map((c) => (
-            <div className="mospi-stat-card" key={c.label}>
-              <div className="mospi-stat-label">{c.label}</div>
-              <div className="mospi-stat-value num">{c.value}</div>
-              <div className="mospi-stat-amount num">{c.sub}</div>
-            </div>
+            <StatCard
+              key={c.label} label={c.label} value={c.value} sub={c.sub}
+              onClick={c.label === 'Works flagged' ? () => navigate(mapUrl) : undefined}
+            />
           ))}
         </div>
 

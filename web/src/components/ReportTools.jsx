@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
 import { api, formatDate } from '../api'
+import { useLanguage } from '../i18n'
 
 const PRESETS = [
-  { label: 'Last 3 months', months: 3 },
-  { label: 'Last 6 months', months: 6 },
-  { label: 'Last year', months: 12 },
+  { key: 'date.last3Months', label: 'Last 3 months', months: 3 },
+  { key: 'date.last6Months', label: 'Last 6 months', months: 6 },
+  { key: 'date.lastYear', label: 'Last year', months: 12 },
 ]
 
 function fmtShort(iso) {
@@ -33,6 +34,7 @@ function presetRange(months, maxIso) {
 // (bounds.max, the engine's frozen as_of_date) rather than the browser
 // clock - this is a historical snapshot, not a live feed.
 export function DateRangeFilter({ dateFrom, dateTo, bounds, onChange }) {
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -50,7 +52,7 @@ export function DateRangeFilter({ dateFrom, dateTo, bounds, onChange }) {
         return r.from === dateFrom && r.to === dateTo
       })
     : null
-  const label = !dateFrom && !dateTo ? 'All time' : activePreset ? activePreset.label : 'Custom range'
+  const label = !dateFrom && !dateTo ? t('date.allTime') : activePreset ? t(activePreset.key) : t('date.customRange')
   const rangeText = dateFrom && dateTo
     ? `${fmtShort(dateFrom)} – ${fmtLong(dateTo)}`
     : bounds?.min && bounds?.max ? `${fmtShort(bounds.min)} – ${fmtLong(bounds.max)}` : ''
@@ -76,23 +78,23 @@ export function DateRangeFilter({ dateFrom, dateTo, bounds, onChange }) {
                   setOpen(false)
                 }}
               >
-                {p.label}
+                {t(p.key)}
               </button>
             ))}
             <button type="button" className="date-filter-preset-btn" onClick={() => { onChange(null, null); setOpen(false) }}>
-              All time
+              {t('date.allTime')}
             </button>
           </div>
           <div className="date-filter-custom">
             <label>
-              From
+              {t('date.from')}
               <input
                 type="date" value={dateFrom || ''} min={bounds?.min} max={bounds?.max}
                 onChange={(e) => onChange(e.target.value || null, dateTo)}
               />
             </label>
             <label>
-              To
+              {t('date.to')}
               <input
                 type="date" value={dateTo || ''} min={bounds?.min} max={bounds?.max}
                 onChange={(e) => onChange(dateFrom, e.target.value || null)}
@@ -105,7 +107,7 @@ export function DateRangeFilter({ dateFrom, dateTo, bounds, onChange }) {
   )
 }
 
-const REPORT_LABEL = { idle: 'Generate report', saving: 'Generating…', done: 'Report saved ✓', failed: 'Failed — retry' }
+const REPORT_LABEL_KEY = { idle: 'report.generate', saving: 'report.generating', done: 'report.done', failed: 'report.failed' }
 
 function sanitizeFilename(title) {
   return title.replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '') || 'report'
@@ -238,6 +240,7 @@ async function captureReportPdf({ title, scope, dateFrom, dateTo }) {
 // the Reports page - a frozen record of what was on screen at generation
 // time, not a live link.
 export function GenerateReportButton({ level, title, scope, dateFrom, dateTo, state, district, agency, summary }) {
+  const { t } = useLanguage()
   const [status, setStatus] = useState('idle')
 
   async function generate() {
@@ -261,7 +264,7 @@ export function GenerateReportButton({ level, title, scope, dateFrom, dateTo, st
 
   return (
     <button type="button" className="generate-report-btn" onClick={generate} disabled={status === 'saving' || !summary}>
-      {REPORT_LABEL[status]}
+      {t(REPORT_LABEL_KEY[status])}
     </button>
   )
 }

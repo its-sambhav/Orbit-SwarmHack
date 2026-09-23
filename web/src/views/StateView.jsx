@@ -6,7 +6,7 @@ import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart
 import { RankChart } from '../components/RankChart'
 import { DonutCard } from '../components/DonutCard'
 import { EntityRiskPanel } from '../components/EntityRiskPanel'
-import { Breadcrumb } from '../components/Breadcrumb'
+import { StatCard } from '../components/StatCard'
 import { TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
@@ -15,6 +15,10 @@ import { Loading, ErrorView } from '../components/StateViews'
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
 const STAGE_LABEL = { recommendation: 'Recommendation', sanction: 'Sanction', execution: 'Execution', payment: 'Payment' }
+
+function scrollToId(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 // State Authority's own Overview - the same split MoSPI's own dashboard uses
 // (NationalView is stats+charts only; its map is a separate page,
@@ -115,34 +119,34 @@ export function StateView() {
         profileRole="State Nodal Authority"
         avatarLetter="S"
         drawerLinks={[
+          { label: 'Overview', onClick: () => scrollToId('mospi-overview') },
           { label: 'Map', onClick: () => navigate(mapUrl) },
+          { label: 'Anomalies', onClick: () => navigate(`/anomalies?state=${encodeURIComponent(data.state)}&scope=${encodeURIComponent(scope)}`) },
         ]}
       />
       <div className="mospi-body" id="report-capture">
-        <div className="report-toolbar">
-          <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
-          <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
-          <GenerateReportButton
-            level="state" scope={scope} dateFrom={dateFrom} dateTo={dateTo} state={data.state}
-            title={`${data.state} — ${scopeLabel(scope)}`} summary={data.scorecard}
-          />
-        </div>
-
         <div className="map-drill-header" style={{ marginBottom: 18 }}>
-          <Breadcrumb items={[{ label: data.state }]} />
-          <h1 style={{ margin: '4px 0 2px' }}>{data.state}</h1>
-          <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>
-            State Nodal Authority · {scopeLabel(scope)}
+          <div className="mospi-header-row">
+            <h1 style={{ margin: 0 }}>{data.state}</h1>
+            <div className="report-toolbar">
+              <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
+              <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
+              <GenerateReportButton
+                level="state" scope={scope} dateFrom={dateFrom} dateTo={dateTo} state={data.state}
+                title={`${data.state} — ${scopeLabel(scope)}`} summary={data.scorecard}
+              />
+            </div>
           </div>
         </div>
 
-        <div className="mospi-stats">
+        <div className="mospi-stats" id="mospi-overview">
           {cards.map((c) => (
-            <div className="mospi-stat-card" key={c.label}>
-              <div className="mospi-stat-label">{c.label}</div>
-              <div className="mospi-stat-value num">{c.value}</div>
-              <div className="mospi-stat-amount num">{c.sub}</div>
-            </div>
+            <StatCard
+              key={c.label} label={c.label} value={c.value} sub={c.sub}
+              onClick={c.label === 'Works flagged'
+                ? () => navigate(`/anomalies?state=${encodeURIComponent(data.state)}&scope=${encodeURIComponent(scope)}`)
+                : undefined}
+            />
           ))}
         </div>
 
