@@ -944,13 +944,12 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 .scorecard-cell.has-tooltip { cursor: help; }
 .scorecard-cell.has-tooltip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* spans both scorecard columns (anchored to whichever edge its own cell
-   sits on) and is near-opaque - unlike the overview tiles' popover, this
-   one lies over other cards, which would show through a 55% background */
+   sits on); same translucent, blurred look as the overview tiles' popover */
 .scorecard-tooltip {
   bottom: auto; top: calc(100% + 10px); left: 0; right: auto; width: calc(200% + 10px);
-  transform: translateY(-4px); background: rgba(31, 61, 92, 0.94);
+  transform: translateY(-4px);
 }
-.scorecard-tooltip::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: rgba(31, 61, 92, 0.94); }
+.scorecard-tooltip::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: rgba(31, 61, 92, 0.55); }
 .scorecard-grid > .scorecard-cell:nth-child(even) .scorecard-tooltip { left: auto; right: 0; }
 .scorecard-grid > .scorecard-cell:nth-child(even) .scorecard-tooltip::after { left: auto; right: 22px; }
 .scorecard-cell:hover .scorecard-tooltip, .scorecard-cell:focus-visible .scorecard-tooltip {

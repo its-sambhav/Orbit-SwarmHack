@@ -1,14 +1,15 @@
 import { formatRupees } from '../api'
 import { useLanguage } from '../i18n'
 
-// the same hover explainers the overview's StatCard tiles show, keyed by the
-// same plain-English labels. "Allocated" only exists on the map scorecards;
-// "Works flagged" gets a map-page wording, since these cells aren't links
-// (the overview tile's text says "click to open the anomalies queue").
+// hover explainers, one text per card per Amount / Projects toggle - the
+// sentence always describes the number actually on the card (a rupee total
+// or a count of works). "Works flagged" shows the same "x / y" in both modes,
+// so it has one text, worded for the map (these cells aren't links).
 const DESC_KEY = {
-  Allocated: 'statDesc.allocated', Recommended: 'statDesc.recommended', Sanctioned: 'statDesc.sanctioned',
-  Completed: 'statDesc.completed', Paid: 'statDesc.paid', 'Works flagged': 'statDesc.worksFlaggedMap',
+  Allocated: 'mapDesc.allocated', Recommended: 'mapDesc.recommended', Sanctioned: 'mapDesc.sanctioned',
+  Completed: 'mapDesc.completed', Paid: 'mapDesc.paid',
 }
+const FIXED_DESC_KEY = { 'Works flagged': 'statDesc.worksFlaggedMap' }
 
 // mode: 'amount' (default, unchanged for every existing caller) shows the
 // rupee value; 'count' shows the number of projects instead, when the
@@ -21,7 +22,8 @@ const DESC_KEY = {
 export function ScorecardCell({ label, value, count, mode = 'amount', display, description }) {
   const { t } = useLanguage()
   const showCount = mode === 'count' && count != null
-  const desc = description ?? (DESC_KEY[label] ? t(DESC_KEY[label]) : undefined)
+  const descKey = DESC_KEY[label] ? `${DESC_KEY[label]}.${showCount ? 'count' : 'amount'}` : FIXED_DESC_KEY[label]
+  const desc = description ?? (descKey ? t(descKey) : undefined)
   const shown = display ?? (showCount ? count.toLocaleString('en-IN') : formatRupees(value))
   return (
     <div className={`scorecard-cell${desc ? ' has-tooltip' : ''}`} tabIndex={desc ? 0 : undefined}>
