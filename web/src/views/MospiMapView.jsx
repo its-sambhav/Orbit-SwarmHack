@@ -243,10 +243,7 @@ export function MospiMapView() {
                     <ScorecardCell label="Sanctioned" value={funnel.sanctioned_amount} count={funnel.sanctioned} mode={valueMode} />
                     <ScorecardCell label="Completed" value={funnel.completed_amount} count={funnel.completed} mode={valueMode} />
                     <ScorecardCell label="Paid" value={funnel.paid} count={funnel.paid_count} mode={valueMode} />
-                    <div className="scorecard-cell">
-                      <div className="label">{t('Works flagged')}</div>
-                      <div className="value num">{funnel.works_flagged.toLocaleString('en-IN')} / {funnel.total_works.toLocaleString('en-IN')}</div>
-                    </div>
+                    <ScorecardCell label="Works flagged" display={`${funnel.works_flagged.toLocaleString('en-IN')} / ${funnel.total_works.toLocaleString('en-IN')}`} />
                   </div>
                   <div className="comparison-row">
                     <span>{t('Completion rate')}</span>
@@ -294,10 +291,7 @@ export function MospiMapView() {
                     <ScorecardCell label="Sanctioned" value={stateDetail.scorecard.sanctioned} count={stateDetail.scorecard.sanctioned_count} mode={valueMode} />
                     <ScorecardCell label="Completed" value={stateDetail.scorecard.completed} count={stateDetail.scorecard.completed_count} mode={valueMode} />
                     <ScorecardCell label="Paid" value={stateDetail.scorecard.paid} count={stateDetail.scorecard.paid_count} mode={valueMode} />
-                    <div className="scorecard-cell">
-                      <div className="label">{t('Works flagged')}</div>
-                      <div className="value num">{stateDetail.scorecard.works_flagged.toLocaleString('en-IN')} / {stateDetail.scorecard.works_total.toLocaleString('en-IN')}</div>
-                    </div>
+                    <ScorecardCell label="Works flagged" display={`${stateDetail.scorecard.works_flagged.toLocaleString('en-IN')} / ${stateDetail.scorecard.works_total.toLocaleString('en-IN')}`} />
                   </div>
                   <div className="comparison-row">
                     <span>{t('Completion rate here')}</span>

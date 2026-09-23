@@ -206,10 +206,7 @@ export function ConstituencyView() {
                 <ScorecardCell label="Sanctioned" value={scorecard.sanctioned} count={scorecard.sanctioned_count} mode={valueMode} />
                 <ScorecardCell label="Completed" value={scorecard.completed} count={scorecard.completed_count} mode={valueMode} />
                 <ScorecardCell label="Paid" value={scorecard.paid} count={scorecard.paid_count} mode={valueMode} />
-                <div className="scorecard-cell">
-                  <div className="label">{t('Works flagged')}</div>
-                  <div className="value num">{scorecard.works_flagged.toLocaleString('en-IN')} / {scorecard.works_total.toLocaleString('en-IN')}</div>
-                </div>
+                <ScorecardCell label="Works flagged" display={`${scorecard.works_flagged.toLocaleString('en-IN')} / ${scorecard.works_total.toLocaleString('en-IN')}`} />
               </div>
 
               <div className="comparison-row">

@@ -388,9 +388,15 @@ models:
     # eSAKSHI go-live: before it the data only holds 17th LS works that were
     # still unfinished at migration (all "delayed") - see engine/predictive.py
     train_from: "2023-04-01"
-    params: {max_iter: 100, learning_rate: 0.08, max_depth: 5}
+    # up to 600 trees, stopped early when a 10% validation slice stops
+    # improving; smaller steps + leaf-size floor + L2 keep it from memorising
+    # single constituencies. Tuned on grouped CV, confirmed forward in time.
+    params: {max_iter: 600, learning_rate: 0.05, max_leaf_nodes: 31, min_samples_leaf: 40,
+             l2_regularization: 1.0, early_stopping: true, validation_fraction: 0.1, n_iter_no_change: 30}
     calibrate: isotonic          # so "0.7" means about a 70% observed delay rate
-    tiers: {high: 0.70, medium: 0.40}
+    # auto: High = riskiest 10% of past works, Medium = next 30%, set from the
+    # calibrated out-of-fold probabilities (a fixed 0.70 was never reached)
+    tiers: auto
   rule_agreement:
     params: {max_iter: 150, learning_rate: 0.08, max_depth: 6}
   isolation_forest:

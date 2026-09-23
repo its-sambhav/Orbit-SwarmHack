@@ -55,10 +55,7 @@ export function MpProfileView() {
               <ScorecardCell label="Sanctioned" value={scorecard.sanctioned} />
               <ScorecardCell label="Completed" value={scorecard.completed} />
               <ScorecardCell label="Paid" value={scorecard.paid} />
-              <div className="scorecard-cell">
-                <div className="label">{t('Works flagged')}</div>
-                <div className="value num">{scorecard.works_flagged.toLocaleString('en-IN')} / {scorecard.works_total.toLocaleString('en-IN')}</div>
-              </div>
+              <ScorecardCell label="Works flagged" display={`${scorecard.works_flagged.toLocaleString('en-IN')} / ${scorecard.works_total.toLocaleString('en-IN')}`} />
             </div>
             <div className="comparison-row">
               <span>{t('Completion rate')}</span>

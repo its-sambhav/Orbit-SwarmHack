@@ -151,10 +151,7 @@ export function StateMapView() {
                     <ScorecardCell label="Sanctioned" value={data.scorecard.sanctioned} count={data.scorecard.sanctioned_count} mode={valueMode} />
                     <ScorecardCell label="Completed" value={data.scorecard.completed} count={data.scorecard.completed_count} mode={valueMode} />
                     <ScorecardCell label="Paid" value={data.scorecard.paid} count={data.scorecard.paid_count} mode={valueMode} />
-                    <div className="scorecard-cell">
-                      <div className="label">{t('Works flagged')}</div>
-                      <div className="value num">{data.scorecard.works_flagged.toLocaleString('en-IN')} / {data.scorecard.works_total.toLocaleString('en-IN')}</div>
-                    </div>
+                    <ScorecardCell label="Works flagged" display={`${data.scorecard.works_flagged.toLocaleString('en-IN')} / ${data.scorecard.works_total.toLocaleString('en-IN')}`} />
                   </div>
                   <div className="comparison-row">
                     <span>{t('Completion rate')}</span>

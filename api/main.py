@@ -631,17 +631,10 @@ def get_work_ai_assessment(
     auth.check_work_access(claims, work)
     findings = s.findings_for_work(work_number, scope_house, scope_tenure)
 
-    def present(v):
-        return v if v is not None and not (isinstance(v, float) and math.isnan(v)) and v is not pd.NaT else None
-
-    rec_date = work.get("rec_RECOMMENDATION_DATE")
-    amount = present(work.get("rec_RECOMMENDED_AMOUNT")) or present(work.get("SANCTION_AMOUNT"))
-    prediction = predict_work_risk(
-        amount=amount, state=present(work.get("STATE_NAME")),
-        activity=present(work.get("rec_ACTIVITY_NAME_CLEAN")) or present(work.get("san_ACTIVITY_NAME_CLEAN")),
-        month=rec_date.month if pd.notna(rec_date) else None,
-        district=present(work.get("DISTRICT")),
-    )
+    # every delay-model feature read from this work's own spine row, and its
+    # workload context (same-letter batch, MP / district-authority inflow
+    # before its recommendation date) from the full spine
+    prediction = predict_work_risk(None, None, None, work=work, history=s.spine)
     rule_agreement = predict_risk_model(work)
 
     severity_rank = {"high": 3, "medium": 2, "low": 1}
