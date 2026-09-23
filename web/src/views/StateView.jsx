@@ -11,6 +11,7 @@ import { TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView } from '../components/StateViews'
+import { useLanguage } from '../i18n'
 
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
@@ -32,6 +33,7 @@ export function StateView() {
   const dateFrom = params.get('date_from') || null
   const dateTo = params.get('date_to') || null
   const navigate = useNavigate()
+  const { t, td } = useLanguage()
   const [data, setData] = useState(null)
   const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
@@ -64,26 +66,26 @@ export function StateView() {
     { label: 'Recommended', value: data.scorecard.recommended_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.recommended) },
     { label: 'Sanctioned', value: data.scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.sanctioned) },
     { label: 'Completed', value: data.scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.completed) },
-    { label: 'Works flagged', value: data.scorecard.works_flagged.toLocaleString('en-IN'), sub: `of ${data.scorecard.works_total.toLocaleString('en-IN')} total works` },
+    { label: 'Works flagged', value: data.scorecard.works_flagged.toLocaleString('en-IN'), sub: t('of {n} total works', { n: data.scorecard.works_total.toLocaleString('en-IN') }) },
     {
       label: 'Fund utilisation',
       value: data.scorecard.allocated ? `${((data.scorecard.paid / data.scorecard.allocated) * 100).toFixed(0)}%` : '—',
-      sub: `${formatRupees(data.scorecard.paid)} of ${formatRupees(data.scorecard.allocated)} allocated`,
+      sub: t('{paid} of {allocated} allocated', { paid: formatRupees(data.scorecard.paid), allocated: formatRupees(data.scorecard.allocated) }),
     },
     {
       label: 'Completion rate',
       value: data.scorecard.completion_rate != null ? `${data.scorecard.completion_rate.toFixed(0)}%` : '—',
-      sub: `${data.scorecard.completed_count.toLocaleString('en-IN')} of ${data.scorecard.sanctioned_count.toLocaleString('en-IN')} sanctioned works`,
+      sub: t('{completed} of {sanctioned} sanctioned works', { completed: data.scorecard.completed_count.toLocaleString('en-IN'), sanctioned: data.scorecard.sanctioned_count.toLocaleString('en-IN') }),
     },
     {
       label: 'Pending works',
       value: data.scorecard.ongoing.toLocaleString('en-IN'),
-      sub: 'Sanctioned, not yet completed',
+      sub: t('Sanctioned, not yet completed'),
     },
     {
       label: 'Avg. cost / completed work',
       value: formatRupees(data.scorecard.completed_count ? data.scorecard.completed / data.scorecard.completed_count : 0),
-      sub: `Across ${data.scorecard.completed_count.toLocaleString('en-IN')} completed works`,
+      sub: t('Across {n} completed works', { n: data.scorecard.completed_count.toLocaleString('en-IN') }),
     },
   ] : []
 
@@ -112,7 +114,7 @@ export function StateView() {
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle={`State Nodal Authority · ${data.state}`}
+        subtitle={t('State Nodal Authority · {state}', { state: td(data.state) })}
         searchIndex={[]}
         showSearch={false}
         profileName={data.state}
@@ -127,7 +129,7 @@ export function StateView() {
       <div className="mospi-body" id="report-capture">
         <div className="map-drill-header" style={{ marginBottom: 18 }}>
           <div className="mospi-header-row">
-            <h1 style={{ margin: 0 }}>{data.state}</h1>
+            <h1 style={{ margin: 0 }}>{td(data.state)}</h1>
             <div className="report-toolbar">
               <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
               <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
@@ -152,14 +154,14 @@ export function StateView() {
 
         <button type="button" className="mospi-map-cta" onClick={() => navigate(mapUrl)}>
           <div>
-            <div className="mospi-map-cta-title">View the constituency map</div>
-            <div className="mospi-map-cta-sub">Constituency-level choropleth for {data.state}, {scopeLabel(scope)}</div>
+            <div className="mospi-map-cta-title">{t('View the constituency map')}</div>
+            <div className="mospi-map-cta-sub">{t('Constituency-level choropleth for {name}, {scope}', { name: td(data.state), scope: t(scopeLabel(scope)) })}</div>
           </div>
           <span className="mospi-map-cta-arrow">→</span>
         </button>
 
         <div className="mospi-charts-grid">
-          <ProjectLifecycleBarChart title={`Project Lifecycle & Risk Breakdown — ${data.state}`} sectors={lifecycleSectors} />
+          <ProjectLifecycleBarChart title={t('Project Lifecycle & Risk Breakdown — {name}', { name: td(data.state) })} sectors={lifecycleSectors} />
           <DonutCard title="Findings by tag" items={tagItems} colorFor={tagColor} />
           <EntityRiskPanel
             entities={districtEntities}

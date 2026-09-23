@@ -139,6 +139,48 @@ async function postJson(path, body) {
   return res.json()
 }
 
+async function patchJson(path, body) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}))
+    throw Object.assign(new Error(errBody.detail || `${res.status} ${res.statusText}`), { status: res.status })
+  }
+  return res.json()
+}
+
+// multipart: the browser sets its own Content-Type (with the boundary), so
+// unlike postJson this must not send one of its own
+async function postFile(path, file) {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: authHeaders(), body: form })
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}))
+    throw Object.assign(new Error(errBody.detail || `${res.status} ${res.statusText}`), { status: res.status })
+  }
+  return res.json()
+}
+
+async function fetchBlob(path, filename) {
+  const res = await fetch(`${BASE}${path}`, { headers: authHeaders() })
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}))
+    throw new Error(errBody.detail || `${res.status} ${res.statusText}`)
+  }
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename || 'document'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 async function del(path) {
   const res = await fetch(`${BASE}${path}`, { method: 'DELETE', headers: authHeaders() })
   if (!res.ok) {
@@ -173,6 +215,23 @@ export const api = {
       work_number: workNumber, scope_house: scopeHouse,
       scope_tenure: scopeTenure, finding_id: findingId,
     }),
+  // the case discussion on one work (api/comments.py). Reads bypass the
+  // shared GET cache - this app writes to the thread itself, and a stale
+  // read straight after posting would drop the comment that was just made.
+  comments: (workNumber, scopeHouse, scopeTenure) =>
+    getFresh('/comments', { work_number: workNumber, scope_house: scopeHouse, scope_tenure: scopeTenure }),
+  addComment: (body) => postJson('/comments', body),
+  updateComment: (id, patch) => patchJson(`/comments/${id}`, patch),
+  deleteComment: (id) => del(`/comments/${id}`),
+  attachToComment: (id, file) => postFile(`/comments/${id}/attachments`, file),
+  // a plain href can't carry the auth header, so the file is fetched and
+  // handed to the browser as a blob - same download either way
+  downloadAttachment: (commentId, attachmentId, filename) =>
+    fetchBlob(`/comments/${commentId}/attachments/${attachmentId}`, filename),
+  // English -> `lang` for the DATA strings on the current page (work
+  // descriptions, place/person/agency names). See api/translate.py - the
+  // response only carries what it could translate, the rest stays English.
+  translate: (lang, texts) => postJson('/translate', { lang, texts }),
   // the ML-predicted delay-risk model (engine/predictive.py) - a signal
   // independent of the rule-based detectors above, not a replacement.
   predictRisk: (amount, state, activity, month) => postJson('/predict_risk', { amount, state, activity, month }),

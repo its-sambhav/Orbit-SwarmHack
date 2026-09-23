@@ -133,7 +133,7 @@ export function MospiNav({
   const [digest, setDigest] = useState(null)
   const alertsRef = useRef(null)
   const profileRef = useRef(null)
-  const { lang, setLang, languages, t } = useLanguage()
+  const { lang, setLang, languages, t, td } = useLanguage()
 
   const auth = getAuthInfo()
 
@@ -189,7 +189,7 @@ export function MospiNav({
           <MenuIcon />
         </button>
 
-        <img className="mospi-nav-emblem" src="/emblem.svg" alt="Government of India" />
+        <img className="mospi-nav-emblem" src="/emblem.svg" alt={t('Government of India')} />
 
         <div className="mospi-nav-brand">
           <div className="mospi-nav-title">MPLADS Review</div>
@@ -241,9 +241,9 @@ export function MospiNav({
                             type="button" className="mospi-alert-item"
                             onClick={() => { setAlertsOpen(false); if (f.state) navigate(`/mospi/map?state=${encodeURIComponent(f.state)}`) }}
                           >
-                            <span className="mospi-alert-tag">{f.tag}</span>
+                            <span className="mospi-alert-tag">{t(f.tag)}</span>
                             <span className="mospi-alert-meta">
-                              {[f.mp_name, f.district, f.state].filter(Boolean).join(' · ')}
+                              {[f.mp_name, f.district, f.state].filter(Boolean).map(td).join(' · ')}
                             </span>
                             <span className="mospi-alert-amount num">{formatRupees(f.financial_exposure)}</span>
                           </button>
@@ -268,8 +268,11 @@ export function MospiNav({
                 <div className="mospi-profile-identity">
                   <span className="mospi-profile-avatar">{avatarLetter}</span>
                   <span>
-                    <span className="mospi-profile-name" title={profileName}>{profileName}</span>
-                    <span className="mospi-profile-role">{ROLE_LABEL_KEY[profileRole] ? t(ROLE_LABEL_KEY[profileRole]) : profileRole}</span>
+                    {/* profileName is an entity name (a state, district, agency or MP)
+                        for every role but MoSPI's own default - t() translates that one
+                        default and passes real names through untouched */}
+                    <span className="mospi-profile-name" title={td(profileName)}>{td(profileName)}</span>
+                    <span className="mospi-profile-role">{ROLE_LABEL_KEY[profileRole] ? t(ROLE_LABEL_KEY[profileRole]) : t(profileRole)}</span>
                   </span>
                 </div>
                 {expiresAt && (
@@ -301,7 +304,7 @@ export function MospiNav({
         </div>
       </nav>
 
-      <aside className={`app-rail${railOpen ? ' open' : ''}`} aria-label="Section navigation">
+      <aside className={`app-rail${railOpen ? ' open' : ''}`} aria-label={t('Section navigation')}>
         <nav className="app-rail-links">
           {drawerLinks.map((l) => {
             const label = DRAWER_LABEL_KEY[l.label] ? t(DRAWER_LABEL_KEY[l.label]) : l.label

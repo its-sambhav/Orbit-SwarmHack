@@ -11,6 +11,7 @@ import { TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView } from '../components/StateViews'
+import { useLanguage } from '../i18n'
 
 const DEFAULT_SCOPE = '18th Lok Sabha'
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
@@ -24,6 +25,7 @@ function scrollToId(id) {
 
 export function NationalView() {
   const navigate = useNavigate()
+  const { t } = useLanguage()
   const [searchParams, setSearchParams] = useSearchParams()
   const dateFrom = searchParams.get('date_from') || null
   const dateTo = searchParams.get('date_to') || null
@@ -72,26 +74,26 @@ export function NationalView() {
     { label: 'Recommended', value: funnel.recommended.toLocaleString('en-IN'), sub: formatRupees(funnel.recommended_amount) },
     { label: 'Sanctioned', value: funnel.sanctioned.toLocaleString('en-IN'), sub: formatRupees(funnel.sanctioned_amount) },
     { label: 'Completed', value: funnel.completed.toLocaleString('en-IN'), sub: formatRupees(funnel.completed_amount) },
-    { label: 'Works flagged', value: funnel.works_flagged.toLocaleString('en-IN'), sub: `of ${funnel.total_works.toLocaleString('en-IN')} total works` },
+    { label: 'Works flagged', value: funnel.works_flagged.toLocaleString('en-IN'), sub: t('of {n} total works', { n: funnel.total_works.toLocaleString('en-IN') }) },
     {
       label: 'Fund utilisation',
       value: funnel.allocated ? `${((funnel.paid / funnel.allocated) * 100).toFixed(0)}%` : '—',
-      sub: `${formatRupees(funnel.paid)} of ${formatRupees(funnel.allocated)} allocated`,
+      sub: t('{paid} of {allocated} allocated', { paid: formatRupees(funnel.paid), allocated: formatRupees(funnel.allocated) }),
     },
     {
       label: 'Completion rate',
       value: funnel.completion_rate != null ? `${funnel.completion_rate.toFixed(0)}%` : '—',
-      sub: `${funnel.completed.toLocaleString('en-IN')} of ${funnel.sanctioned.toLocaleString('en-IN')} sanctioned works`,
+      sub: t('{completed} of {sanctioned} sanctioned works', { completed: funnel.completed.toLocaleString('en-IN'), sanctioned: funnel.sanctioned.toLocaleString('en-IN') }),
     },
     {
       label: 'Pending works',
       value: funnel.sanctioned_never_completed.toLocaleString('en-IN'),
-      sub: 'Sanctioned, not yet completed',
+      sub: t('Sanctioned, not yet completed'),
     },
     {
       label: 'Avg. cost / completed work',
       value: formatRupees(funnel.completed ? funnel.completed_amount / funnel.completed : 0),
-      sub: `Across ${funnel.completed.toLocaleString('en-IN')} completed works`,
+      sub: t('Across {n} completed works', { n: funnel.completed.toLocaleString('en-IN') }),
     },
   ] : []
 
@@ -123,7 +125,7 @@ export function NationalView() {
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle={`MoSPI · National Oversight · ${scopeLabel(scope)}`}
+        subtitle={t('MoSPI · National Oversight · {scope}', { scope: t(scopeLabel(scope)) })}
         scopeWorksTotal={funnel?.total_works}
         searchIndex={searchIndex}
         drawerLinks={[
@@ -137,7 +139,7 @@ export function NationalView() {
 
       <div className="mospi-body" id="report-capture">
         <div className="mospi-header-row">
-          <h1 className="mospi-page-title">India</h1>
+          <h1 className="mospi-page-title">{t('India')}</h1>
           <div className="report-toolbar">
             <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
             <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
@@ -158,8 +160,8 @@ export function NationalView() {
 
         <button type="button" className="mospi-map-cta" onClick={() => navigate('/mospi/map')}>
           <div>
-            <div className="mospi-map-cta-title">Open the India risk map</div>
-            <div className="mospi-map-cta-sub">Constituency-level choropleth, {scopeLabel(scope)}</div>
+            <div className="mospi-map-cta-title">{t('Open the India risk map')}</div>
+            <div className="mospi-map-cta-sub">{t('Constituency-level choropleth, {scope}', { scope: t(scopeLabel(scope)) })}</div>
           </div>
           <span className="mospi-map-cta-arrow">→</span>
         </button>

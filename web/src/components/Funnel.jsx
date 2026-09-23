@@ -1,4 +1,7 @@
+import { useLanguage } from '../i18n'
+
 export function Funnel({ funnel }) {
+  const { t } = useLanguage()
   if (!funnel) return null
   const { recommended, sanctioned, completed, never_sanctioned, sanctioned_never_completed } = funnel
   const max = recommended || 1
@@ -12,7 +15,7 @@ export function Funnel({ funnel }) {
     <div className="funnel">
       {stages.map((s, i) => (
         <div className="funnel-row" key={s.label}>
-          <div className="funnel-label">{s.label}</div>
+          <div className="funnel-label">{t(s.label)}</div>
           <div className="funnel-track">
             <div className="funnel-bar" style={{ width: `${Math.max((s.value / max) * 100, 2)}%` }} />
           </div>
@@ -20,8 +23,8 @@ export function Funnel({ funnel }) {
         </div>
       ))}
       <div className="funnel-dropoffs">
-        <span>{never_sanctioned.toLocaleString('en-IN')} never sanctioned</span>
-        <span>{sanctioned_never_completed.toLocaleString('en-IN')} sanctioned, never completed</span>
+        <span>{never_sanctioned.toLocaleString('en-IN')} {t('never sanctioned')}</span>
+        <span>{sanctioned_never_completed.toLocaleString('en-IN')} {t('sanctioned, never completed')}</span>
       </div>
     </div>
   )

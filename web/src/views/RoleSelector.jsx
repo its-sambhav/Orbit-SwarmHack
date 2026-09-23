@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, setAuthToken } from '../api'
 import { Loading } from '../components/StateViews'
+import { useLanguage } from '../i18n'
 
 // matches the scope every dashboard defaults to on entry - the picker's
 // stats should match what you'll actually see next, not a different scope.
@@ -49,6 +50,7 @@ const EyeIcon = ({ off }) => (
 
 export function RoleSelector() {
   const navigate = useNavigate()
+  const { t, td } = useLanguage()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -99,8 +101,8 @@ export function RoleSelector() {
     e.preventDefault()
     setAuthError(null)
     const id = username.trim().toLowerCase()
-    if (!id || !password) { setAuthError('Enter your username and password.'); return }
-    if (!ROLE_LABEL[id]) { setAuthError(BAD_CREDENTIALS); return }
+    if (!id || !password) { setAuthError(t('Enter your username and password.')); return }
+    if (!ROLE_LABEL[id]) { setAuthError(t(BAD_CREDENTIALS)); return }
     setAuthLoading(true)
     try {
       // only mospi needs no entity, so it's the only role this succeeds for
@@ -112,7 +114,7 @@ export function RoleSelector() {
       // so a 400 means the password was right and this role still has to
       // pick which state/district/MP/agency it is signing in as.
       if (err.status === 400) setRole(id)
-      else setAuthError(err.status === 401 ? BAD_CREDENTIALS : err.message)
+      else setAuthError(err.status === 401 ? t(BAD_CREDENTIALS) : err.message)
     } finally {
       setAuthLoading(false)
     }
@@ -156,30 +158,30 @@ export function RoleSelector() {
         <div className="login-hero-caption">
           <span className="login-hero-rule" aria-hidden="true" />
           <div className="login-hero-title">MPLADS Review</div>
-          <div className="login-hero-sub">Anomaly review &amp; oversight dashboard</div>
+          <div className="login-hero-sub">{t('Anomaly review & oversight dashboard')}</div>
         </div>
       </div>
 
       <main className="login-panel">
         <div className="login-panel-inner">
           <div className="login-brand">
-            <img className="login-brand-emblem" src="/emblem.svg" alt="State Emblem of India" />
+            <img className="login-brand-emblem" src="/emblem.svg" alt={t('Government of India')} />
             <div className="login-brand-text">
-              <div className="login-brand-gov">Government of India</div>
-              <div className="login-brand-ministry">Ministry of Statistics and Programme Implementation</div>
-              <div className="login-brand-scheme">Members of Parliament Local Area Development Scheme</div>
+              <div className="login-brand-gov">{t('Government of India')}</div>
+              <div className="login-brand-ministry">{t('Ministry of Statistics and Programme Implementation')}</div>
+              <div className="login-brand-scheme">{t('Members of Parliament Local Area Development Scheme')}</div>
             </div>
           </div>
 
           {!role ? (
             <>
             <form onSubmit={submitLogin} noValidate>
-              <h1 className="login-title">Log In</h1>
+              <h1 className="login-title">{t('Log In')}</h1>
 
               <div className="login-field">
                 <UserIcon />
                 <input
-                  type="text" name="username" placeholder="Username" aria-label="Username"
+                  type="text" name="username" placeholder={t('Username')} aria-label={t('Username')}
                   autoComplete="username" autoCapitalize="none" spellCheck={false}
                   value={username} onChange={(e) => setUsername(e.target.value)} autoFocus
                 />
@@ -188,12 +190,12 @@ export function RoleSelector() {
               <div className="login-field">
                 <LockIcon />
                 <input
-                  type={showPassword ? 'text' : 'password'} name="password" placeholder="Password" aria-label="Password"
+                  type={showPassword ? 'text' : 'password'} name="password" placeholder={t('Password')} aria-label={t('Password')}
                   autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)}
                 />
                 <button
                   type="button" className="login-eye" aria-pressed={showPassword}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={t(showPassword ? 'Hide password' : 'Show password')}
                   onClick={() => setShowPassword((v) => !v)}
                 >
                   <EyeIcon off={showPassword} />
@@ -202,7 +204,7 @@ export function RoleSelector() {
 
               {authError && <p className="login-error" role="alert">{authError}</p>}
               <button type="submit" className="login-submit" disabled={authLoading}>
-                {authLoading ? 'Signing in…' : 'Login'}
+                {authLoading ? t('Signing in…') : t('Login')}
               </button>
 
             </form>
@@ -212,19 +214,19 @@ export function RoleSelector() {
                 type="button" className="login-creds-toggle" aria-expanded={showCreds} aria-controls="login-creds-table"
                 onClick={() => setShowCreds((v) => !v)}
               >
-                Demo credentials
-                <span className="login-creds-state">{showCreds ? 'Hide' : 'Show'}</span>
+                {t('Demo credentials')}
+                <span className="login-creds-state">{t(showCreds ? 'Hide' : 'Show')}</span>
                 <ChevronIcon />
               </button>
               <div className="login-creds-wrap" id="login-creds-table" hidden={!showCreds}>
                 <table className="login-creds-table">
                   <thead>
-                    <tr><th scope="col">Dashboard</th><th scope="col">Username</th><th scope="col">Password</th></tr>
+                    <tr><th scope="col">{t('Dashboard')}</th><th scope="col">{t('Username')}</th><th scope="col">{t('Password')}</th></tr>
                   </thead>
                   <tbody>
                     {ROLES.map((r) => (
                       <tr key={r.id}>
-                        <th scope="row">{r.label}</th>
+                        <th scope="row">{t(r.label)}</th>
                         <td><code>{r.id}</code></td>
                         <td><code>{r.password}</code></td>
                       </tr>
@@ -236,24 +238,24 @@ export function RoleSelector() {
 
             <aside className="login-callout">
               <InfoIcon />
-              <p><strong>Unsupervised prioritisation, not a verdict.</strong> Every finding here is a flag for human review.</p>
+              <p><strong>{t('Unsupervised prioritisation, not a verdict.')}</strong> {t('Every finding here is a flag for human review.')}</p>
             </aside>
             </>
           ) : (
             <>
-              <button type="button" className="btn-link" onClick={backToLogin}>← back</button>
-              <p className="login-picker-role">Signing in as <strong>{ROLE_LABEL[role]}</strong></p>
+              <button type="button" className="btn-link" onClick={backToLogin}>{t('← back')}</button>
+              <p className="login-picker-role">{t('Signing in as')} <strong>{t(ROLE_LABEL[role])}</strong></p>
               {authError && <p className="login-error" role="alert">{authError}</p>}
 
               {role === 'state' && (
                 <>
-                  <h2>Which state?</h2>
+                  <h2>{t('Which state?')}</h2>
                   {!states ? <Loading /> : (
                     <div className="picker-list">
                       {states.map((s) => (
                         <button key={s.state} className="picker-item" disabled={authLoading} onClick={() => goState(s.state)}>
-                          <span>{s.state}</span>
-                          <span className="picker-item-meta">{s.districts} districts · {(s.breach_rate * 100).toFixed(0)}% breach rate</span>
+                          <span>{td(s.state)}</span>
+                          <span className="picker-item-meta">{t('{n} districts · {rate}% breach rate', { n: s.districts, rate: (s.breach_rate * 100).toFixed(0) })}</span>
                         </button>
                       ))}
                     </div>
@@ -263,13 +265,13 @@ export function RoleSelector() {
 
               {role === 'district' && (!selectedState ? (
                 <>
-                  <h2>Which state?</h2>
+                  <h2>{t('Which state?')}</h2>
                   {!states ? <Loading /> : (
                     <div className="picker-list">
                       {states.map((s) => (
                         <button key={s.state} className="picker-item" onClick={() => setSelectedState(s.state)}>
-                          <span>{s.state}</span>
-                          <span className="picker-item-meta">{s.districts} districts</span>
+                          <span>{td(s.state)}</span>
+                          <span className="picker-item-meta">{t('{n} districts', { n: s.districts })}</span>
                         </button>
                       ))}
                     </div>
@@ -277,13 +279,13 @@ export function RoleSelector() {
                 </>
               ) : (
                 <>
-                  <h2>Which district in {selectedState}?</h2>
+                  <h2>{t('Which district in {state}?', { state: td(selectedState) })}</h2>
                   {!districts ? <Loading /> : (
                     <div className="picker-list">
                       {districts.map((d) => (
                         <button key={d.district} className="picker-item" disabled={authLoading} onClick={() => goDistrict(selectedState, d.district)}>
-                          <span>{d.district}</span>
-                          <span className="picker-item-meta">{d.works_total.toLocaleString('en-IN')} works · {(d.breach_rate * 100).toFixed(0)}% breach rate</span>
+                          <span>{td(d.district)}</span>
+                          <span className="picker-item-meta">{t('{n} works · {rate}% breach rate', { n: d.works_total.toLocaleString('en-IN'), rate: (d.breach_rate * 100).toFixed(0) })}</span>
                         </button>
                       ))}
                     </div>
@@ -293,13 +295,13 @@ export function RoleSelector() {
 
               {role === 'mp' && (
                 <>
-                  <h2>Which MP (18th Lok Sabha)?</h2>
+                  <h2>{t('Which MP (18th Lok Sabha)?')}</h2>
                   {!mps ? <Loading /> : (
                     <div className="picker-list">
                       {mps.map((m) => (
                         <button key={`${m.mp_name}-${m.scope_tenure}`} className="picker-item" disabled={authLoading} onClick={() => goMp(m.mp_name, m.scope_tenure)}>
-                          <span>{m.mp_name}</span>
-                          <span className="picker-item-meta">{m.constituency}, {m.state}</span>
+                          <span>{td(m.mp_name)}</span>
+                          <span className="picker-item-meta">{td(m.constituency)}, {td(m.state)}</span>
                         </button>
                       ))}
                     </div>
@@ -309,26 +311,26 @@ export function RoleSelector() {
 
               {role === 'agency' && (
                 <>
-                  <h2>Which implementing agency?</h2>
+                  <h2>{t('Which implementing agency?')}</h2>
                   <input
                     type="search"
                     className="picker-search"
-                    placeholder="Search agency name…"
+                    placeholder={t('Search agency name…')}
                     value={agencyQuery}
                     onChange={(e) => setAgencyQuery(e.target.value)}
                     autoFocus
                   />
                   {agencies === null ? (
-                    agencyQuery ? <Loading /> : <p className="panel-note">Start typing an agency name - there are thousands, so this always searches rather than listing them all.</p>
+                    agencyQuery ? <Loading /> : <p className="panel-note">{t('Start typing an agency name - there are thousands, so this always searches rather than listing them all.')}</p>
                   ) : (
                     <div className="picker-list">
                       {agencies.map((a) => (
                         <button key={a.agency} className="picker-item" disabled={authLoading} onClick={() => goAgency(a.agency)}>
-                          <span>{a.agency}</span>
-                          <span className="picker-item-meta">{a.works_total.toLocaleString('en-IN')} works · {(a.breach_rate * 100).toFixed(0)}% breach rate</span>
+                          <span>{td(a.agency)}</span>
+                          <span className="picker-item-meta">{t('{n} works · {rate}% breach rate', { n: a.works_total.toLocaleString('en-IN'), rate: (a.breach_rate * 100).toFixed(0) })}</span>
                         </button>
                       ))}
-                      {agencies.length === 0 && <p className="panel-note">No agency name matches "{agencyQuery}".</p>}
+                      {agencies.length === 0 && <p className="panel-note">{t('No agency name matches "{query}".', { query: agencyQuery })}</p>}
                     </div>
                   )}
                 </>

@@ -15,7 +15,7 @@ export const MP_DRAWER_LINKS = (navigate) => [
 
 export function MpAuditsView() {
   const navigate = useNavigate()
-  const { t } = useLanguage()
+  const { t, td } = useLanguage()
   const [scope, setScope] = useState('all')
   const [status, setStatus] = useState('')
   const [query, setQuery] = useState('')
@@ -48,7 +48,7 @@ export function MpAuditsView() {
     <div className="mospi-page">
       <MospiNav
         scope="18th Lok Sabha"
-        subtitle="MoSPI · MP Audits"
+        subtitle={t('MoSPI · MP Audits')}
         searchIndex={[]}
         drawerLinks={MP_DRAWER_LINKS(navigate)}
       />
@@ -56,24 +56,24 @@ export function MpAuditsView() {
       <div className="mospi-body">
         <h1 className="mospi-page-title">{t('drawer.mpAudits')}</h1>
         <p className="mospi-page-sub">
-          Every Member of Parliament on record, 17th and 18th Lok Sabha, with their recommendation history and flagged-work rate.
+          {t('Every Member of Parliament on record, 17th and 18th Lok Sabha, with their recommendation history and flagged-work rate.')}
         </p>
 
         <div className="panel">
           <div className="filters">
             <select value={scope} onChange={(e) => setScope(e.target.value)}>
-              <option value="all">All tenures</option>
+              <option value="all">{t('All tenures')}</option>
               <option value="18th Lok Sabha">18th Lok Sabha</option>
               <option value="17th Lok Sabha">17th Lok Sabha</option>
             </select>
             <select value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="">Active or former</option>
-              <option value="Active">Active</option>
-              <option value="Former">Former</option>
+              <option value="">{t('Active or former')}</option>
+              <option value="Active">{t('Active')}</option>
+              <option value="Former">{t('Former')}</option>
             </select>
             <input
               type="search"
-              placeholder="Search MP, constituency, or state…"
+              placeholder={t('Search MP, constituency, or state…')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -83,7 +83,7 @@ export function MpAuditsView() {
         <div className="panel">
           {data ? (
             <>
-              <h2>{filtered.length.toLocaleString('en-IN')} MP{filtered.length === 1 ? '' : 's'}</h2>
+              <h2>{t(filtered.length === 1 ? '{n} MP' : '{n} MPs', { n: filtered.length.toLocaleString('en-IN') })}</h2>
               {filtered.length ? (
                 <div className="queue-list queue-grid" style={{ maxHeight: 680 }}>
                   {filtered.map((m) => (
@@ -93,13 +93,13 @@ export function MpAuditsView() {
                       onClick={() => navigate(`/mp-audits/${encodeURIComponent(m.mp_name)}?scope=${encodeURIComponent(m.scope_tenure)}`)}
                     >
                       <div className="queue-item-top">
-                        <span className="queue-item-title">{m.mp_name}</span>
+                        <span className="queue-item-title">{td(m.mp_name)}</span>
                         <RiskChip rate={m.breach_rate} />
                       </div>
-                      <div className="queue-item-meta">{m.constituency}, {m.state} · {m.scope_tenure}</div>
+                      <div className="queue-item-meta">{td(m.constituency)}, {td(m.state)} · {t(m.scope_tenure)}</div>
                       <div className="queue-item-chips">
                         <StatusChip status={m.status} />
-                        <TagChip tag={`${m.works_flagged.toLocaleString('en-IN')} / ${m.works_total.toLocaleString('en-IN')} flagged`} />
+                        <TagChip tag={t('{flagged} / {total} flagged', { flagged: m.works_flagged.toLocaleString('en-IN'), total: m.works_total.toLocaleString('en-IN') })} />
                       </div>
                     </button>
                   ))}

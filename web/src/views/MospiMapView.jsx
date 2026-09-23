@@ -9,6 +9,7 @@ import { SeverityChip, TagChip } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
+import { useLanguage } from '../i18n'
 
 const DEFAULT_SCOPE = '18th Lok Sabha'
 const QUEUE_LIMIT = 60
@@ -16,6 +17,7 @@ const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
 
 function QueueList({ items, navigate }) {
+  const { t, td } = useLanguage()
   const [search, setSearch] = useState('')
   if (!items.length) {
     return <EmptyState title="No findings above the queue threshold here" subtitle="Try a different scope or wait for the next pipeline run." />
@@ -24,7 +26,7 @@ function QueueList({ items, navigate }) {
   return (
     <>
       <input
-        type="search" className="queue-search-input" placeholder="Search works…" aria-label="Search works"
+        type="search" className="queue-search-input" placeholder={t('Search works…')} aria-label={t('Search works')}
         value={search} onChange={(e) => setSearch(e.target.value)}
       />
       {filtered.length ? (
@@ -36,13 +38,13 @@ function QueueList({ items, navigate }) {
               onClick={() => navigate(`/work/${item.work_number}?scope_house=${encodeURIComponent(item.scope_house)}&scope_tenure=${encodeURIComponent(item.scope_tenure)}`)}
             >
               <div className="queue-item-top">
-                <span className="queue-item-title">{item.constituency ? `${item.constituency}, ${item.state ?? ''}` : `Work #${item.work_number}`}</span>
+                <span className="queue-item-title">{item.constituency ? `${td(item.constituency)}, ${td(item.state ?? '')}` : t('Work #{n}', { n: item.work_number })}</span>
                 <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
               </div>
-              {item.work_description && <p className="queue-item-desc">{item.work_description}</p>}
+              {item.work_description && <p className="queue-item-desc">{td(item.work_description)}</p>}
               <div className="queue-item-chips">
                 <SeverityChip severity={item.max_severity} />
-                {item.tags.map((t) => <TagChip key={t} tag={t} />)}
+                {item.tags.map((tag) => <TagChip key={tag} tag={tag} />)}
               </div>
             </button>
           ))}
@@ -56,6 +58,7 @@ function QueueList({ items, navigate }) {
 
 export function MospiMapView() {
   const navigate = useNavigate()
+  const { t, td } = useLanguage()
   const [searchParams, setSearchParams] = useSearchParams()
   const [stateGeojson, setStateGeojson] = useState(null)
   const [pcGeojson, setPcGeojson] = useState(null)
@@ -168,7 +171,7 @@ export function MospiMapView() {
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle={`MoSPI · India Risk Map · ${scopeLabel(scope)}`}
+        subtitle={t('MoSPI · India Risk Map · {scope}', { scope: t(scopeLabel(scope)) })}
         scopeWorksTotal={funnel?.total_works}
         searchIndex={searchIndex}
         drawerLinks={[
@@ -186,7 +189,7 @@ export function MospiMapView() {
             <>
               <Breadcrumb items={[{ label: 'India' }]} />
               <div className="mospi-header-row">
-                <h1 className="mospi-page-title">India risk map</h1>
+                <h1 className="mospi-page-title">{t('India risk map')}</h1>
                 <div className="report-toolbar">
                   <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
                   <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
@@ -201,7 +204,7 @@ export function MospiMapView() {
             <>
               <Breadcrumb items={[{ label: 'India', onClick: backToIndia }, { label: selectedState }]} />
               <div className="mospi-header-row">
-                <h1 className="mospi-page-title">{selectedState}</h1>
+                <h1 className="mospi-page-title">{td(selectedState)}</h1>
                 <div className="report-toolbar">
                   <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
                   <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
@@ -221,7 +224,7 @@ export function MospiMapView() {
               funnel ? (
                 <>
                   <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
-                    <h3 style={{ margin: 0 }}>National scorecard</h3>
+                    <h3 style={{ margin: 0 }}>{t('National scorecard')}</h3>
                     <ScopeToggle
                       scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
                       value={valueMode} onChange={setValueMode} includeAll={false} size="sm"
@@ -234,24 +237,24 @@ export function MospiMapView() {
                     <ScorecardCell label="Completed" value={funnel.completed_amount} count={funnel.completed} mode={valueMode} />
                     <ScorecardCell label="Paid" value={funnel.paid} count={funnel.paid_count} mode={valueMode} />
                     <div className="scorecard-cell">
-                      <div className="label">Works flagged</div>
+                      <div className="label">{t('Works flagged')}</div>
                       <div className="value num">{funnel.works_flagged.toLocaleString('en-IN')} / {funnel.total_works.toLocaleString('en-IN')}</div>
                     </div>
                   </div>
                   <div className="comparison-row">
-                    <span>Completion rate</span>
+                    <span>{t('Completion rate')}</span>
                     <span className="value num">{funnel.completion_rate != null ? `${funnel.completion_rate.toFixed(0)}%` : '—'}</span>
                   </div>
                   <div className="comparison-row">
-                    <span>Breach rate</span>
+                    <span>{t('Breach rate')}</span>
                     <span className="value num">{funnel.breach_rate != null ? `${(funnel.breach_rate * 100).toFixed(0)}%` : '—'}</span>
                   </div>
                   <div className="comparison-row">
-                    <span>States &amp; UTs covered</span>
+                    <span>{t('States & UTs covered')}</span>
                     <span className="value num">{states ? states.items.length : '—'}</span>
                   </div>
 
-                  <h3>States ({states.items.length})</h3>
+                  <h3>{t('States ({n})', { n: states.items.length })}</h3>
                   <div className="rank-list rank-list-compact">
                     {[...states.items].sort((a, b) => b.risk_score - a.risk_score).map((s) => (
                       <button
@@ -260,8 +263,8 @@ export function MospiMapView() {
                         className="rank-item"
                         onClick={() => openState(s.state)}
                       >
-                        <span className="rank-item-name">{s.state}</span>
-                        <span className="rank-item-meta num">{s.works_flagged.toLocaleString('en-IN')} flagged</span>
+                        <span className="rank-item-name">{td(s.state)}</span>
+                        <span className="rank-item-meta num">{t('{n} flagged', { n: s.works_flagged.toLocaleString('en-IN') })}</span>
                         <span className="rank-item-bar"><span style={{ width: `${Math.max(s.breach_rate * 100, 3)}%` }} /></span>
                       </button>
                     ))}
@@ -272,7 +275,7 @@ export function MospiMapView() {
               stateDetail ? (
                 <>
                   <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
-                    <h3 style={{ margin: 0 }}>{selectedState} scorecard</h3>
+                    <h3 style={{ margin: 0 }}>{t('{name} scorecard', { name: td(selectedState) })}</h3>
                     <ScopeToggle
                       scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
                       value={valueMode} onChange={setValueMode} includeAll={false} size="sm"
@@ -285,30 +288,32 @@ export function MospiMapView() {
                     <ScorecardCell label="Completed" value={stateDetail.scorecard.completed} count={stateDetail.scorecard.completed_count} mode={valueMode} />
                     <ScorecardCell label="Paid" value={stateDetail.scorecard.paid} count={stateDetail.scorecard.paid_count} mode={valueMode} />
                     <div className="scorecard-cell">
-                      <div className="label">Works flagged</div>
+                      <div className="label">{t('Works flagged')}</div>
                       <div className="value num">{stateDetail.scorecard.works_flagged.toLocaleString('en-IN')} / {stateDetail.scorecard.works_total.toLocaleString('en-IN')}</div>
                     </div>
                   </div>
                   <div className="comparison-row">
-                    <span>Completion rate here</span>
+                    <span>{t('Completion rate here')}</span>
                     <span className="value num">{stateDetail.scorecard.completion_rate != null ? `${stateDetail.scorecard.completion_rate.toFixed(0)}%` : '—'}</span>
                   </div>
                   <div className="comparison-row">
-                    <span>National median</span>
+                    <span>{t('National median')}</span>
                     <span className="value num">{stateDetail.scorecard.national_median_completion_rate != null ? `${stateDetail.scorecard.national_median_completion_rate.toFixed(0)}%` : '—'}</span>
                   </div>
                   <div className="comparison-row">
-                    <span>Breach rate</span>
+                    <span>{t('Breach rate')}</span>
                     <span className="value num">{(stateDetail.breach_rate * 100).toFixed(0)}%</span>
                   </div>
                   <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
                     <h3 style={{ margin: 0 }}>
-                      {stateTab === 'constituencies' ? `Constituencies (${stateConstituencies.length})` : `Districts (${stateDetail.districts.length})`}
+                      {stateTab === 'constituencies'
+                        ? t('Constituencies ({n})', { n: stateConstituencies.length })
+                        : t('Districts ({n})', { n: stateDetail.districts.length })}
                     </h3>
                     <ScopeToggle
                       scopes={[
-                        { value: 'constituencies', label: `Constituencies (${stateConstituencies.length})` },
-                        { value: 'districts', label: `Districts (${stateDetail.districts.length})` },
+                        { value: 'constituencies', label: t('Constituencies ({n})', { n: stateConstituencies.length }) },
+                        { value: 'districts', label: t('Districts ({n})', { n: stateDetail.districts.length }) },
                       ]}
                       value={stateTab} onChange={setStateTab} includeAll={false}
                     />
@@ -322,8 +327,8 @@ export function MospiMapView() {
                           className="rank-item"
                           onClick={() => navigate(`/constituency/${c.constituency_id}?scope=${encodeURIComponent(scope)}`)}
                         >
-                          <span className="rank-item-name">{c.constituency}</span>
-                          <span className="rank-item-meta num">{c.works_flagged.toLocaleString('en-IN')} flagged</span>
+                          <span className="rank-item-name">{td(c.constituency)}</span>
+                          <span className="rank-item-meta num">{t('{n} flagged', { n: c.works_flagged.toLocaleString('en-IN') })}</span>
                           <span className="rank-item-bar"><span style={{ width: `${Math.max(c.breach_rate * 100, 3)}%` }} /></span>
                         </button>
                       ))}
@@ -337,8 +342,8 @@ export function MospiMapView() {
                           className="rank-item"
                           onClick={() => navigate(`/district/${encodeURIComponent(selectedState)}/${encodeURIComponent(d.district)}?scope=${encodeURIComponent(scope)}`)}
                         >
-                          <span className="rank-item-name">{d.district}</span>
-                          <span className="rank-item-meta num">{d.works_flagged.toLocaleString('en-IN')} flagged</span>
+                          <span className="rank-item-name">{td(d.district)}</span>
+                          <span className="rank-item-meta num">{t('{n} flagged', { n: d.works_flagged.toLocaleString('en-IN') })}</span>
                           <span className="rank-item-bar"><span style={{ width: `${Math.max(d.breach_rate * 100, 3)}%` }} /></span>
                         </button>
                       ))}
@@ -382,12 +387,16 @@ export function MospiMapView() {
           <div className="map-drill-findings">
             {level === 'india' ? (
               <>
-                <h3>Review queue{nationalQueue ? ` — ${nationalQueue.total.toLocaleString('en-IN')} works` : ''}</h3>
+                <h3>{nationalQueue
+                  ? t('Review queue — {n} works', { n: nationalQueue.total.toLocaleString('en-IN') })
+                  : t('Review queue')}</h3>
                 {nationalQueue ? <QueueList items={nationalQueue.items} navigate={navigate} /> : <Loading />}
               </>
             ) : (
               <>
-                <h3>{selectedState} review queue{stateDetail ? ` — ${stateDetail.works_flagged.toLocaleString('en-IN')} works` : ''}</h3>
+                <h3>{stateDetail
+                  ? t('{name} review queue — {n} works', { name: td(selectedState), n: stateDetail.works_flagged.toLocaleString('en-IN') })
+                  : t('{name} review queue', { name: td(selectedState) })}</h3>
                 {stateDetail ? <QueueList items={stateDetail.queue} navigate={navigate} /> : <Loading />}
               </>
             )}

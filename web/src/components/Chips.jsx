@@ -1,13 +1,16 @@
+import { useLanguage } from '../i18n'
+
 export const SEV_LABEL = { low: 'Low', medium: 'Medium', high: 'High' }
 
 export function SeverityChip({ severity }) {
+  const { t } = useLanguage()
   if (!severity) return null
   return (
     <span
       className="chip severity-chip"
       style={{ background: `var(--sev-${severity}-bg)`, color: `var(--sev-${severity})` }}
     >
-      {SEV_LABEL[severity] || severity}
+      {t(SEV_LABEL[severity] || severity)}
     </span>
   )
 }
@@ -16,6 +19,10 @@ export function SeverityChip({ severity }) {
 // all-pairs categorical set, see tokens.css) - every other tag (DATA
 // INTEGRITY, DUPLICATION, OVER ALLOCATION, all rare) keeps the neutral
 // outline rather than stretching a 3-colour set past what's been validated.
+// The colour lookup stays keyed by the engine's own English tag string (the
+// only stable identity the pipeline emits); only the visible text is
+// translated, so a language switch never changes which tag reads as which
+// colour.
 export const TAG_COLOR_KEY = {
   'GHOST ASSET': 'ghost-asset',
   'COST OUTLIER': 'cost-outlier',
@@ -23,26 +30,29 @@ export const TAG_COLOR_KEY = {
 }
 
 export function TagChip({ tag }) {
+  const { t } = useLanguage()
   const key = TAG_COLOR_KEY[tag]
-  if (!key) return <span className="chip tag-chip">{tag}</span>
+  if (!key) return <span className="chip tag-chip">{t(tag)}</span>
   return (
     <span className="chip tag-chip-colored" style={{ background: `var(--tag-${key}-bg)`, color: `var(--tag-${key})` }}>
-      {tag}
+      {t(tag)}
     </span>
   )
 }
 
 export function SuppressedChip() {
-  return <span className="chip suppressed-chip">Suppressed — calamity consent on record</span>
+  const { t } = useLanguage()
+  return <span className="chip suppressed-chip">{t('Suppressed — calamity consent on record')}</span>
 }
 
 // MP status - "Active" (currently serving) gets the institutional-gold
 // official-marker treatment; "Former" stays neutral.
 export function StatusChip({ status }) {
-  if (status !== 'Active') return <span className="chip tag-chip">{status}</span>
+  const { t } = useLanguage()
+  if (status !== 'Active') return <span className="chip tag-chip">{t(status)}</span>
   return (
     <span className="chip tag-chip-colored" style={{ background: 'var(--gold-wash)', color: 'var(--gold)' }}>
-      {status}
+      {t(status)}
     </span>
   )
 }

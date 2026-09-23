@@ -8,7 +8,10 @@
 // half-page card and doesn't need this; a dashboard's narrower detail
 // column does, or long real category names (unlike NationalView's short
 // fixed tag vocabulary) truncate to almost nothing.
+import { useLanguage } from '../i18n'
+
 export function DonutChart({ title, segments, onSelect, compact = false }) {
+  const { t, td } = useLanguage()
   const total = segments.reduce((s, i) => s + i.value, 0)
   let acc = 0
   const stops = segments.map((seg) => {
@@ -20,12 +23,12 @@ export function DonutChart({ title, segments, onSelect, compact = false }) {
 
   return (
     <div className="chart-card">
-      {title && <h3>{title}</h3>}
+      {title && <h3>{t(title)}</h3>}
       <div className={compact ? 'donut-row donut-row-stacked' : 'donut-row'}>
         <div className="donut-chart" style={{ background: total ? `conic-gradient(${stops})` : 'var(--surface-sunken)' }}>
           <div className="donut-hole">
             <span className="donut-hole-value num">{total.toLocaleString('en-IN')}</span>
-            <span className="donut-hole-label">total</span>
+            <span className="donut-hole-label">{t('total')}</span>
           </div>
         </div>
         <div className="donut-legend">
@@ -38,7 +41,7 @@ export function DonutChart({ title, segments, onSelect, compact = false }) {
               onClick={onSelect ? () => onSelect(seg) : undefined}
             >
               <span className="donut-legend-swatch" style={{ background: seg.color }} />
-              <span className="donut-legend-label" title={seg.label}>{seg.label}</span>
+              <span className="donut-legend-label" title={td(seg.label)}>{td(seg.label)}</span>
               {!compact && <span className="donut-legend-value num">{seg.value.toLocaleString('en-IN')}</span>}
               <span className="donut-legend-pct num">{total ? `${((seg.value / total) * 100).toFixed(0)}%` : '—'}</span>
             </button>

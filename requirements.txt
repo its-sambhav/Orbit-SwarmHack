@@ -11,3 +11,4 @@ python-dotenv
 shapely
 scikit-learn
 joblib
+python-multipart

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useLanguage } from '../i18n'
 
 /**
  * Metric color definitions adhering to the GovTech high-contrast palette:
@@ -18,6 +19,7 @@ export function ProjectLifecycleBarChart({
   sectors = [],
   title = 'Project Lifecycle & Risk Breakdown',
 }) {
+  const { t } = useLanguage()
   const [chartMode, setChartMode] = useState('grouped') // 'grouped' | 'stacked'
   const [hoveredBar, setHoveredBar] = useState(null) // { sector, metric, value, valueCr, x, y }
 
@@ -84,9 +86,11 @@ export function ProjectLifecycleBarChart({
     <div className="chart-card project-lifecycle-card">
       <div className="lifecycle-card-header">
         <div>
-          <h3 style={{ margin: 0 }}>{title}</h3>
+          {/* the default title is plain English; the per-entity ones callers
+              build are already translated and fall through t() unchanged */}
+          <h3 style={{ margin: 0 }}>{t(title)}</h3>
           <span className="lifecycle-card-sub">
-            Project volume & financial exposure across lifecycle phases
+            {t('Project volume & financial exposure across lifecycle phases')}
           </span>
         </div>
         <div className="lifecycle-mode-toggle">
@@ -95,14 +99,14 @@ export function ProjectLifecycleBarChart({
             className={`mode-btn ${chartMode === 'grouped' ? 'active' : ''}`}
             onClick={() => setChartMode('grouped')}
           >
-            Grouped
+            {t('Grouped')}
           </button>
           <button
             type="button"
             className={`mode-btn ${chartMode === 'stacked' ? 'active' : ''}`}
             onClick={() => setChartMode('stacked')}
           >
-            Stacked
+            {t('Stacked')}
           </button>
         </div>
       </div>
@@ -115,7 +119,7 @@ export function ProjectLifecycleBarChart({
           return (
             <div key={m.key} className="lifecycle-legend-item">
               <span className="legend-dot" style={{ background: m.color }} />
-              <span className="legend-label">{m.label}</span>
+              <span className="legend-label">{t(m.label)}</span>
               <span className="legend-val num">{totalVal.toLocaleString('en-IN')}</span>
               <span className="legend-cr num">(₹{totalCr.toFixed(1)} Cr)</span>
             </div>
@@ -136,7 +140,7 @@ export function ProjectLifecycleBarChart({
               the narrow sidebar the state/district/agency pages render this in. */}
           {chartMode === 'grouped' && (
             <text x={2} y={12} fontSize="9" fill="#94a3b8" fontWeight="600">
-              √ scale
+              {t('√ scale')}
             </text>
           )}
 
@@ -231,7 +235,9 @@ export function ProjectLifecycleBarChart({
                   fontWeight="600"
                   className="sector-label"
                 >
-                  {s.sector.length > 16 ? `${s.sector.substring(0, 14)}…` : s.sector}
+                  {/* sector names are the 5 fixed categories - translated, then
+                      truncated on the translated text so the ellipsis still fits */}
+                  {(() => { const n = t(s.sector); return n.length > 16 ? `${n.substring(0, 14)}…` : n })()}
                 </text>
               </g>
             )
@@ -247,14 +253,14 @@ export function ProjectLifecycleBarChart({
               top: `${Math.max((hoveredBar.y / svgHeight) * 100 - 18, 5)}%`,
             }}
           >
-            <div className="tooltip-sector">{hoveredBar.sector}</div>
+            <div className="tooltip-sector">{t(hoveredBar.sector)}</div>
             <div className="tooltip-row">
               <span className="tooltip-swatch" style={{ background: hoveredBar.color }} />
-              <span className="tooltip-metric">{hoveredBar.metricLabel}:</span>
-              <strong className="tooltip-num">{hoveredBar.value.toLocaleString('en-IN')} works</strong>
+              <span className="tooltip-metric">{t(hoveredBar.metricLabel)}:</span>
+              <strong className="tooltip-num">{hoveredBar.value.toLocaleString('en-IN')} {t('works')}</strong>
             </div>
             <div className="tooltip-financial">
-              Financial exposure: <strong>₹{hoveredBar.valueCr.toFixed(1)} Cr</strong>
+              {t('Financial exposure:')} <strong>₹{hoveredBar.valueCr.toFixed(1)} Cr</strong>
             </div>
           </div>
         )}

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { useLanguage } from '../i18n'
 
 const BackArrowIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -16,16 +17,17 @@ const BackArrowIcon = () => (
  * just given its own dedicated one-tap affordance at the very start of the
  * drill-down row, below the nav bar. */
 export function Breadcrumb({ items }) {
+  const { t, td } = useLanguage()
   const parent = items.length > 1 ? items[items.length - 2] : null
   return (
-    <nav className="breadcrumb" aria-label="Breadcrumb">
+    <nav className="breadcrumb" aria-label={t('Breadcrumb')}>
       {parent && (
         parent.to ? (
-          <Link className="breadcrumb-back" to={parent.to} aria-label={`Back to ${parent.label}`}>
+          <Link className="breadcrumb-back" to={parent.to} aria-label={t('Back to {label}', { label: td(parent.label) })}>
             <BackArrowIcon />
           </Link>
         ) : (
-          <button type="button" className="breadcrumb-back" onClick={parent.onClick} aria-label={`Back to ${parent.label}`}>
+          <button type="button" className="breadcrumb-back" onClick={parent.onClick} aria-label={t('Back to {label}', { label: td(parent.label) })}>
             <BackArrowIcon />
           </button>
         )
@@ -35,11 +37,11 @@ export function Breadcrumb({ items }) {
         return (
           <span className="breadcrumb-segment" key={i}>
             {isLast ? (
-              <span className="breadcrumb-current">{item.label}</span>
+              <span className="breadcrumb-current">{td(item.label)}</span>
             ) : item.to ? (
-              <Link to={item.to}>{item.label}</Link>
+              <Link to={item.to}>{td(item.label)}</Link>
             ) : (
-              <button type="button" className="breadcrumb-link" onClick={item.onClick}>{item.label}</button>
+              <button type="button" className="breadcrumb-link" onClick={item.onClick}>{td(item.label)}</button>
             )}
             {!isLast && <span className="breadcrumb-sep">/</span>}
           </span>

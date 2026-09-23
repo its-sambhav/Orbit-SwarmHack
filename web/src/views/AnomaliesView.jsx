@@ -27,7 +27,7 @@ export const ANOMALIES_LINK = (navigate) => ({ label: 'Anomalies', onClick: () =
 // the complete list those are previews of.
 export function AnomaliesView() {
   const navigate = useNavigate()
-  const { t } = useLanguage()
+  const { t, td } = useLanguage()
   // a ?state= param scopes this same queue to one State Nodal Authority's
   // own anomalies (linked from StateView/StateMapView's side menu) instead
   // of MoSPI's all-India queue - read once on mount, same as scope below,
@@ -75,7 +75,9 @@ export function AnomaliesView() {
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle={stateFilter ? `State Nodal Authority · ${stateFilter} · Anomalies` : 'MoSPI · Anomalies'}
+        subtitle={stateFilter
+          ? t('State Nodal Authority · {state} · Anomalies', { state: td(stateFilter) })
+          : t('MoSPI · Anomalies')}
         searchIndex={[]}
         showSearch={!stateFilter}
         profileName={stateFilter || undefined}
@@ -95,29 +97,31 @@ export function AnomaliesView() {
       />
 
       <div className="mospi-body">
-        <h1 className="mospi-page-title">{stateFilter ? `${t('drawer.anomalies')} — ${stateFilter}` : t('drawer.anomalies')}</h1>
+        <h1 className="mospi-page-title">{stateFilter ? `${t('drawer.anomalies')} — ${td(stateFilter)}` : t('drawer.anomalies')}</h1>
         <p className="mospi-page-sub">
           {stateFilter
-            ? `Every flagged work in ${stateFilter}, ranked by priority - the full review queue this state's own Overview and Map pages each surface only a slice of.`
-            : 'Every flagged work across India, ranked by priority - the full review queue the Overview and Map pages each surface only a slice of.'}
+            ? t("Every flagged work in {state}, ranked by priority - the full review queue this state's own Overview and Map pages each surface only a slice of.", { state: td(stateFilter) })
+            : t('Every flagged work across India, ranked by priority - the full review queue the Overview and Map pages each surface only a slice of.')}
         </p>
 
         <div className="panel">
           <div className="filters">
             <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
             <input
-              type="search" placeholder="Search works…" aria-label="Search works"
+              type="search" placeholder={t('Search works…')} aria-label={t('Search works')}
               value={search} onChange={(e) => setSearch(e.target.value)}
             />
             <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
-              <option value="">All severities</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
+              <option value="">{t('All severities')}</option>
+              <option value="high">{t('High')}</option>
+              <option value="medium">{t('Medium')}</option>
+              <option value="low">{t('Low')}</option>
             </select>
             <select value={tag} onChange={(e) => setTag(e.target.value)}>
-              <option value="">All tags</option>
-              {TAGS.map((t) => <option key={t} value={t}>{t}</option>)}
+              <option value="">{t('All tags')}</option>
+              {/* value stays the engine's English tag (what /api/queue filters on);
+                  only the visible option text is translated */}
+              {TAGS.map((tag) => <option key={tag} value={tag}>{t(tag)}</option>)}
             </select>
           </div>
         </div>
@@ -125,7 +129,7 @@ export function AnomaliesView() {
         <div className="panel">
           {data ? (
             <>
-              <h2>{data.total.toLocaleString('en-IN')} anomal{data.total === 1 ? 'y' : 'ies'}</h2>
+              <h2>{t(data.total === 1 ? '{n} anomaly' : '{n} anomalies', { n: data.total.toLocaleString('en-IN') })}</h2>
               {data.items.length ? (
                 <div className="queue-list queue-grid">
                   {data.items.map((item) => (
@@ -136,17 +140,19 @@ export function AnomaliesView() {
                     >
                       <div className="queue-item-top">
                         <span className="queue-item-title">
-                          {item.constituency ? `${item.constituency}, ${item.state ?? ''}` : `Work #${item.work_number}`}
+                          {item.constituency
+                            ? `${td(item.constituency)}, ${td(item.state ?? '')}`
+                            : t('Work #{n}', { n: item.work_number })}
                         </span>
                         <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
                       </div>
-                      {item.work_description && <p className="queue-item-desc">{item.work_description}</p>}
+                      {item.work_description && <p className="queue-item-desc">{td(item.work_description)}</p>}
                       <div className="queue-item-meta">
-                        {[item.mp_name, `Work #${item.work_number}`, item.routed_to].filter(Boolean).join(' · ')}
+                        {[item.mp_name && td(item.mp_name), t('Work #{n}', { n: item.work_number }), item.routed_to && t(item.routed_to)].filter(Boolean).join(' · ')}
                       </div>
                       <div className="queue-item-chips">
                         <SeverityChip severity={item.max_severity} />
-                        {item.tags.map((t) => <TagChip key={t} tag={t} />)}
+                        {item.tags.map((tag) => <TagChip key={tag} tag={tag} />)}
                       </div>
                     </button>
                   ))}
@@ -161,14 +167,18 @@ export function AnomaliesView() {
                     type="button" className="action-btn" disabled={offset === 0}
                     onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
                   >
-                    Previous
+                    {t('Previous')}
                   </button>
-                  <span className="pager-label">Page {currentPage.toLocaleString('en-IN')} of {totalPages.toLocaleString('en-IN')}</span>
+                  <span className="pager-label">
+                    {t('Page {current} of {total}', {
+                      current: currentPage.toLocaleString('en-IN'), total: totalPages.toLocaleString('en-IN'),
+                    })}
+                  </span>
                   <button
                     type="button" className="action-btn" disabled={offset + PAGE_SIZE >= data.total}
                     onClick={() => setOffset(offset + PAGE_SIZE)}
                   >
-                    Next
+                    {t('Next')}
                   </button>
                 </div>
               )}

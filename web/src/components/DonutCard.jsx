@@ -2,7 +2,10 @@
 // NationalView.jsx so State/District/Agency/MP can reuse it. Part-of-whole
 // distributions read better as a donut than a bar rank - built on a CSS
 // conic-gradient rather than pulling in a chart library for this one chart.
+import { useLanguage } from '../i18n'
+
 export function DonutCard({ title, items, colorFor, onSelect }) {
+  const { t, td } = useLanguage()
   const total = items.reduce((s, i) => s + i.value, 0)
   let acc = 0
   const stops = items.map((item) => {
@@ -13,12 +16,12 @@ export function DonutCard({ title, items, colorFor, onSelect }) {
   }).join(', ')
   return (
     <div className="chart-card">
-      <h3>{title}</h3>
+      <h3>{t(title)}</h3>
       <div className="donut-row">
         <div className="donut-chart" style={{ background: total ? `conic-gradient(${stops})` : 'var(--surface-sunken)' }}>
           <div className="donut-hole">
             <span className="donut-hole-value num">{total.toLocaleString('en-IN')}</span>
-            <span className="donut-hole-label">total</span>
+            <span className="donut-hole-label">{t('total')}</span>
           </div>
         </div>
         <div className="donut-legend">
@@ -31,7 +34,7 @@ export function DonutCard({ title, items, colorFor, onSelect }) {
               onClick={onSelect ? () => onSelect(item) : undefined}
             >
               <span className="donut-legend-swatch" style={{ background: colorFor(item) }} />
-              <span className="donut-legend-label">{item.label}</span>
+              <span className="donut-legend-label">{td(item.label)}</span>
               <span className="donut-legend-value num">{item.value.toLocaleString('en-IN')}</span>
               <span className="donut-legend-pct num">{total ? `${((item.value / total) * 100).toFixed(0)}%` : '—'}</span>
             </button>

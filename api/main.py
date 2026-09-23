@@ -20,7 +20,7 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,11 +28,13 @@ from pydantic import BaseModel
 
 from api.data import get_store, SCOPES, SCOPE_LABELS, GEO_DIR
 from api.narrative import generate_narrative
+from api import translate as translate_service
 from engine.predictive import predict_work_risk
 from engine.predictive import get_model as get_delay_model
 from engine.risk_model import predict as predict_risk_model, get_model as get_risk_model
 from api import reports as reports_store
 from api import finding_status as finding_status_store
+from api import comments as comments_store
 from api import alerts as alerts_store
 from api import auth
 from api.sector_categories import CATEGORIES
@@ -438,6 +440,138 @@ def post_narrative(
         raise HTTPException(404, f"no finding {finding_id} on that work")
     result = generate_narrative(finding)
     return clean(result)
+
+
+
+
+class CommentCreate(BaseModel):
+    work_number: str
+    scope_house: str
+    scope_tenure: str
+    body: str
+    parent_id: str | None = None
+    mentions: list[str] | None = None
+    internal: bool = False
+
+
+class CommentPatch(BaseModel):
+    body: str | None = None
+    pinned: bool | None = None
+    resolved: bool | None = None
+    internal: bool | None = None
+
+
+# The case discussion on one work (api/comments.py). Access is the same check
+# the case file itself uses - if you may read the work, you may read and join
+# the conversation about it. Authorship is taken from the caller's own token,
+# never from the request body.
+@app.get("/api/comments")
+def get_comments(
+    work_number: str, scope_house: str, scope_tenure: str,
+    claims: dict = Depends(auth.get_current_claims),
+):
+    work = get_store().work(work_number, scope_house, scope_tenure)
+    if work is None:
+        raise HTTPException(404, f"no work {work_number} in {scope_house}/{scope_tenure}")
+    auth.check_work_access(claims, work)
+    return {
+        "items": comments_store.list_for_work(work_number, scope_house, scope_tenure, claims),
+        "me": {"role": claims.get("role"), "entity": claims.get("entity")},
+        "mentionable": comments_store.MENTIONABLE_ROLES,
+    }
+
+
+@app.post("/api/comments")
+def post_comment(req: CommentCreate, claims: dict = Depends(auth.get_current_claims)):
+    work = get_store().work(req.work_number, req.scope_house, req.scope_tenure)
+    if work is None:
+        raise HTTPException(404, f"no work {req.work_number} in {req.scope_house}/{req.scope_tenure}")
+    auth.check_work_access(claims, work)
+    try:
+        return comments_store.add(
+            req.work_number, req.scope_house, req.scope_tenure, req.body,
+            claims, parent_id=req.parent_id, mentions=req.mentions,
+            internal=req.internal,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.patch("/api/comments/{comment_id}")
+def patch_comment(comment_id: str, req: CommentPatch, claims: dict = Depends(auth.get_current_claims)):
+    try:
+        return comments_store.update(comment_id, claims, body=req.body,
+                                     pinned=req.pinned, resolved=req.resolved,
+                                     internal=req.internal)
+    except KeyError:
+        raise HTTPException(404, f"no comment {comment_id}")
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# Supporting documents on a comment. The body is read in full before it is
+# stored so the size limit is enforced on what actually arrived, not on a
+# Content-Length header the client chose.
+@app.post("/api/comments/{comment_id}/attachments")
+async def post_attachment(comment_id: str, file: UploadFile = File(...),
+                          claims: dict = Depends(auth.get_current_claims)):
+    data = await file.read()
+    try:
+        return comments_store.attach(comment_id, claims, file.filename, data)
+    except KeyError:
+        raise HTTPException(404, f"no comment {comment_id}")
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/comments/{comment_id}/attachments/{attachment_id}")
+def get_attachment(comment_id: str, attachment_id: str,
+                   claims: dict = Depends(auth.get_current_claims)):
+    try:
+        path, record = comments_store.find_attachment(comment_id, attachment_id, claims)
+    except KeyError:
+        raise HTTPException(404, "no such document")
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    # served as an attachment, never inline - an uploaded file should download,
+    # not render itself in the reviewer's tab
+    return FileResponse(path, media_type=record["content_type"],
+                        filename=record["filename"],
+                        content_disposition_type="attachment")
+
+
+@app.delete("/api/comments/{comment_id}")
+def delete_comment(comment_id: str, claims: dict = Depends(auth.get_current_claims)):
+    try:
+        return comments_store.remove(comment_id, claims)
+    except KeyError:
+        raise HTTPException(404, f"no comment {comment_id}")
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+
+
+class TranslateRequest(BaseModel):
+    lang: str
+    texts: list[str]
+
+
+@app.post("/api/translate")
+def post_translate(req: TranslateRequest, claims: dict = Depends(auth.get_current_claims)):
+    """English -> `lang` for the DATA strings on whatever page the caller is
+    showing (work descriptions, place/person/agency names) - the text that
+    comes out of the source CSVs in English only, so the frontend's own
+    hand-written UI string table can never cover it.
+
+    No per-role access check: the caller has already been served these exact
+    strings by the endpoint that returned the rows, so translating them
+    reveals nothing new. Returns only what it could translate - anything
+    missing from the map stays English on screen (see api/translate.py).
+    """
+    return translate_service.translate(req.texts, req.lang)
 
 
 class PredictRiskRequest(BaseModel):

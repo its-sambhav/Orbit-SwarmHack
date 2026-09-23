@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { MapContainer, GeoJSON, ZoomControl, useMap } from 'react-leaflet'
 import L from 'leaflet'
+import { useLanguage } from '../i18n'
 
 // Leaflet doesn't observe CSS-driven container resizes (flex/grid panel
 // changes, window resize) on its own - without this the map silently
@@ -128,6 +129,7 @@ function usePercentileRanks(dataByKey) {
  * grayscaleUnfocused: when true (and focusKey is set), every feature other than focusKey is shaded on the neutral gray ramp instead of the amber/red risk ramp - the focused seat stays the one colored shape on screen, its neighbours read as a dimmed backdrop that still encodes relative anomaly volume through shade (ConstituencyView's own map only).
  */
 export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSelect, selectedKey, tooltipRenderer, overlayGeojson, backdropGeojson, grayscaleUnfocused }) {
+  const { t, td, lang } = useLanguage()
   const layerRef = useRef(null)
   const ranks = usePercentileRanks(dataByKey)
 
@@ -155,8 +157,8 @@ export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSe
     if (risk) {
       layer.bindTooltip(
         tooltipRenderer
-          ? tooltipRenderer(risk, name)
-          : `<strong>${name}</strong><br/>${risk.works_flagged.toLocaleString('en-IN')} / ${risk.works_total.toLocaleString('en-IN')} works flagged &middot; ${(risk.breach_rate * 100).toFixed(0)}%`,
+          ? tooltipRenderer(risk, td(name))
+          : `<strong>${td(name)}</strong><br/>${t('{flagged} / {total} works flagged', { flagged: risk.works_flagged.toLocaleString('en-IN'), total: risk.works_total.toLocaleString('en-IN') })} &middot; ${(risk.breach_rate * 100).toFixed(0)}%`,
         { sticky: true, className: 'map-tooltip' }
       )
 
@@ -196,13 +198,13 @@ export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSe
         layer._path?.classList.remove('map-feature-hover')
       })
     } else {
-      layer.bindTooltip(`<strong>${name}</strong><br/>No data for this scope`, { sticky: true, className: 'map-tooltip' })
+      layer.bindTooltip(`<strong>${td(name)}</strong><br/>${t('No data for this scope')}`, { sticky: true, className: 'map-tooltip' })
     }
   }
 
   const dataKey = useMemo(
-    () => `${keyProp}-${geojson?.features?.length ?? 0}-${focusKey ?? 'all'}-${Object.keys(dataByKey).length}-${selectedKey ?? ''}-${grayscaleUnfocused ? 'g' : ''}`,
-    [keyProp, geojson, focusKey, dataByKey, selectedKey, grayscaleUnfocused]
+    () => `${keyProp}-${geojson?.features?.length ?? 0}-${focusKey ?? 'all'}-${Object.keys(dataByKey).length}-${selectedKey ?? ''}-${grayscaleUnfocused ? 'g' : ''}-${lang}`,
+    [keyProp, geojson, focusKey, dataByKey, selectedKey, grayscaleUnfocused, lang]
   )
 
   return (
@@ -243,17 +245,18 @@ export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSe
 }
 
 export function MapLegend({ grayscaleUnfocused }) {
+  const { t } = useLanguage()
   return (
     <div className="map-legend">
       <div className="map-legend-ramp" />
       <div className="map-legend-labels">
-        <span>Low risk</span>
-        <span>High risk</span>
+        <span>{t('Low risk')}</span>
+        <span>{t('High risk')}</span>
       </div>
-      <div className="map-legend-swatch"><span className="swatch-nodata" /> No data</div>
+      <div className="map-legend-swatch"><span className="swatch-nodata" /> {t('No data')}</div>
       {grayscaleUnfocused && (
         <div className="map-legend-swatch">
-          <span className="swatch-nodata" style={{ background: '#767F73' }} /> Other seats (darker = more anomalies)
+          <span className="swatch-nodata" style={{ background: '#767F73' }} /> {t('Other seats (darker = more anomalies)')}
         </div>
       )}
     </div>

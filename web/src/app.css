@@ -653,17 +653,6 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 .state-empty-subtitle { margin: 0; font-size: 12.5px; }
 .btn-link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 13px; padding: 0; margin-top: 8px; }
 
-/* ---------- case file view ---------- */
-.casefile-view { height: 100%; overflow-y: auto; padding: 24px 28px; max-width: 980px; margin: 0 auto; }
-.casefile-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.casefile-header h1 { font-size: 23px; margin: 0 0 4px; font-weight: 600; }
-.casefile-header .meta { color: var(--ink-muted); font-size: 13px; }
-.back-link {
-  color: var(--ink-muted); text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 12px;
-  background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;
-}
-.back-link:hover { color: var(--accent); }
-
 /* ---------- breadcrumb (India / State / Constituency / Work) ---------- */
 .breadcrumb { display: flex; flex-wrap: wrap; align-items: center; font-size: 13px; margin-bottom: 8px; }
 /* one level up from wherever this drill-down page is - shown only past the
@@ -713,12 +702,47 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
    its stage's text and the connector becomes the horizontal line joining
    one node to the next, rather than restyling a second component. */
 .timeline-horizontal { display: flex; align-items: flex-start; }
-.timeline-horizontal .timeline-step { flex: 1; flex-direction: column; align-items: stretch; }
-.timeline-horizontal .timeline-rail { flex-direction: row; align-items: center; width: auto; margin-bottom: 12px; }
-.timeline-horizontal .timeline-node { margin-top: 0; }
-.timeline-horizontal .timeline-connector { width: auto; height: 1px; min-height: 0; flex: 1; margin-top: 0; }
-.timeline-horizontal .timeline-body { padding: 0 16px 0 0; }
-.timeline-horizontal .timeline-step:last-child .timeline-body { padding-right: 0; }
+.timeline-horizontal .timeline-step { flex: 1; flex-direction: column; align-items: stretch; min-width: 0; }
+.timeline-horizontal .timeline-rail { flex-direction: row; align-items: center; width: auto; margin-bottom: 14px; }
+.timeline-horizontal .timeline-node { margin-top: 0; flex: none; }
+
+/* Each stage carries half a segment on either side of its node, so every node
+   lands dead centre of its own column and the stage below reads as a caption
+   to it. The outer halves stay in the layout but hidden - the rail must not
+   run off the ends of the timeline. */
+.timeline-horizontal .timeline-connector {
+  width: auto; height: 1px; min-height: 0; flex: 1; margin-top: 0;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+.timeline-horizontal .timeline-step:first-child .timeline-connector-lead,
+.timeline-horizontal .timeline-step:last-child .timeline-connector-trail { visibility: hidden; }
+
+/* Sits on the line it measures, its own background breaking the rule so the
+   two never overprint. Anchored to the lead half-segment's outer edge, which
+   is exactly halfway between the two nodes - centring it within the half
+   would park it under the later node and read as that stage's own number. */
+.timeline-gap {
+  position: absolute; left: 0; transform: translateX(-50%);
+  background: var(--surface); padding: 0 8px; line-height: 1;
+  font-size: 11px; color: var(--ink-faint); white-space: nowrap;
+}
+.timeline-gap.timeline-gap-anomaly { color: var(--sev-high); font-weight: 600; }
+
+.timeline-horizontal .timeline-body { padding: 0 14px; text-align: center; }
+.timeline-horizontal .timeline-label { font-size: 12.5px; color: var(--ink-muted); }
+.timeline-horizontal .timeline-date { font-size: 16px; font-weight: 600; margin-top: 2px; }
+.timeline-horizontal .timeline-amount { font-size: 13px; color: var(--ink); margin-top: 3px; }
+.timeline-horizontal .timeline-authority { margin-top: 8px; font-size: 11.5px; }
+/* role above name, not inline: centred, a wrapped "Implementing agency DIST
+   PANCHAYAT RAJ ENGINEER" ran together into one unreadable string */
+.timeline-horizontal .timeline-authority-role { display: block; margin-right: 0; font-size: 10.5px; }
+.timeline-horizontal .timeline-authority-name { color: var(--ink); overflow-wrap: anywhere; }
+/* a stage that hasn't happened is structure, not data - it holds its column so
+   the rail stays even, and says so without shouting */
+.timeline-horizontal .timeline-step-pending .timeline-date { font-weight: 500; font-size: 13.5px; color: var(--ink-faint); }
+/* the rail label is saying this already while the stages sit side by side */
+.timeline-horizontal .timeline-gap-note { display: none; }
 
 /* findings list within case file */
 .finding-card { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 12px; }
@@ -726,10 +750,19 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 .finding-card-name { font-weight: 600; font-size: 15px; }
 .finding-card-route { font-size: 11.5px; color: var(--ink-muted); margin-top: 8px; }
 
-/* evidence table */
-.evidence-table { display: flex; flex-direction: column; gap: 12px; }
+/* evidence table - the figure groups (observed / threshold / peer benchmark)
+   pair up across the card, the prose (deviation, source) spans it. A single
+   column stretched every label-value pair the full width of the sheet, so a
+   "Marked complete ..... Yes" row was read across half a metre of nothing. */
+.evidence-table {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px 44px; align-items: start;
+}
+.evidence-section:has(.evidence-deviation), .evidence-section:has(.evidence-source) { grid-column: 1 / -1; }
 .evidence-section h4 { font-size: 11px; text-transform: none; color: var(--ink-muted); margin: 0 0 6px; font-weight: 600; }
-.evidence-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+/* capped, not full-track: the value belongs next to its label, not a hand's
+   width away from it */
+.evidence-table table { width: 100%; max-width: 440px; border-collapse: collapse; font-size: 12.5px; }
 .evidence-table th { text-align: left; font-weight: 400; color: var(--ink-muted); padding: 3px 0; width: 60%; }
 .evidence-table td { text-align: right; font-weight: 500; padding: 3px 0; }
 .evidence-deviation { font-size: 13px; margin: 0; line-height: 1.5; }
@@ -739,29 +772,50 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 .narrative-box { background: var(--surface-sunken); border-radius: var(--radius-md); padding: 14px 16px; font-size: 13px; line-height: 1.6; }
 .narrative-label { font-size: 11px; color: var(--ink-muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
 .narrative-badge { background: var(--accent-wash); color: var(--accent); padding: 1px 7px; border-radius: 3px; font-size: 10.5px; font-weight: 600; }
+/* secondary, not filled: the primary action on this page is Generate report
+   in the header - a case-file note is one finding's own side action and a
+   second solid navy button made the two compete */
 .narrative-btn {
-  background: var(--accent); color: white; border: none; border-radius: var(--radius-sm);
-  padding: 7px 14px; font-size: 12.5px; font-weight: 500; cursor: pointer;
+  background: var(--surface); color: var(--accent); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); padding: 6px 13px; font-size: 12.5px; font-weight: 500; cursor: pointer;
 }
-.narrative-btn:hover { background: var(--accent-hover); }
+.narrative-btn:hover { background: var(--surface-sunken); border-color: var(--accent); }
 
-/* AI predictive risk (CaseFileView, center column) - two independent
-   models (a narrow pre-sanction delay predictor, and a broader post-hoc
-   risk+anomaly model) shown as two clearly separated, labelled blocks of
-   stat tiles rather than one run-on paragraph, so it's obvious which
-   number belongs to which model instead of it reading as one blob. */
-.ai-risk-block-title { font-size: 12.5px; font-weight: 600; color: var(--ink); margin-bottom: 10px; }
-.ai-risk-stats { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
-.ai-risk-stat {
-  flex: 1; min-width: 130px; border: 1px solid var(--border); border-radius: var(--radius-md);
-  background: var(--surface-sunken); padding: 12px 14px;
+/* AI predictive risk (CaseFileView) - two independent models (a narrow
+   pre-sanction delay predictor, and a broader post-hoc risk+anomaly model),
+   each its own block, read in the same order both times:
+   figure -> what the figure means -> why -> which model said so.
+
+   Each model is a section WITHIN the section, and depth is marked by a single
+   indent rule on the left rather than by a filled panel: a grey box per model
+   put three nested containers on one sheet and made the analysis read like a
+   dashboard tile. The rule is thin, ungreyed, and cannot be mistaken for the
+   section hairlines, which are full-width. */
+.ai-block { border-left: 2px solid var(--border-strong); padding-left: 18px; }
+.ai-block + .ai-block { margin-top: 26px; }
+.ai-block-title { margin: 0 0 14px; font-size: 13px; font-weight: 600; color: var(--ink); }
+
+/* the figures lead, top left, where reading starts - sized to be the largest
+   thing in the block without competing with the section headings */
+.ai-figures { display: flex; gap: 44px; flex-wrap: wrap; align-items: flex-start; }
+.ai-figure { min-width: 132px; max-width: 34ch; }
+.ai-figure-top { display: flex; align-items: center; gap: 9px; }
+.ai-figure-value { font-size: 30px; font-weight: 600; line-height: 1; letter-spacing: -0.02em; }
+.ai-figure-label { margin: 7px 0 0; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+/* says what this particular number measures - "overall risk" and "anomaly
+   score" answer different questions and were separable only by a parenthesis */
+.ai-figure-caption { margin: 3px 0 0; font-size: 11.5px; color: var(--ink-muted); line-height: 1.45; }
+
+/* the sentence the figure used to be embedded in, now directly under it */
+.ai-lede { margin: 16px 0 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-muted); max-width: 74ch; }
+
+.ai-why { margin-top: 18px; }
+.ai-why-title {
+  margin: 0 0 7px; font-size: 10.5px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink-faint);
 }
-.ai-risk-stat-top { margin-bottom: 8px; }
-.ai-risk-stat-value { font-size: 24px; font-weight: 600; line-height: 1; }
-.ai-risk-stat-label { font-size: 11.5px; color: var(--ink-muted); margin-top: 5px; line-height: 1.4; }
-.ai-risk-why { font-size: 11px; font-weight: 600; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .03em; margin: 0 0 6px; }
-.ai-risk-drivers { margin: 0 0 12px; padding-left: 18px; font-size: 12.5px; color: var(--ink); line-height: 1.6; }
-.ai-risk-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+.ai-why-list { margin: 0; padding-left: 17px; font-size: 13px; color: var(--ink); line-height: 1.6; max-width: 84ch; }
+
 .ai-risk-empty { font-size: 12.5px; color: var(--ink-muted); }
 .narrative-btn:disabled { opacity: .5; cursor: default; }
 
@@ -771,7 +825,13 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
    to be matched up by list position) - "Review" is the internal divider
    between the two halves. */
 .finding-card-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0 14px; }
-.finding-card-section-title { font-size: 11px; font-weight: 600; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .03em; margin: 0 0 10px; }
+/* the same small caps label the report sheet uses for "Work description" -
+   these name a part of the record, they are not headings competing with the
+   finding's own name */
+.finding-card-label {
+  margin: 0 0 10px; font-size: 10.5px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
 
 /* actions */
 .actions-row { display: flex; gap: 8px; }
@@ -784,12 +844,15 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 .action-btn.acknowledged { background: var(--accent-wash); border-color: var(--accent); color: var(--accent); }
 .update-status { font-size: 12px; color: var(--ink-muted); margin: 8px 0 10px; }
 
-.status-form { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+/* a form, not a layout: three short fields have no business spanning the
+   whole sheet, and a full-width Save button read as the page's main action */
+.status-form { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; max-width: 440px; align-items: flex-start; }
 .status-form select, .status-form input, .status-form textarea {
   width: 100%; font-family: inherit; font-size: 12.5px; padding: 7px 10px;
   border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink);
 }
 .status-form textarea { resize: vertical; }
+.status-form .action-btn { align-self: flex-start; }
 .status-form-error { font-size: 11.5px; color: var(--sev-high); }
 
 /* ---------- 3-column layout: details (left) | main content (center) | findings/updates (right) -
@@ -863,28 +926,28 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
    border it sits inside so it reads as a subtle affordance, not a UI chrome
    element competing with the content. */
 .map-drill-details, .map-drill-findings, .map-drill-center,
-.queue-list, .rank-list, .mospi-alert-list, .mospi-map-page-body, .casefile-view {
+.queue-list, .rank-list, .mospi-alert-list, .mospi-map-page-body, .casefile-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }
 .map-drill-details::-webkit-scrollbar, .map-drill-findings::-webkit-scrollbar, .map-drill-center::-webkit-scrollbar,
 .queue-list::-webkit-scrollbar, .rank-list::-webkit-scrollbar, .mospi-alert-list::-webkit-scrollbar,
-.mospi-map-page-body::-webkit-scrollbar, .casefile-view::-webkit-scrollbar {
+.mospi-map-page-body::-webkit-scrollbar, .casefile-scroll::-webkit-scrollbar {
   width: 7px; height: 7px;
 }
 .map-drill-details::-webkit-scrollbar-track, .map-drill-findings::-webkit-scrollbar-track, .map-drill-center::-webkit-scrollbar-track,
 .queue-list::-webkit-scrollbar-track, .rank-list::-webkit-scrollbar-track, .mospi-alert-list::-webkit-scrollbar-track,
-.mospi-map-page-body::-webkit-scrollbar-track, .casefile-view::-webkit-scrollbar-track {
+.mospi-map-page-body::-webkit-scrollbar-track, .casefile-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 .map-drill-details::-webkit-scrollbar-thumb, .map-drill-findings::-webkit-scrollbar-thumb, .map-drill-center::-webkit-scrollbar-thumb,
 .queue-list::-webkit-scrollbar-thumb, .rank-list::-webkit-scrollbar-thumb, .mospi-alert-list::-webkit-scrollbar-thumb,
-.mospi-map-page-body::-webkit-scrollbar-thumb, .casefile-view::-webkit-scrollbar-thumb {
+.mospi-map-page-body::-webkit-scrollbar-thumb, .casefile-scroll::-webkit-scrollbar-thumb {
   background: var(--border-strong); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box;
 }
 .map-drill-details::-webkit-scrollbar-thumb:hover, .map-drill-findings::-webkit-scrollbar-thumb:hover, .map-drill-center::-webkit-scrollbar-thumb:hover,
 .queue-list::-webkit-scrollbar-thumb:hover, .rank-list::-webkit-scrollbar-thumb:hover, .mospi-alert-list::-webkit-scrollbar-thumb:hover,
-.mospi-map-page-body::-webkit-scrollbar-thumb:hover, .casefile-view::-webkit-scrollbar-thumb:hover {
+.mospi-map-page-body::-webkit-scrollbar-thumb:hover, .casefile-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--ink-faint);
 }
 
@@ -913,4 +976,336 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
      into it from a list instead of typing its name here. */
   .mospi-search { display: none; }
   .app-rail.open { width: min(var(--rail-w-expanded), 78vw); }
+}
+
+/* ===================================================================
+   CASE FILE (CaseFileView) - one anomaly as a document plus the
+   conversation about it.
+
+   The page reads as a single report sheet on --surface, then the
+   discussion on the page background beneath it. That change of ground is
+   what separates "what the system found" from "what the people
+   responsible are doing about it" - no divider, banner or second card
+   frame needed to say it. Everything here is built from the tokens
+   already in tokens.css; the one colour this page adds is the severity
+   tint on the report's left edge, which is the one thing that ramp is
+   reserved for.
+   =================================================================== */
+
+.casefile-scroll { overflow-y: auto; }
+/* narrower than the dashboard pages on purpose: this one is read, not
+   scanned across, and at 1280 the evidence tables and driver lists stranded
+   a third of the row as empty margin */
+.casefile { max-width: 1120px; margin: 0 auto; padding: 4px 0 64px; }
+
+/* ---------- header ---------- */
+.casefile-header { margin-bottom: 18px; }
+.casefile-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.casefile-identity h1 { margin: 4px 0 2px; }
+.casefile-meta { margin: 0; font-size: 13px; color: var(--ink-muted); }
+.casefile-header-actions { display: flex; align-items: center; gap: 10px; padding-top: 6px; }
+
+/* ---------- the report sheet ---------- */
+.casefile-report {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 32px 30px;
+}
+/* no severity edge on the sheet: the severity chip in the header already
+   states it, and a full-height coloured rail dominated the page */
+
+/* names the sheet once, at its top edge, so the pair "Report / Discussion"
+   is legible without repeating the word down the page */
+.casefile-report-label {
+  font-size: 12px; font-weight: 600; color: var(--ink-faint);
+  padding: 14px 0 0;
+}
+
+/* ---------- case metadata: lifecycle strip + description ---------- */
+/* Both identify the work rather than argue about it, so neither carries a
+   heading - the stage labels and the small-caps label say what they are in
+   less room than a section head would have taken. */
+.casefile-strip { padding: 16px 0 18px; border-bottom: 1px solid var(--border); }
+.casefile-strip .timeline-horizontal .timeline-rail { margin-bottom: 9px; }
+.casefile-strip .timeline-horizontal .timeline-body { padding: 0 10px; }
+.casefile-strip .timeline-horizontal .timeline-label {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
+.casefile-strip .timeline-horizontal .timeline-date { font-size: 13.5px; font-weight: 600; margin-top: 4px; }
+.casefile-strip .timeline-horizontal .timeline-amount { font-size: 12px; color: var(--ink-muted); margin-top: 2px; }
+.casefile-strip .timeline-horizontal .timeline-authority { margin-top: 6px; font-size: 11px; line-height: 1.35; }
+.casefile-strip .timeline-horizontal .timeline-authority-role { font-size: 10px; }
+.casefile-strip .timeline-gap { font-size: 10.5px; padding: 0 7px; }
+.casefile-strip .timeline-horizontal .timeline-step-pending .timeline-date { font-size: 12.5px; }
+
+.casefile-desc { padding: 18px 0 2px; }
+/* one small-caps label, shared with the finding cards, for "this is a named
+   part of the record" - never a section heading */
+.casefile-label {
+  margin: 0 0 6px; font-size: 10.5px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
+.casefile-description {
+  margin: 0; font-size: 15px; line-height: 1.55; color: var(--ink);
+  max-width: 74ch;   /* a description is prose - keep it to a readable measure */
+}
+.casefile-description-empty { color: var(--ink-faint); font-style: italic; }
+
+/* ---------- sections ---------- */
+/* a hairline between steps of the argument, never a box around each one -
+   the sheet is one document, not four stacked cards */
+.casefile-section { padding: 26px 0; border-top: 1px solid var(--border); }
+.casefile-section:last-child { padding-bottom: 0; }
+.casefile-section-head {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 18px;
+}
+/* the heading is the question this step answers; the note beside it names
+   the material, so neither needs a label above it */
+.casefile-section-head h2 { margin: 0; font-size: 18px; font-weight: 600; color: var(--ink); letter-spacing: -0.015em; }
+.casefile-section-note { font-size: 12.5px; color: var(--ink-faint); }
+/* a count, not a caption - kept to the right so the heading edge stays clean */
+.casefile-count {
+  margin-left: auto; font-size: 12px; color: var(--ink-muted);
+  background: var(--surface-sunken); border-radius: 3px; padding: 2px 9px;
+}
+
+/* ---------- AI analysis ---------- */
+/* the model's own accuracy and training notes are provenance, not argument */
+.ai-footnote { margin: 16px 0 0; font-size: 11px; color: var(--ink-faint); line-height: 1.5; max-width: 88ch; }
+
+/* ---------- findings ---------- */
+.finding-list { display: flex; flex-direction: column; gap: 8px; }
+.finding-card { margin-bottom: 0; padding: 12px 16px 13px; }
+.finding-card-open { border-color: var(--border-strong); }
+/* the header row is a fixed reading order - name, severity, category,
+   amount - so three findings can be triaged by scanning one column each,
+   rather than each row reading in whatever order its chips happened to wrap */
+.finding-card-name { font-size: 14px; }
+.finding-card-amount { font-size: 13.5px; }
+/* evidence starts below its own hairline: header first, then what was seen */
+.finding-card-open .finding-card-body { border-top: 1px solid var(--border); padding-top: 14px; }
+
+/* the whole header row is the disclosure control */
+button.finding-card-top {
+  width: 100%; text-align: left; background: none; border: none;
+  padding: 2px 0; margin-bottom: 0; cursor: pointer; color: inherit;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.finding-card-caret {
+  width: 16px; flex: none; color: var(--ink-faint); font-size: 14px;
+  text-align: center; line-height: 1;
+}
+.finding-card-amount { margin-left: auto; font-weight: 600; }
+.finding-card-verdict {
+  font-size: 11px; color: var(--accent); background: var(--accent-wash);
+  padding: 1px 7px; border-radius: 3px; font-weight: 600;
+}
+/* closed, a finding still says what was detected - the detector's own
+   deviation line, which is the one sentence a reviewer triages on */
+.finding-card-summary {
+  margin: 8px 0 0 24px; font-size: 12.5px; color: var(--ink-muted);
+  line-height: 1.5; max-width: 76ch;
+}
+.finding-card-body { margin-top: 16px; }
+.finding-note { margin-top: 14px; }
+
+/* ===================================================================
+   DISCUSSION
+   Sits on the page background. Deliberately built without cards or panel
+   borders: a thread should read as a column of voices, and boxing each
+   comment would make the conversation look like one more analytics grid.
+   =================================================================== */
+.discussion { margin-top: 36px; }
+.discussion-head { margin-bottom: 16px; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+/* same size as the report's own section headings: the discussion is the next
+   step of the same case, not a smaller widget attached to it */
+.discussion-head h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.015em; }
+.discussion-lede { margin: 0; font-size: 12.5px; color: var(--ink-faint); }
+.discussion-sort {
+  margin-left: auto; background: none; border: none; cursor: pointer;
+  font-size: 12px; color: var(--accent); padding: 0;
+}
+.discussion-error { font-size: 12.5px; color: var(--sev-high); margin: 10px 0 0; }
+.discussion-empty { font-size: 13px; color: var(--ink-faint); margin: 20px 0 0; }
+
+/* ---------- composer ---------- */
+.discussion-composer {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 10px 12px;
+}
+.discussion-composer:focus-within { border-color: var(--border-strong); }
+.discussion-input {
+  width: 100%; border: none; background: none; resize: vertical;
+  font-family: inherit; font-size: 14px; line-height: 1.55; color: var(--ink);
+  padding: 2px 0; min-height: 24px;
+}
+.discussion-input:focus { outline: none; }
+.discussion-input::placeholder { color: var(--ink-faint); }
+.discussion-composer-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.discussion-composer-spacer { flex: 1; }
+.discussion-chip-btn {
+  background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 4px 10px; font-size: 12px; color: var(--ink-muted); cursor: pointer;
+}
+.discussion-chip-btn:hover { background: var(--surface-sunken); }
+.discussion-post-btn {
+  background: var(--accent); color: #fff; border: 1px solid var(--accent);
+  border-radius: var(--radius-sm); padding: 5px 16px; font-size: 12.5px;
+  font-weight: 600; cursor: pointer;
+}
+.discussion-post-btn:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.discussion-post-btn:disabled { opacity: .45; cursor: default; }
+
+.discussion-mention-wrap { position: relative; }
+.discussion-mention-menu {
+  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 20; min-width: 208px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-float); padding: 4px;
+}
+.discussion-mention-menu button {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  padding: 7px 10px; font-size: 12.5px; color: var(--ink); cursor: pointer; border-radius: var(--radius-sm);
+}
+.discussion-mention-menu button:hover { background: var(--surface-sunken); }
+
+/* ---------- threads ---------- */
+/* posted comments sit in one box, matching the composer above them: the
+   conversation is a record attached to the case, and on the bare page
+   background it read as loose text under the form. Still no box per comment -
+   a thread is a column of voices, not a grid of cards. */
+.discussion-threads {
+  margin-top: 16px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 2px 18px;
+}
+.discussion-thread { padding: 18px 0; border-top: 1px solid var(--border); }
+.discussion-thread:first-child { border-top: none; padding-top: 16px; }
+.discussion-thread:last-child { padding-bottom: 16px; }
+/* resolved recedes rather than disappearing - the case record keeps it */
+.discussion-thread-resolved { opacity: .62; }
+
+.discussion-comment { display: flex; gap: 12px; }
+.discussion-comment + .discussion-comment { margin-top: 16px; }
+/* replies indent under the avatar rail of the comment they answer */
+.discussion-comment-reply { margin-left: 44px; }
+
+.discussion-avatar {
+  flex: none; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--accent-wash); color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12.5px; font-weight: 600;
+}
+.discussion-avatar-gone { background: var(--surface-sunken); color: var(--ink-faint); }
+.discussion-main { flex: 1; min-width: 0; }
+
+.discussion-meta { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.discussion-author { font-weight: 600; color: var(--ink); font-size: 13px; }
+.discussion-entity { color: var(--ink-muted); }
+.discussion-time { color: var(--ink-faint); }
+/* pinned/resolved use the gold authority marker, never the severity ramp -
+   a pinned comment is not a risk level */
+.discussion-flag {
+  background: var(--gold-wash); color: var(--gold);
+  padding: 1px 7px; border-radius: 3px; font-size: 10.5px; font-weight: 600;
+}
+.discussion-flag-resolved { background: var(--accent-wash); color: var(--accent); }
+
+.discussion-body {
+  margin: 5px 0 0; font-size: 14px; line-height: 1.6; color: var(--ink);
+  max-width: 72ch; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.discussion-withdrawn { color: var(--ink-faint); font-style: italic; }
+.discussion-mention { color: var(--accent); font-weight: 600; }
+
+.discussion-actions { display: flex; gap: 14px; margin-top: 8px; flex-wrap: wrap; }
+.discussion-actions button {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: 12px; font-weight: 500; color: var(--ink-muted);
+}
+.discussion-actions button:hover { color: var(--accent); }
+.discussion-actions .discussion-danger:hover { color: var(--sev-high); }
+.discussion-reply-composer { margin-top: 12px; }
+
+/* ---------- search + sort ---------- */
+.discussion-head-controls { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.discussion-head-controls .discussion-sort { margin-left: 0; }
+.discussion-search {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 4px 9px; font-family: inherit; font-size: 12px; color: var(--ink);
+  background: var(--surface); width: 190px;
+}
+.discussion-search:focus { outline: none; border-color: var(--border-strong); }
+.discussion-search::placeholder { color: var(--ink-faint); }
+
+/* ---------- supporting documents ---------- */
+/* The real input is replaced by the composer's own chip button, but it stays
+   in the layout (not display:none) so it keeps working for keyboard and
+   assistive tech rather than becoming unreachable. */
+.discussion-file-input {
+  position: absolute; width: 1px; height: 1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.discussion-staged { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.discussion-staged li {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface-sunken); border-radius: var(--radius-sm);
+  padding: 3px 4px 3px 9px; font-size: 12px; max-width: 100%;
+}
+.discussion-staged-name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 26ch; }
+.discussion-staged-size { color: var(--ink-faint); font-size: 11px; }
+.discussion-staged-remove {
+  background: none; border: none; cursor: pointer; color: var(--ink-faint);
+  font-size: 15px; line-height: 1; padding: 0 5px;
+}
+.discussion-staged-remove:hover { color: var(--sev-high); }
+
+.discussion-attachments { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.discussion-attachment {
+  display: flex; align-items: baseline; gap: 8px; cursor: pointer;
+  background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 4px 10px; font-family: inherit; font-size: 12px; color: var(--ink);
+  max-width: 100%;
+}
+.discussion-attachment:hover { border-color: var(--accent); color: var(--accent); }
+.discussion-attachment-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30ch; }
+.discussion-attachment-size { color: var(--ink-faint); font-size: 11px; }
+
+/* ---------- internal notes ---------- */
+/* No new colour: "internal" is a restriction, not a severity, so it reads as
+   the quietest thing on the row rather than competing with pinned/resolved. */
+.discussion-internal-toggle {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--ink-muted); cursor: pointer; user-select: none;
+}
+.discussion-internal-toggle input { margin: 0; cursor: pointer; accent-color: var(--accent); }
+.discussion-flag-internal { background: var(--surface-sunken); color: var(--ink-muted); }
+
+@media (max-width: 900px) {
+  /* four columns cannot hold their own text at phone width - the timeline
+     falls back to the vertical rail it already knows how to be */
+  .timeline-horizontal { display: block; }
+  .timeline-horizontal .timeline-step { display: flex; flex-direction: row; }
+  .timeline-horizontal .timeline-rail { flex-direction: column; width: 20px; margin-bottom: 0; }
+  .timeline-horizontal .timeline-connector { width: 1px; height: auto; min-height: 28px; flex: 1; }
+  .timeline-horizontal .timeline-connector-lead { display: none; }
+  .timeline-horizontal .timeline-gap-note { display: block; }
+  .timeline-horizontal .timeline-step:last-child .timeline-connector-trail { display: none; }
+  .timeline-horizontal .timeline-body { text-align: left; padding: 0 0 22px 12px; }
+  .timeline-horizontal .timeline-authority-role { display: inline; margin-right: 4px; }
+  .discussion-head-controls { width: 100%; margin-left: 0; }
+  .discussion-search { flex: 1; width: auto; }
+  .discussion-composer-actions { flex-wrap: wrap; }
+  .discussion-composer-spacer { display: none; }
+  .casefile { padding: 0 0 48px; }
+  .casefile-report { padding: 6px 18px 22px; }
+  .casefile-header-actions { padding-top: 0; }
+  /* stacked, the strip is a list of stages again - restore the readable sizes
+     the horizontal strip compresses */
+  .casefile-strip .timeline-horizontal .timeline-date { font-size: 14px; }
+  .casefile-strip .timeline-horizontal .timeline-body { padding: 0 0 18px 12px; }
+  .ai-figures { gap: 24px; }
+  .ai-block { padding-left: 14px; }
+  .discussion-comment-reply { margin-left: 20px; }
 }

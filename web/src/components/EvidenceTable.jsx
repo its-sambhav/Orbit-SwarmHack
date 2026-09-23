@@ -1,4 +1,5 @@
 import { formatRupees } from '../api'
+import { useLanguage } from '../i18n'
 
 // Every key any detector in engine/detectors.py puts into evidence.observed/
 // threshold/peer_benchmark needs an entry here - a key missing from LABELS
@@ -121,9 +122,13 @@ const DETECTOR_OVERRIDES = {
   },
 }
 
-function formatValue(key, value, override) {
+// LABELS/DETECTOR_OVERRIDES above stay in English: they are the lookup key
+// into the STRINGS table, translated at render time below. Values stay as the
+// detector emitted them (numbers, dates, work numbers) except the two
+// booleans, which are UI words.
+function formatValue(key, value, override, t) {
   if (value === null || value === undefined) return null
-  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (typeof value === 'boolean') return value ? t('Yes') : t('No')
   if (Array.isArray(value)) return value.length ? value.join(', ') : null
   if (override?.percent) return `${(Number(value) * 100).toFixed(1)}%`
   if (AMOUNT_KEYS.has(key)) return formatRupees(value)
@@ -133,27 +138,28 @@ function formatValue(key, value, override) {
   return String(value)
 }
 
-function toRows(section, overrides) {
+function toRows(section, overrides, t) {
   return Object.entries(section || {})
     .filter(([k]) => k !== 'source')
-    .map(([k, v]) => [k, formatValue(k, v, overrides?.[k]), overrides?.[k]?.label])
+    .map(([k, v]) => [k, formatValue(k, v, overrides?.[k], t), overrides?.[k]?.label])
     .filter(([, v]) => v !== null)
 }
 
 export function EvidenceTable({ finding }) {
+  const { t, td } = useLanguage()
   const overrides = DETECTOR_OVERRIDES[finding.detector]
-  const observed = toRows(finding.evidence.observed, overrides)
-  const threshold = toRows(finding.evidence.threshold, overrides)
-  const peerBenchmark = toRows(finding.evidence.peer_benchmark, overrides)
+  const observed = toRows(finding.evidence.observed, overrides, t)
+  const threshold = toRows(finding.evidence.threshold, overrides, t)
+  const peerBenchmark = toRows(finding.evidence.peer_benchmark, overrides, t)
 
   return (
     <div className="evidence-table">
       <div className="evidence-section">
-        <h4>Observed</h4>
+        <h4>{t('Observed')}</h4>
         <table>
           <tbody>
             {observed.map(([k, v, label]) => (
-              <tr key={k}><th>{label || LABELS[k] || k}</th><td className="num">{v}</td></tr>
+              <tr key={k}><th>{t(label || LABELS[k] || k)}</th><td className="num">{td(v)}</td></tr>
             ))}
           </tbody>
         </table>
@@ -161,11 +167,11 @@ export function EvidenceTable({ finding }) {
 
       {threshold.length > 0 && (
         <div className="evidence-section">
-          <h4>Threshold</h4>
+          <h4>{t('Threshold')}</h4>
           <table>
             <tbody>
               {threshold.map(([k, v, label]) => (
-                <tr key={k}><th>{label || LABELS[k] || k}</th><td className="num">{v}</td></tr>
+                <tr key={k}><th>{t(label || LABELS[k] || k)}</th><td className="num">{td(v)}</td></tr>
               ))}
             </tbody>
           </table>
@@ -174,11 +180,11 @@ export function EvidenceTable({ finding }) {
 
       {peerBenchmark.length > 0 && (
         <div className="evidence-section">
-          <h4>Peer benchmark</h4>
+          <h4>{t('Peer benchmark')}</h4>
           <table>
             <tbody>
               {peerBenchmark.map(([k, v, label]) => (
-                <tr key={k}><th>{label || LABELS[k] || k}</th><td className="num">{v}</td></tr>
+                <tr key={k}><th>{t(label || LABELS[k] || k)}</th><td className="num">{td(v)}</td></tr>
               ))}
             </tbody>
           </table>
@@ -186,14 +192,14 @@ export function EvidenceTable({ finding }) {
       )}
 
       <div className="evidence-section">
-        <h4>Deviation</h4>
-        <p className="evidence-deviation">{finding.evidence.deviation}</p>
+        <h4>{t('Deviation')}</h4>
+        <p className="evidence-deviation">{td(finding.evidence.deviation)}</p>
       </div>
 
       {finding.evidence.threshold?.source && (
         <div className="evidence-section">
-          <h4>Source</h4>
-          <p className="evidence-source">{finding.evidence.threshold.source}</p>
+          <h4>{t('Source')}</h4>
+          <p className="evidence-source">{td(finding.evidence.threshold.source)}</p>
         </div>
       )}
     </div>

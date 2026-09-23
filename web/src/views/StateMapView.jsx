@@ -9,6 +9,7 @@ import { SeverityChip, TagChip } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
+import { useLanguage } from '../i18n'
 
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
@@ -26,6 +27,7 @@ export function StateMapView() {
   const dateFrom = params.get('date_from') || null
   const dateTo = params.get('date_to') || null
   const navigate = useNavigate()
+  const { t, td } = useLanguage()
   const [data, setData] = useState(null)
   const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
@@ -98,7 +100,7 @@ export function StateMapView() {
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle={`State Nodal Authority · ${stateLabel} · Map`}
+        subtitle={t('State Nodal Authority · {state} · Map', { state: td(stateLabel) })}
         searchIndex={[]}
         showSearch={false}
         profileName={stateLabel}
@@ -115,10 +117,10 @@ export function StateMapView() {
           <div className="map-drill-header">
             <Breadcrumb items={[
               { label: stateLabel, to: `/state/${encodeURIComponent(stateLabel)}?${params.toString()}` },
-              { label: 'Map' },
+              { label: 'drawer.map' },
             ]} />
             <div className="mospi-header-row">
-              <h1 style={{ margin: 0 }}>{stateLabel} — constituency map</h1>
+              <h1 style={{ margin: 0 }}>{t('{name} — constituency map', { name: td(stateLabel) })}</h1>
               <div className="report-toolbar">
                 <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
                 <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
@@ -137,7 +139,7 @@ export function StateMapView() {
               {data ? (
                 <>
                   <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
-                    <h3 style={{ margin: 0 }}>{data.state} overview</h3>
+                    <h3 style={{ margin: 0 }}>{t('{name} overview', { name: td(data.state) })}</h3>
                     <ScopeToggle
                       scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
                       value={valueMode} onChange={setValueMode} includeAll={false} size="sm"
@@ -150,24 +152,24 @@ export function StateMapView() {
                     <ScorecardCell label="Completed" value={data.scorecard.completed} count={data.scorecard.completed_count} mode={valueMode} />
                     <ScorecardCell label="Paid" value={data.scorecard.paid} count={data.scorecard.paid_count} mode={valueMode} />
                     <div className="scorecard-cell">
-                      <div className="label">Works flagged</div>
+                      <div className="label">{t('Works flagged')}</div>
                       <div className="value num">{data.scorecard.works_flagged.toLocaleString('en-IN')} / {data.scorecard.works_total.toLocaleString('en-IN')}</div>
                     </div>
                   </div>
                   <div className="comparison-row">
-                    <span>Completion rate</span>
+                    <span>{t('Completion rate')}</span>
                     <span className="value num">{data.scorecard.completion_rate != null ? `${data.scorecard.completion_rate.toFixed(0)}%` : '—'}</span>
                   </div>
                   <div className="comparison-row">
-                    <span>National median</span>
+                    <span>{t('National median')}</span>
                     <span className="value num">{data.scorecard.national_median_completion_rate != null ? `${data.scorecard.national_median_completion_rate.toFixed(0)}%` : '—'}</span>
                   </div>
                   <div className="comparison-row">
-                    <span>Breach rate</span>
+                    <span>{t('Breach rate')}</span>
                     <span className="value num">{(data.breach_rate * 100).toFixed(0)}%</span>
                   </div>
 
-                  <h3>Constituencies ({sortedConstituencies.length})</h3>
+                  <h3>{t('Constituencies ({n})', { n: sortedConstituencies.length })}</h3>
                   <div className="rank-list rank-list-compact">
                     {sortedConstituencies.map((c) => (
                       <button
@@ -176,8 +178,8 @@ export function StateMapView() {
                         className="rank-item"
                         onClick={() => navigate(`/constituency/${c.constituency_id}?scope=${encodeURIComponent(scope)}&role=state&role_name=${encodeURIComponent(data.state)}`)}
                       >
-                        <span className="rank-item-name">{c.constituency}</span>
-                        <span className="rank-item-meta num">{c.works_flagged.toLocaleString('en-IN')} flagged</span>
+                        <span className="rank-item-name">{td(c.constituency)}</span>
+                        <span className="rank-item-meta num">{t('{n} flagged', { n: c.works_flagged.toLocaleString('en-IN') })}</span>
                         <span className="rank-item-bar"><span style={{ width: `${Math.max(c.breach_rate * 100, 3)}%` }} /></span>
                       </button>
                     ))}
@@ -206,11 +208,11 @@ export function StateMapView() {
             <div className="map-drill-findings">
               {data ? (
                 <>
-                  <h3>Anomalies ({data.queue.length})</h3>
+                  <h3>{t('Anomalies ({n})', { n: data.queue.length })}</h3>
                   {data.queue.length ? (
                     <>
                       <input
-                        type="search" className="queue-search-input" placeholder="Search works…" aria-label="Search works"
+                        type="search" className="queue-search-input" placeholder={t('Search works…')} aria-label={t('Search works')}
                         value={queueSearch} onChange={(e) => setQueueSearch(e.target.value)}
                       />
                       {filteredQueue.length ? (
@@ -222,13 +224,13 @@ export function StateMapView() {
                               onClick={() => navigate(`/work/${item.work_number}?scope_house=${encodeURIComponent(item.scope_house)}&scope_tenure=${encodeURIComponent(item.scope_tenure)}&role=state&role_name=${encodeURIComponent(data.state)}`)}
                             >
                               <div className="queue-item-top">
-                                <span className="queue-item-title">{item.constituency}, {item.district}</span>
+                                <span className="queue-item-title">{td(item.constituency)}, {td(item.district)}</span>
                                 <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
                               </div>
-                              {item.work_description && <p className="queue-item-desc">{item.work_description}</p>}
+                              {item.work_description && <p className="queue-item-desc">{td(item.work_description)}</p>}
                               <div className="queue-item-chips">
                                 <SeverityChip severity={item.max_severity} />
-                                {item.tags.map((t) => <TagChip key={t} tag={t} />)}
+                                {item.tags.map((tag) => <TagChip key={tag} tag={tag} />)}
                               </div>
                             </button>
                           ))}

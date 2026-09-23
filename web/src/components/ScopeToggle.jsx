@@ -6,7 +6,7 @@ export function ScopeToggle({ scopes, value, onChange, includeAll = true, size }
     ? [{ value: 'all', label: t('scope.allScopes') }, ...scopes]
     : scopes
   return (
-    <div className={`scope-toggle${size === 'sm' ? ' scope-toggle-sm' : ''}`} role="tablist" aria-label="Tenure scope">
+    <div className={`scope-toggle${size === 'sm' ? ' scope-toggle-sm' : ''}`} role="tablist" aria-label={t('Tenure scope')}>
       {options.map((s) => (
         <button
           key={s.value}
@@ -15,7 +15,7 @@ export function ScopeToggle({ scopes, value, onChange, includeAll = true, size }
           className={`scope-toggle-btn${value === s.value ? ' active' : ''}`}
           onClick={() => onChange(s.value)}
         >
-          {s.label}
+          {t(s.label)}
         </button>
       ))}
     </div>

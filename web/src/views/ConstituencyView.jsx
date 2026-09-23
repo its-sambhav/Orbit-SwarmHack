@@ -9,6 +9,7 @@ import { SeverityChip, TagChip } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
+import { useLanguage } from '../i18n'
 
 const ROLE_LABEL = { state: 'State Nodal Authority', district: 'District Authority' }
 const ROLE_AVATAR = { state: 'S', district: 'D' }
@@ -32,6 +33,7 @@ export function ConstituencyView() {
   const role = params.get('role')
   const roleName = params.get('role_name')
   const navigate = useNavigate()
+  const { t, td } = useLanguage()
   const [data, setData] = useState(null)
   const [meta, setMeta] = useState(null)
   const [geojson, setGeojson] = useState(null)
@@ -152,8 +154,8 @@ export function ConstituencyView() {
       <MospiNav
         scope={scope}
         subtitle={role
-          ? `${ROLE_LABEL[role]} · ${data ? data.constituency : 'Loading…'}`
-          : `MoSPI · ${data ? data.constituency : 'Loading…'} · ${scope}`}
+          ? `${t(ROLE_LABEL[role])} · ${data ? td(data.constituency) : t('Loading…')}`
+          : t('MoSPI · {name} · {scope}', { name: data ? td(data.constituency) : t('Loading…'), scope: t(scope) })}
         searchIndex={[]}
         showSearch={!role}
         profileName={role ? roleName : undefined}
@@ -172,7 +174,7 @@ export function ConstituencyView() {
       <div className="map-drill-header">
         <Breadcrumb items={breadcrumbItems} />
         <div className="mospi-header-row">
-          <h1 style={{ margin: 0 }}>{data ? data.constituency : 'Loading…'}</h1>
+          <h1 style={{ margin: 0 }}>{data ? td(data.constituency) : t('Loading…')}</h1>
           <div className="report-toolbar">
             <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
             <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
@@ -191,13 +193,13 @@ export function ConstituencyView() {
           {data ? (
             <>
               <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
-                <h3 style={{ margin: 0 }}>{data.constituency} scorecard</h3>
+                <h3 style={{ margin: 0 }}>{t('{name} scorecard', { name: td(data.constituency) })}</h3>
                 <ScopeToggle
                   scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
                   value={valueMode} onChange={setValueMode} includeAll={false} size="sm"
                 />
               </div>
-              <p className="fact-line">{data.mp_name || 'MP not on record for this scope'}</p>
+              <p className="fact-line">{data.mp_name ? td(data.mp_name) : t('MP not on record for this scope')}</p>
               <div className="scorecard-grid">
                 <ScorecardCell label="Allocated" value={scorecard.allocated} count={scorecard.works_total} mode={valueMode} />
                 <ScorecardCell label="Recommended" value={scorecard.recommended} count={scorecard.recommended_count} mode={valueMode} />
@@ -205,30 +207,32 @@ export function ConstituencyView() {
                 <ScorecardCell label="Completed" value={scorecard.completed} count={scorecard.completed_count} mode={valueMode} />
                 <ScorecardCell label="Paid" value={scorecard.paid} count={scorecard.paid_count} mode={valueMode} />
                 <div className="scorecard-cell">
-                  <div className="label">Works flagged</div>
+                  <div className="label">{t('Works flagged')}</div>
                   <div className="value num">{scorecard.works_flagged.toLocaleString('en-IN')} / {scorecard.works_total.toLocaleString('en-IN')}</div>
                 </div>
               </div>
 
               <div className="comparison-row">
-                <span>Completion rate here</span>
+                <span>{t('Completion rate here')}</span>
                 <span className="value num">{scorecard.completion_rate != null ? `${scorecard.completion_rate.toFixed(0)}%` : '—'}</span>
               </div>
               <div className="comparison-row">
-                <span>National median</span>
+                <span>{t('National median')}</span>
                 <span className="value num">{scorecard.national_median_completion_rate != null ? `${scorecard.national_median_completion_rate.toFixed(0)}%` : '—'}</span>
               </div>
               <div className="comparison-row">
-                <span>State median ({data.state})</span>
+                <span>{t('State median ({state})', { state: td(data.state) })}</span>
                 <span className="value num">{scorecard.state_median_completion_rate != null ? `${scorecard.state_median_completion_rate.toFixed(0)}%` : '—'}</span>
               </div>
               {completionDelta != null && (
                 <p style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 6 }}>
-                  {completionDelta >= 0 ? 'Above' : 'Below'} national median by {Math.abs(completionDelta).toFixed(0)} points.
+                  {t('{dir} national median by {points} points.', {
+                    dir: t(completionDelta >= 0 ? 'Above' : 'Below'), points: Math.abs(completionDelta).toFixed(0),
+                  })}
                 </p>
               )}
 
-              <h3>By tag</h3>
+              <h3>{t('By tag')}</h3>
               <div className="tag-breakdown">
                 {Object.entries(data.tag_breakdown).map(([tag, n]) => (
                   <div key={tag} className="tag-breakdown-row"><TagChip tag={tag} /><span className="num">{n.toLocaleString('en-IN')}</span></div>
@@ -270,11 +274,11 @@ export function ConstituencyView() {
         <div className="map-drill-findings">
           {data ? (
             <>
-              <h3>Findings ({data.findings.length})</h3>
+              <h3>{t('Findings ({n})', { n: data.findings.length })}</h3>
               {data.findings.length ? (
                 <>
                   <input
-                    type="search" className="queue-search-input" placeholder="Search works…" aria-label="Search works"
+                    type="search" className="queue-search-input" placeholder={t('Search works…')} aria-label={t('Search works')}
                     value={queueSearch} onChange={(e) => setQueueSearch(e.target.value)}
                   />
                   {data.findings.filter((f) => queueItemMatches(f, queueSearch)).length ? (
@@ -286,13 +290,13 @@ export function ConstituencyView() {
                           onClick={() => navigate(`/work/${f.work_number}?scope_house=${encodeURIComponent(f.scope_house)}&scope_tenure=${encodeURIComponent(f.scope_tenure)}${roleQuery}`)}
                         >
                           <div className="queue-item-top">
-                            <span className="queue-item-title">{f.district ? `${f.district} district` : `Work #${f.work_number}`}</span>
+                            <span className="queue-item-title">{f.district ? t('{district} district', { district: td(f.district) }) : t('Work #{n}', { n: f.work_number })}</span>
                             <span className="queue-item-amount num">{formatRupees(f.total_exposure)}</span>
                           </div>
-                          {f.work_description && <p className="queue-item-desc">{f.work_description}</p>}
+                          {f.work_description && <p className="queue-item-desc">{td(f.work_description)}</p>}
                           <div className="queue-item-chips">
                             <SeverityChip severity={f.max_severity} />
-                            {f.tags.map((t) => <TagChip key={t} tag={t} />)}
+                            {f.tags.map((tag) => <TagChip key={tag} tag={tag} />)}
                           </div>
                         </button>
                       ))}

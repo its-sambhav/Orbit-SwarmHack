@@ -128,7 +128,7 @@ function arrayBufferToBase64(buffer) {
 // ("Generating…") shouldn't end up baked into the picture; the applied
 // scope/date range is printed as text in the header instead so nothing about
 // what was filtered is lost.
-async function captureReportPdf({ title, scope, dateFrom, dateTo }) {
+async function captureReportPdf({ title, scope, dateFrom, dateTo, t }) {
   const node = document.getElementById('report-capture')
   if (!node) return null
 
@@ -201,10 +201,12 @@ async function captureReportPdf({ title, scope, dateFrom, dateTo }) {
 
   pdf.setFontSize(10)
   pdf.setTextColor(90)
-  const rangeText = !dateFrom && !dateTo ? 'All time' : `${dateFrom ? formatDate(dateFrom) : '—'} to ${dateTo ? formatDate(dateTo) : '—'}`
+  const rangeText = !dateFrom && !dateTo
+    ? t('All time')
+    : t('{from} to {to}', { from: dateFrom ? formatDate(dateFrom) : '—', to: dateTo ? formatDate(dateTo) : '—' })
   pdf.text(`${scope} · ${rangeText}`, margin, y)
   y += 14
-  pdf.text(`Generated on ${formatDate(new Date().toISOString())}`, margin, y)
+  pdf.text(t('Generated {date}', { date: formatDate(new Date().toISOString()) }), margin, y)
   pdf.setTextColor(0)
 
   // slice the (possibly very tall) captured canvas into page-height chunks,
@@ -246,7 +248,7 @@ export function GenerateReportButton({ level, title, scope, dateFrom, dateTo, st
   async function generate() {
     setStatus('saving')
     try {
-      const pdf = await captureReportPdf({ title, scope, dateFrom, dateTo })
+      const pdf = await captureReportPdf({ title, scope, dateFrom, dateTo, t })
       const pdfBase64 = pdf ? arrayBufferToBase64(pdf.output('arraybuffer')) : null
       await api.createReport({
         level, title, scope, date_from: dateFrom, date_to: dateTo,

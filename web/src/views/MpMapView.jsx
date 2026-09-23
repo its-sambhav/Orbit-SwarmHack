@@ -8,6 +8,7 @@ import { DonutChart, colorForIndex } from '../components/DonutChart'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
+import { useLanguage } from '../i18n'
 
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
@@ -23,6 +24,7 @@ export function MpMapView() {
   const dateFrom = params.get('date_from') || null
   const dateTo = params.get('date_to') || null
   const navigate = useNavigate()
+  const { t, td } = useLanguage()
   const [data, setData] = useState(null)
   const [meta, setMeta] = useState(null)
   const [geojson, setGeojson] = useState(null)
@@ -111,7 +113,7 @@ export function MpMapView() {
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle={`Member of Parliament · ${data.mp_name} · Map`}
+        subtitle={t('Member of Parliament · {mp} · Map', { mp: td(data.mp_name) })}
         searchIndex={[]}
         showSearch={false}
         profileName={data.mp_name}
@@ -126,13 +128,13 @@ export function MpMapView() {
           <div className="map-drill-header">
             <Breadcrumb items={[
               { label: data.mp_name, to: overviewUrl },
-              { label: 'Map' },
+              { label: 'drawer.map' },
             ]} />
             <div className="mospi-header-row">
               <div>
-                <h1 style={{ margin: 0 }}>{data.mp_name} — constituency map</h1>
+                <h1 style={{ margin: 0 }}>{t('{name} — constituency map', { name: td(data.mp_name) })}</h1>
                 <div className="mospi-header-meta">
-                  {data.constituency}, {data.state} · {scopeLabel(scope)} · {data.status}
+                  {td(data.constituency)}, {td(data.state)} · {t(scopeLabel(scope))} · {t(data.status)}
                 </div>
               </div>
               <div className="report-toolbar">
@@ -148,25 +150,25 @@ export function MpMapView() {
 
           <div className="map-drill-row">
             <div className="map-drill-details">
-              <h3>Fund utilization</h3>
+              <h3>{t('Fund utilization')}</h3>
               <div className="comparison-row">
-                <span>Allocated</span>
+                <span>{t('Allocated')}</span>
                 <span className="value num">{formatRupees(scorecard.allocated)}</span>
               </div>
               <div className="comparison-row">
-                <span>Utilized (paid)</span>
+                <span>{t('Utilized (paid)')}</span>
                 <span className="value num">{formatRupees(scorecard.paid)}</span>
               </div>
               <div className="comparison-row">
-                <span>Utilization %</span>
+                <span>{t('Utilization %')}</span>
                 <span className="value num">{scorecard.allocated ? `${((scorecard.paid / scorecard.allocated) * 100).toFixed(0)}%` : '—'}</span>
               </div>
 
-              <h3>Where the funds are going</h3>
+              <h3>{t('Where the funds are going')}</h3>
               {donutSegments.length ? (
                 <DonutChart compact segments={donutSegments} onSelect={(seg) => setCategoryFilter(seg.label === categoryFilter ? '' : seg.label)} />
               ) : (
-                <p className="panel-note">No categorised activity recorded for this window.</p>
+                <p className="panel-note">{t('No categorised activity recorded for this window.')}</p>
               )}
             </div>
 
@@ -188,15 +190,15 @@ export function MpMapView() {
             </div>
 
             <div className="map-drill-findings">
-              <h3>Projects recommended ({filteredWorks.length})</h3>
+              <h3>{t('Projects recommended ({n})', { n: filteredWorks.length })}</h3>
               <div className="filters" style={{ marginBottom: 10 }}>
                 <select value={districtFilter} onChange={(e) => setDistrictFilter(e.target.value)}>
-                  <option value="">All districts</option>
-                  {districts.map((d) => <option key={d} value={d}>{d}</option>)}
+                  <option value="">{t('All districts')}</option>
+                  {districts.map((d) => <option key={d} value={d}>{td(d)}</option>)}
                 </select>
                 {categoryFilter && (
                   <button type="button" className="btn-link" onClick={() => setCategoryFilter('')}>
-                    Clear category: {categoryFilter} ×
+                    {t('Clear category: {category} ×', { category: td(categoryFilter) })}
                   </button>
                 )}
               </div>
@@ -209,15 +211,15 @@ export function MpMapView() {
                       onClick={() => navigate(`/work/${w.work_number}?scope_house=Lok%20Sabha&scope_tenure=${encodeURIComponent(scope)}&role=mp&role_name=${encodeURIComponent(data.mp_name)}`)}
                     >
                       <div className="queue-item-top">
-                        <span className="queue-item-title">{w.activity || `Work #${w.work_number}`}</span>
+                        <span className="queue-item-title">{w.activity ? td(w.activity) : t('Work #{n}', { n: w.work_number })}</span>
                         <span className="queue-item-amount num">{formatRupees(w.recommended_amount)}</span>
                       </div>
                       <div className="queue-item-meta">
-                        {w.district ? `${w.district} · ` : ''}{STAGE_LABEL(w)} · Recommended {formatDate(w.recommended_date)}
+                        {w.district ? `${td(w.district)} · ` : ''}{t(STAGE_LABEL(w))} · {t('Recommended {date}', { date: formatDate(w.recommended_date) })}
                       </div>
                       {w.tags.length > 0 && (
                         <div className="queue-item-chips">
-                          <span className="chip tag-chip">Under review · {w.tags.join(', ')}</span>
+                          <span className="chip tag-chip">{t('Under review · {tags}', { tags: w.tags.map((tag) => t(tag)).join(', ') })}</span>
                         </div>
                       )}
                     </button>

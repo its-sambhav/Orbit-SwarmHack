@@ -9,6 +9,7 @@ import { SeverityChip, TagChip } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
+import { useLanguage } from '../i18n'
 
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
@@ -24,6 +25,7 @@ export function DistrictMapView() {
   const dateFrom = params.get('date_from') || null
   const dateTo = params.get('date_to') || null
   const navigate = useNavigate()
+  const { t, td } = useLanguage()
   const location = useLocation()
   const isRoleView = location.pathname.startsWith('/district-authority/')
   const [data, setData] = useState(null)
@@ -130,7 +132,9 @@ export function DistrictMapView() {
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle={isRoleView ? `District Authority · ${data.district} · Map` : `MoSPI · ${data.district} · Map`}
+        subtitle={isRoleView
+          ? t('District Authority · {district} · Map', { district: td(data.district) })
+          : t('MoSPI · {name} · Map', { name: td(data.district) })}
         searchIndex={[]}
         showSearch={!isRoleView}
         profileName={isRoleView ? data.district : undefined}
@@ -149,17 +153,17 @@ export function DistrictMapView() {
           <div className="map-drill-header">
             <Breadcrumb items={isRoleView ? [
               { label: data.district, to: overviewUrl },
-              { label: 'Map' },
+              { label: 'drawer.map' },
             ] : [
               { label: data.state, to: `/mospi/map?state=${encodeURIComponent(data.state)}` },
               { label: data.district, to: overviewUrl },
-              { label: 'Map' },
+              { label: 'drawer.map' },
             ]} />
             <div className="mospi-header-row">
               <div>
-                <h1 style={{ margin: 0 }}>{data.district} — {isRoleView ? 'anomaly map' : 'district map'}</h1>
+                <h1 style={{ margin: 0 }}>{t(isRoleView ? '{district} — anomaly map' : '{district} — district map', { district: td(data.district) })}</h1>
                 <div className="mospi-header-meta">
-                  {isRoleView ? 'District Authority' : 'MoSPI'} · {data.state} · {scopeLabel(scope)}
+                  {t(isRoleView ? 'role.district' : 'MoSPI')} · {td(data.state)} · {t(scopeLabel(scope))}
                 </div>
               </div>
               <div className="report-toolbar">
@@ -178,7 +182,7 @@ export function DistrictMapView() {
           <div className="map-drill-row">
             <div className="map-drill-details">
               <div className="mospi-page-sub-row" style={{ marginBottom: 8 }}>
-                <h3 style={{ margin: 0 }}>{data.district} scorecard</h3>
+                <h3 style={{ margin: 0 }}>{t('{name} scorecard', { name: td(data.district) })}</h3>
                 <ScopeToggle
                   scopes={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Projects' }]}
                   value={valueMode} onChange={setValueMode} includeAll={false} size="sm"
@@ -191,28 +195,28 @@ export function DistrictMapView() {
                 <ScorecardCell label="Completed" value={data.scorecard.completed} count={data.scorecard.completed_count} mode={valueMode} />
                 <ScorecardCell label="Paid" value={data.scorecard.paid} count={data.scorecard.paid_count} mode={valueMode} />
                 <div className="scorecard-cell">
-                  <div className="label">Works flagged</div>
+                  <div className="label">{t('Works flagged')}</div>
                   <div className="value num">{data.scorecard.works_flagged.toLocaleString('en-IN')} / {data.scorecard.works_total.toLocaleString('en-IN')}</div>
                 </div>
               </div>
               <div className="comparison-row">
-                <span>Completion rate</span>
+                <span>{t('Completion rate')}</span>
                 <span className="value num">{data.scorecard.completion_rate != null ? `${data.scorecard.completion_rate.toFixed(0)}%` : '—'}</span>
               </div>
               <div className="comparison-row">
-                <span>Breach rate</span>
+                <span>{t('Breach rate')}</span>
                 <span className="value num">{(data.breach_rate * 100).toFixed(0)}%</span>
               </div>
               <div className="comparison-row">
-                <span>District authority</span>
-                <span className="value num">{data.district_authority.join(', ') || '—'}</span>
+                <span>{t('District authority')}</span>
+                <span className="value num">{data.district_authority.map(td).join(', ') || '—'}</span>
               </div>
               <div className="comparison-row">
-                <span>Member of Parliament</span>
-                <span className="value num">{data.mps.length ? `${data.mps[0].mp_name} · ${data.mps[0].constituency}` : '—'}</span>
+                <span>{t('role.mp')}</span>
+                <span className="value num">{data.mps.length ? `${td(data.mps[0].mp_name)} · ${td(data.mps[0].constituency)}` : '—'}</span>
               </div>
 
-              <h3>By tag</h3>
+              <h3>{t('By tag')}</h3>
               <div className="tag-breakdown">
                 {Object.entries(data.tag_breakdown).map(([tag, n]) => (
                   <div key={tag} className="tag-breakdown-row"><TagChip tag={tag} /><span className="num">{n.toLocaleString('en-IN')}</span></div>
@@ -242,13 +246,13 @@ export function DistrictMapView() {
                     dataByKey={anomalyHeatByKey}
                     backdropGeojson={districtGeojson}
                     overlayGeojson={districtGeojson}
-                    tooltipRenderer={(risk, name) => `<strong>${name}</strong><br/>${risk.anomaly_count.toLocaleString('en-IN')} anomal${risk.anomaly_count === 1 ? 'y' : 'ies'}`}
+                    tooltipRenderer={(risk, name) => `<strong>${name}</strong><br/>${t(risk.anomaly_count === 1 ? '{n} anomaly' : '{n} anomalies', { n: risk.anomaly_count.toLocaleString('en-IN') })}`}
                   />
                   <div className="map-legend">
                     <div className="map-legend-ramp" />
-                    <div className="map-legend-labels"><span>Fewer anomalies</span><span>More anomalies</span></div>
-                    <div className="map-legend-swatch"><span className="map-legend-line" /> District boundary</div>
-                    <div className="map-legend-swatch"><span className="map-legend-line map-legend-line-dashed" /> Parliamentary constituency</div>
+                    <div className="map-legend-labels"><span>{t('Fewer anomalies')}</span><span>{t('More anomalies')}</span></div>
+                    <div className="map-legend-swatch"><span className="map-legend-line" /> {t('District boundary')}</div>
+                    <div className="map-legend-swatch"><span className="map-legend-line map-legend-line-dashed" /> {t('Parliamentary constituency')}</div>
                   </div>
                 </>
               ) : districtGeojson ? (
@@ -274,17 +278,17 @@ export function DistrictMapView() {
             </div>
 
             <div className="map-drill-findings">
-              <h3>Pending action ({filteredQueue.length})</h3>
+              <h3>{t('Pending action ({n})', { n: filteredQueue.length })}</h3>
               <div className="filters" style={{ marginBottom: 10 }}>
                 <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)}>
-                  <option value="">All severities</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
+                  <option value="">{t('All severities')}</option>
+                  <option value="high">{t('High')}</option>
+                  <option value="medium">{t('Medium')}</option>
+                  <option value="low">{t('Low')}</option>
                 </select>
               </div>
               <input
-                type="search" className="queue-search-input" placeholder="Search works…" aria-label="Search works"
+                type="search" className="queue-search-input" placeholder={t('Search works…')} aria-label={t('Search works')}
                 value={queueSearch} onChange={(e) => setQueueSearch(e.target.value)}
               />
               {filteredQueue.length ? (
@@ -299,13 +303,13 @@ export function DistrictMapView() {
                       )}
                     >
                       <div className="queue-item-top">
-                        <span className="queue-item-title">{item.constituency}</span>
+                        <span className="queue-item-title">{td(item.constituency)}</span>
                         <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
                       </div>
-                      {item.work_description && <p className="queue-item-desc">{item.work_description}</p>}
+                      {item.work_description && <p className="queue-item-desc">{td(item.work_description)}</p>}
                       <div className="queue-item-chips">
                         <SeverityChip severity={item.max_severity} />
-                        {item.tags.map((t) => <TagChip key={t} tag={t} />)}
+                        {item.tags.map((tag) => <TagChip key={tag} tag={tag} />)}
                       </div>
                     </button>
                   ))}

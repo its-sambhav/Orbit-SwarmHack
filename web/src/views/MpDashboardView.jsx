@@ -11,6 +11,7 @@ import { TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView } from '../components/StateViews'
+import { useLanguage } from '../i18n'
 
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
@@ -33,6 +34,7 @@ export function MpDashboardView() {
   const dateFrom = params.get('date_from') || null
   const dateTo = params.get('date_to') || null
   const navigate = useNavigate()
+  const { t, td } = useLanguage()
   const [data, setData] = useState(null)
   const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
@@ -69,26 +71,26 @@ export function MpDashboardView() {
     { label: 'Recommended', value: scorecard.recommended_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.recommended) },
     { label: 'Sanctioned', value: scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.sanctioned) },
     { label: 'Completed', value: scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.completed) },
-    { label: 'Works flagged', value: scorecard.works_flagged.toLocaleString('en-IN'), sub: `of ${scorecard.works_total.toLocaleString('en-IN')} total works` },
+    { label: 'Works flagged', value: scorecard.works_flagged.toLocaleString('en-IN'), sub: t('of {n} total works', { n: scorecard.works_total.toLocaleString('en-IN') }) },
     {
       label: 'Fund utilisation',
       value: scorecard.allocated ? `${((scorecard.paid / scorecard.allocated) * 100).toFixed(0)}%` : '—',
-      sub: `${formatRupees(scorecard.paid)} of ${formatRupees(scorecard.allocated)} allocated`,
+      sub: t('{paid} of {allocated} allocated', { paid: formatRupees(scorecard.paid), allocated: formatRupees(scorecard.allocated) }),
     },
     {
       label: 'Completion rate',
       value: scorecard.completion_rate != null ? `${scorecard.completion_rate.toFixed(0)}%` : '—',
-      sub: `${scorecard.completed_count.toLocaleString('en-IN')} of ${scorecard.sanctioned_count.toLocaleString('en-IN')} sanctioned works`,
+      sub: t('{completed} of {sanctioned} sanctioned works', { completed: scorecard.completed_count.toLocaleString('en-IN'), sanctioned: scorecard.sanctioned_count.toLocaleString('en-IN') }),
     },
     {
       label: 'Pending works',
       value: scorecard.ongoing.toLocaleString('en-IN'),
-      sub: 'Sanctioned, not yet completed',
+      sub: t('Sanctioned, not yet completed'),
     },
     {
       label: 'Avg. cost / completed work',
       value: formatRupees(scorecard.completed_count ? scorecard.completed / scorecard.completed_count : 0),
-      sub: `Across ${scorecard.completed_count.toLocaleString('en-IN')} completed works`,
+      sub: t('Across {n} completed works', { n: scorecard.completed_count.toLocaleString('en-IN') }),
     },
   ]
 
@@ -107,7 +109,7 @@ export function MpDashboardView() {
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle={`Member of Parliament · ${data.mp_name}`}
+        subtitle={t('Member of Parliament · {mp}', { mp: td(data.mp_name) })}
         searchIndex={[]}
         showSearch={false}
         profileName={data.mp_name}
@@ -129,9 +131,9 @@ export function MpDashboardView() {
 
         <div className="map-drill-header" style={{ marginBottom: 18 }}>
           <Breadcrumb items={[{ label: data.mp_name }]} />
-          <h1 style={{ margin: '4px 0 2px' }}>{data.mp_name}</h1>
+          <h1 style={{ margin: '4px 0 2px' }}>{td(data.mp_name)}</h1>
           <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>
-            {data.constituency}, {data.state} · {scopeLabel(scope)} · {data.status}
+            {td(data.constituency)}, {td(data.state)} · {t(scopeLabel(scope))} · {t(data.status)}
           </div>
         </div>
 
@@ -146,14 +148,14 @@ export function MpDashboardView() {
 
         <button type="button" className="mospi-map-cta" onClick={() => navigate(mapUrl)}>
           <div>
-            <div className="mospi-map-cta-title">View the constituency map</div>
-            <div className="mospi-map-cta-sub">{data.constituency}, {scopeLabel(scope)}</div>
+            <div className="mospi-map-cta-title">{t('View the constituency map')}</div>
+            <div className="mospi-map-cta-sub">{td(data.constituency)}, {t(scopeLabel(scope))}</div>
           </div>
           <span className="mospi-map-cta-arrow">→</span>
         </button>
 
         <div className="mospi-charts-grid">
-          <ProjectLifecycleBarChart title={`Project Lifecycle & Risk Breakdown — ${data.constituency}`} sectors={lifecycleSectors} />
+          <ProjectLifecycleBarChart title={t('Project Lifecycle & Risk Breakdown — {name}', { name: td(data.constituency) })} sectors={lifecycleSectors} />
           <DonutCard title="Findings by tag" items={tagItems} colorFor={tagColor} />
           <RankChart title="Works by pipeline stage" items={stageItems} />
         </div>

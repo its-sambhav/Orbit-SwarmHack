@@ -11,6 +11,7 @@ import { SeverityChip, TagChip, TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
+import { useLanguage } from '../i18n'
 
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
@@ -32,6 +33,7 @@ export function AgencyView() {
   const dateFrom = params.get('date_from') || null
   const dateTo = params.get('date_to') || null
   const navigate = useNavigate()
+  const { t, td } = useLanguage()
   const [data, setData] = useState(null)
   const [meta, setMeta] = useState(null)
   const [error, setError] = useState(null)
@@ -87,22 +89,22 @@ export function AgencyView() {
     {
       label: 'Avg. cost / completed work',
       value: formatRupees(data.scorecard.completed_count ? data.scorecard.completed / data.scorecard.completed_count : 0),
-      sub: `Across ${data.scorecard.completed_count.toLocaleString('en-IN')} completed works`,
+      sub: t('Across {n} completed works', { n: data.scorecard.completed_count.toLocaleString('en-IN') }),
     },
     {
       label: 'Completion rate',
       value: completionRate != null ? `${completionRate.toFixed(0)}%` : '—',
-      sub: `${data.scorecard.delayed.toLocaleString('en-IN')} delayed`,
+      sub: t('{n} delayed', { n: data.scorecard.delayed.toLocaleString('en-IN') }),
     },
     { label: 'Sanctioned', value: data.scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.sanctioned) },
     {
       label: 'Works flagged',
       value: data.scorecard.works_flagged.toLocaleString('en-IN'),
-      sub: `of ${data.scorecard.works_total.toLocaleString('en-IN')} total works`,
+      sub: t('of {n} total works', { n: data.scorecard.works_total.toLocaleString('en-IN') }),
     },
     { label: 'Completed', value: data.scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.completed) },
     { label: 'Paid', value: data.scorecard.paid_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.paid) },
-    { label: 'Pending works', value: data.scorecard.ongoing.toLocaleString('en-IN'), sub: 'Sanctioned, not yet completed' },
+    { label: 'Pending works', value: data.scorecard.ongoing.toLocaleString('en-IN'), sub: t('Sanctioned, not yet completed') },
   ]
 
   const tagItems = Object.entries(data.tag_breakdown).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }))
@@ -121,7 +123,7 @@ export function AgencyView() {
     <div className="mospi-page">
       <MospiNav
         scope={scope}
-        subtitle={`Implementing Agency · ${data.agency}`}
+        subtitle={t('Implementing Agency · {agency}', { agency: td(data.agency) })}
         searchIndex={[]}
         showSearch={false}
         profileName={data.agency}
@@ -133,9 +135,9 @@ export function AgencyView() {
         <div className="map-drill-view" style={{ padding: 0, height: '100%' }}>
           <div className="map-drill-header">
             <Breadcrumb items={[{ label: data.agency }]} />
-            <h1 style={{ margin: '4px 0 2px' }}>{data.agency}</h1>
+            <h1 style={{ margin: '4px 0 2px' }}>{td(data.agency)}</h1>
             <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>
-              Implementing Agency · {scopeLabel(scope)}
+              {t('Implementing Agency · {scope}', { scope: t(scopeLabel(scope)) })}
             </div>
             <div className="report-toolbar">
               <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
@@ -148,7 +150,7 @@ export function AgencyView() {
           </div>
 
           <p className="panel-note" style={{ margin: '0 24px 16px', padding: '10px 14px', background: 'var(--sev-low-bg)', color: 'var(--ink)', borderRadius: 'var(--radius-md)' }}>
-            {data.data_caveat}
+            {td(data.data_caveat)}
           </p>
 
           <div className="mospi-stats">
@@ -161,17 +163,17 @@ export function AgencyView() {
           </div>
 
           <div className="mospi-charts-grid">
-            <ProjectLifecycleBarChart title={`Project Lifecycle & Risk Breakdown — ${data.agency}`} sectors={lifecycleSectors} />
+            <ProjectLifecycleBarChart title={t('Project Lifecycle & Risk Breakdown — {name}', { name: td(data.agency) })} sectors={lifecycleSectors} />
             <DonutCard title="Findings by tag" items={tagItems} colorFor={tagColor} />
             <RankChart title="Works by stage" items={stageItems} />
           </div>
 
           <div className="map-drill-row map-drill-row-2col">
             <div className="map-drill-details">
-              <h3>States touched</h3>
-              {data.states_touched.map((s) => <p key={s} className="fact-line">{s}</p>)}
+              <h3>{t('States touched')}</h3>
+              {data.states_touched.map((s) => <p key={s} className="fact-line">{td(s)}</p>)}
 
-              <h3>By tag</h3>
+              <h3>{t('By tag')}</h3>
               <div className="tag-breakdown">
                 {Object.entries(data.tag_breakdown).map(([tag, n]) => (
                   <div key={tag} className="tag-breakdown-row"><TagChip tag={tag} /><span className="num">{n.toLocaleString('en-IN')}</span></div>
@@ -180,17 +182,17 @@ export function AgencyView() {
             </div>
 
             <div className="map-drill-findings" id="agency-assigned-works">
-              <h3>Assigned works ({filteredQueue.length})</h3>
+              <h3>{t('Assigned works ({n})', { n: filteredQueue.length })}</h3>
               <div className="filters" style={{ marginBottom: 10 }}>
                 <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)}>
-                  <option value="">All severities</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
+                  <option value="">{t('All severities')}</option>
+                  <option value="high">{t('High')}</option>
+                  <option value="medium">{t('Medium')}</option>
+                  <option value="low">{t('Low')}</option>
                 </select>
                 <select value={stateFilter} onChange={(e) => setStateFilter(e.target.value)}>
-                  <option value="">All states</option>
-                  {data.states_touched.map((s) => <option key={s} value={s}>{s}</option>)}
+                  <option value="">{t('All states')}</option>
+                  {data.states_touched.map((s) => <option key={s} value={s}>{td(s)}</option>)}
                 </select>
               </div>
               {filteredQueue.length ? (
@@ -202,14 +204,14 @@ export function AgencyView() {
                       onClick={() => navigate(`/work/${item.work_number}?scope_house=${encodeURIComponent(item.scope_house)}&scope_tenure=${encodeURIComponent(item.scope_tenure)}&role=agency&role_name=${encodeURIComponent(data.agency)}`)}
                     >
                       <div className="queue-item-top">
-                        <span className="queue-item-title">{item.constituency}, {item.state}</span>
+                        <span className="queue-item-title">{td(item.constituency)}, {td(item.state)}</span>
                         <span className="queue-item-amount num">{formatRupees(item.total_exposure)}</span>
                       </div>
-                      {item.headline && <p className="queue-item-headline">{item.headline}</p>}
-                      <div className="queue-item-meta">{[item.mp_name, `Work #${item.work_number}`, item.routed_to].filter(Boolean).join(' · ')}</div>
+                      {item.headline && <p className="queue-item-headline">{td(item.headline)}</p>}
+                      <div className="queue-item-meta">{[item.mp_name && td(item.mp_name), t('Work #{n}', { n: item.work_number }), item.routed_to && t(item.routed_to)].filter(Boolean).join(' · ')}</div>
                       <div className="queue-item-chips">
                         <SeverityChip severity={item.max_severity} />
-                        {item.tags.map((t) => <TagChip key={t} tag={t} />)}
+                        {item.tags.map((tag) => <TagChip key={tag} tag={tag} />)}
                       </div>
                     </button>
                   ))}

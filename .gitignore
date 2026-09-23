@@ -9,3 +9,6 @@ web/node_modules/
 web/dist/
 web/screenshot*.mjs
 web/inspect.mjs
+
+# tooling
+.planmap/

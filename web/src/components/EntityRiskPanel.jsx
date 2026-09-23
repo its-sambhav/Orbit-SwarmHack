@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLanguage } from '../i18n'
 
 // per-row badge colour - a scan aid only (GitHub-label-style), not a
 // data-encoding channel: the entity's name and its 3 numbers are always
@@ -27,6 +28,10 @@ const SORTS = {
   alpha: { label: 'Alphabetical', fn: (a, b) => a.name.localeCompare(b.name) },
 }
 
+// entityType/entityLabel/title arrive as plain English from the caller and
+// are translated here; entity NAMES (states, districts, agencies) are data
+// and stay as the API returned them.
+
 /**
  * A searchable, sortable, scrollable ranked list of sub-jurisdictions
  * (states under MoSPI, districts under a state, agencies under a district)
@@ -48,6 +53,7 @@ const SORTS = {
  * onSelect(entity): click handler, receives one entity from the array as-is.
  */
 export function EntityRiskPanel({ entities, entityType, entityLabel, title, onSelect }) {
+  const { t, td } = useLanguage()
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState('risk')
   const listRef = useRef(null)
@@ -68,26 +74,26 @@ export function EntityRiskPanel({ entities, entityType, entityLabel, title, onSe
 
   return (
     <div className="chart-card">
-      <h3>{title || `${entityType} by risk`} ({entities ? entities.length : 0})</h3>
+      <h3>{title ? t(title) : t('{type} by risk', { type: t(entityType) })} ({entities ? entities.length : 0})</h3>
       <div className="filters" style={{ marginBottom: 10 }}>
         <input
-          type="search" placeholder={`Search ${entityType.toLowerCase()}…`} value={search}
+          type="search" placeholder={t('Search {type}…', { type: t(entityType).toLowerCase() })} value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-          {Object.entries(SORTS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          {Object.entries(SORTS).map(([k, v]) => <option key={k} value={k}>{t(v.label)}</option>)}
         </select>
       </div>
       {filtered.length ? (
         <>
           <div className="states-panel-head">
-            <span /><span>{entityLabel || singular(entityType)}</span><span>Total</span><span>Flagged</span><span>Risk %</span>
+            <span /><span>{t(entityLabel || singular(entityType))}</span><span>{t('Total')}</span><span>{t('Flagged')}</span><span>{t('Risk %')}</span>
           </div>
           <div className="rank-list states-panel-list" ref={listRef}>
             {filtered.map((e) => (
               <button key={e.name} type="button" className="state-row" onClick={() => onSelect(e)}>
                 <span className="state-row-swatch" style={{ background: badgeColor(e.name) }} />
-                <span className="state-row-name">{e.name}</span>
+                <span className="state-row-name">{td(e.name)}</span>
                 <span className="state-row-stat">{e.works_total.toLocaleString('en-IN')}</span>
                 <span className="state-row-stat">{e.works_flagged.toLocaleString('en-IN')}</span>
                 <span className="state-row-pct">{(e.breach_rate * 100).toFixed(0)}%</span>
@@ -97,7 +103,7 @@ export function EntityRiskPanel({ entities, entityType, entityLabel, title, onSe
           </div>
         </>
       ) : (
-        <div className="states-panel-empty">No {entityType.toLowerCase()} match "{search}".</div>
+        <div className="states-panel-empty">{t('No {type} match "{query}".', { type: t(entityType).toLowerCase(), query: search })}</div>
       )}
     </div>
   )

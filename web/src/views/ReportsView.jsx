@@ -7,25 +7,27 @@ import { useLanguage } from '../i18n'
 
 const LEVEL_LABEL = { overview: 'Overview', india: 'India (map)', state: 'State', district: 'District' }
 
-function fmtRange(dateFrom, dateTo) {
-  if (!dateFrom && !dateTo) return 'All time'
-  return `${dateFrom ? formatDate(dateFrom) : '—'} to ${dateTo ? formatDate(dateTo) : '—'}`
+function fmtRange(dateFrom, dateTo, t) {
+  if (!dateFrom && !dateTo) return t('All time')
+  return t('{from} to {to}', { from: dateFrom ? formatDate(dateFrom) : '—', to: dateTo ? formatDate(dateTo) : '—' })
 }
 
 // a report's summary is whatever page generated it snapshotted (funnel or
 // scorecard shape both show up here) - render the fields that are actually
 // present rather than assuming one fixed shape.
 function SummaryLine({ label, value, isAmount }) {
+  const { t } = useLanguage()
   if (value === undefined || value === null) return null
   return (
     <div className="comparison-row">
-      <span>{label}</span>
+      <span>{t(label)}</span>
       <span className="value num">{isAmount ? formatRupees(value) : typeof value === 'number' ? value.toLocaleString('en-IN') : value}</span>
     </div>
   )
 }
 
 function ReportCard({ report, onDelete }) {
+  const { t } = useLanguage()
   const s = report.summary || {}
   return (
     <div className="chart-card">
@@ -33,19 +35,19 @@ function ReportCard({ report, onDelete }) {
         <div>
           <h3 style={{ marginBottom: 2 }}>{report.title}</h3>
           <div className="queue-item-meta">
-            {LEVEL_LABEL[report.level] || report.level} · {report.scope} · Generated {formatDate(report.created_at)}
+            {t(LEVEL_LABEL[report.level] || report.level)} · {report.scope} · {t('Generated {date}', { date: formatDate(report.created_at) })}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           {report.has_pdf && (
-            <a className="btn-link" style={{ textDecoration: 'none', marginTop: 0 }} href={`/api/reports/${report.id}/pdf`}>Download PDF</a>
+            <a className="btn-link" style={{ textDecoration: 'none', marginTop: 0 }} href={`/api/reports/${report.id}/pdf`}>{t('Download PDF')}</a>
           )}
-          <button type="button" className="btn-link" onClick={() => onDelete(report.id)}>Delete</button>
+          <button type="button" className="btn-link" onClick={() => onDelete(report.id)}>{t('Delete')}</button>
         </div>
       </div>
       <div className="comparison-row">
-        <span>Date range covered</span>
-        <span className="value num">{fmtRange(report.date_from, report.date_to)}</span>
+        <span>{t('Date range covered')}</span>
+        <span className="value num">{fmtRange(report.date_from, report.date_to, t)}</span>
       </div>
       <SummaryLine label="Total works" value={s.total_works ?? s.works_total} />
       <SummaryLine label="Works flagged" value={s.works_flagged} />
@@ -80,7 +82,7 @@ export function ReportsView() {
   return (
     <div className="mospi-page">
       <MospiNav
-        subtitle="MoSPI · Reports"
+        subtitle={t('MoSPI · Reports')}
         searchIndex={[]}
         drawerLinks={[
           { label: 'Overview', onClick: () => navigate('/mospi') },
@@ -93,7 +95,7 @@ export function ReportsView() {
       <div className="mospi-body">
         <h1 className="mospi-page-title">{t('drawer.reports')}</h1>
         <p className="mospi-page-sub">
-          Snapshots generated from the Overview and Map pages - each one is frozen to the numbers and date range at the moment it was made.
+          {t('Snapshots generated from the Overview and Map pages - each one is frozen to the numbers and date range at the moment it was made.')}
         </p>
 
         {reports === null ? (
