@@ -188,8 +188,8 @@ def demo():
     """Offline self-check for the validator (the part with real branching
     logic) - doesn't need OPENROUTER_API_KEY or the network."""
     sample_finding = {
-        "detector": "SANCTION_DELAY", "tag": "TIME DELAY", "severity": "high", "routed_to": "District IDA",
-        "evidence": {"observed": {"sanction_delay_days": 192}, "threshold": {"guideline_days": 45},
+        "detector": "DELAY_IN_SANCTION", "tag": "Delay in Sanction", "severity": "medium", "routed_to": "District IDA",
+        "evidence": {"observed": {"days": 192}, "threshold": {"guideline_days": 45},
                      "peer_benchmark": None, "deviation": "sanctioned 192 days after recommendation"},
     }
 

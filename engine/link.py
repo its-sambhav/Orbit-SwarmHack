@@ -7,11 +7,51 @@ recommended alone - completed/expenditure are always subsets of sanctioned,
 but sanctioned has ~0.5% genuine orphans with no recommended row at all, and
 rooting at recommended would silently drop them.
 """
+import json
+
 import pandas as pd
 
 from engine.paths import DATA_PROCESSED
 
 WORK_KEY = ["WORK_RECOMMENDATION_DTL_ID", "SCOPE_HOUSE", "SCOPE_TENURE"]
+COVERAGE_PATH = DATA_PROCESSED / "_join_coverage.json"
+
+
+def load_payment_rows() -> pd.DataFrame:
+    """Row-level payments (one row per disbursement). The spine only keeps
+    per-work aggregates; payment-timing and agency-concentration detectors
+    need the individual rows - the aggregate's exp_top_ia/exp_top_vendor
+    come from the single largest row and mislabel multi-vendor works."""
+    return pd.read_parquet(DATA_PROCESSED / "expenditure.parquet")
+
+
+def orphan_rates(rec: pd.DataFrame, san: pd.DataFrame, comp: pd.DataFrame, exp: pd.DataFrame) -> dict:
+    """Share of each file's rows whose work has no parent row upstream."""
+    def orphan(child, parent):
+        keys = parent[WORK_KEY].drop_duplicates()
+        m = child[WORK_KEY].merge(keys, on=WORK_KEY, how="left", indicator=True)
+        return round(float((m["_merge"] == "left_only").mean() * 100), 4) if len(m) else 0.0
+    return {
+        "sanctioned_without_recommendation_pct": orphan(san, rec),
+        "completed_without_sanction_pct": orphan(comp, san),
+        "payments_without_sanction_pct": orphan(exp, san),
+        "rows": {"recommended": len(rec), "sanctioned": len(san), "completed": len(comp), "payments": len(exp)},
+    }
+
+
+def check_coverage(rates: dict, max_increase_pp: float) -> None:
+    """Fails the run if any orphan rate jumped by more than max_increase_pp
+    percentage points since the last run - a sign a join key broke upstream."""
+    previous = json.loads(COVERAGE_PATH.read_text(encoding="utf-8")) if COVERAGE_PATH.exists() else None
+    for name, pct in rates.items():
+        if name == "rows":
+            continue
+        prev = previous.get(name) if previous else None
+        print(f"  join coverage: {name} = {pct:.3f}%" + (f" (was {prev:.3f}%)" if prev is not None else ""))
+        if prev is not None and pct - prev > max_increase_pp:
+            raise RuntimeError(f"join coverage: {name} jumped {prev:.3f}% -> {pct:.3f}% "
+                               f"(> {max_increase_pp} pp) - check the source files before trusting this run")
+    COVERAGE_PATH.write_text(json.dumps(rates, indent=2), encoding="utf-8")
 
 
 def prefixed(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
@@ -64,10 +104,14 @@ def coverage(numerator_mask: pd.Series, denominator_mask: pd.Series) -> tuple[fl
 
 
 def run() -> pd.DataFrame:
+    from engine.detectors import load_config
     rec = dedup_recommended(pd.read_parquet(DATA_PROCESSED / "recommended.parquet"))
     san = pd.read_parquet(DATA_PROCESSED / "sanctioned.parquet")
     comp = pd.read_parquet(DATA_PROCESSED / "completed.parquet")
-    exp_agg = aggregate_expenditure(pd.read_parquet(DATA_PROCESSED / "expenditure.parquet"))
+    exp_rows = load_payment_rows()
+    check_coverage(orphan_rates(rec, san, comp, exp_rows),
+                   load_config().get("link", {}).get("max_orphan_rate_increase_pp", 1.0))
+    exp_agg = aggregate_expenditure(exp_rows)
 
     all_keys = pd.concat([rec[WORK_KEY], san[WORK_KEY]]).drop_duplicates().reset_index(drop=True)
 

@@ -39,6 +39,12 @@ from api import alerts as alerts_store
 from api import auth
 from api.sector_categories import CATEGORIES
 from engine import rollup
+from engine.detectors import load_tags
+
+TAG_REGISTRY = load_tags()["tags"]
+# every delay-type tag (the "timing" family in config/tags.yaml) - what the
+# dashboards' "delayed" counts mean
+TIMING_TAGS = {t["name"] for t in TAG_REGISTRY.values() if t["family"] == "timing"}
 
 
 @asynccontextmanager
@@ -106,11 +112,10 @@ def stage_counts(sp: pd.DataFrame) -> dict:
 
 
 def delayed_count(findings_slice: pd.DataFrame) -> int:
-    """Distinct works carrying the TIME DELAY tag within an already-scoped
-    findings slice - the real, already-computed delay signal (see
-    config/detectors.yaml's 6 time-delay detectors), not a second invented
-    delay definition."""
-    return int(findings_slice.loc[findings_slice["tag"] == "TIME DELAY", "work_number"].nunique())
+    """Distinct works carrying any timing-family tag (Delay in Sanction,
+    Delay in Completion, ... - config/tags.yaml) within an already-scoped
+    findings slice, not a second invented delay definition."""
+    return int(findings_slice.loc[findings_slice["tag"].isin(TIMING_TAGS), "work_number"].nunique())
 
 
 def category_breakdown(sp: pd.DataFrame, wr: pd.DataFrame) -> list[dict]:
@@ -165,7 +170,9 @@ def get_meta():
         "as_of_date": s.cfg["as_of_date"],
         "scopes": [{"value": v, "label": SCOPE_LABELS[v]} for v in SCOPES],
         "demo_scopes": s.demo_scopes,
-        "tags": sorted(s.findings["tag"].unique().tolist()),
+        "tags": [t["name"] for t in TAG_REGISTRY.values()],
+        "tag_registry": [{"key": k, "name": t["name"], "source": t["source"], "verified": t["verified"],
+                          "family": t["family"]} for k, t in TAG_REGISTRY.items()],
         "severities": ["low", "medium", "high"],
         "stages": sorted(s.findings["stage"].unique().tolist()),
         "detectors": sorted(s.findings["detector"].unique().tolist()),
@@ -176,8 +183,7 @@ def get_meta():
             "total_states": int(in_scope_spine["STATE_NAME"].nunique()),
             "breach_rate_all_scope": round(len(s.work_risk) / len(s.spine) * 100, 1),
             "breach_rate_in_scope": round(len(in_scope_flagged) / len(in_scope_spine) * 100, 1),
-            "queue_size": min(s.cfg["queue"]["max_queue_size"],
-                               int((in_scope_flagged["total_exposure"] >= s.cfg["queue"]["materiality_floor"]).sum())),
+            "queue_size": int(s.work_risk["in_queue"].sum()) if "in_queue" in s.work_risk else None,
             "materiality_floor": s.cfg["queue"]["materiality_floor"],
         },
         # bounds for the date-range filter (Overview + Map's India/State/
@@ -347,7 +353,12 @@ def get_queue(
         stage_works = set(s.findings.loc[s.findings["stage"] == stage, "work_number"])
         wr = wr[wr["work_number"].isin(stage_works)]
 
-    wr = wr.sort_values("priority", ascending=False)
+    # priority decides the order; the isolation-forest anomaly score only
+    # reorders works inside the same priority band (engine/risk_model.py)
+    band = s.cfg["queue"]["anomaly_reorder_band"]
+    wr = wr.assign(_band=np.floor(wr["priority"] / band))
+    order = ["_band"] + (["anomaly_score"] if "anomaly_score" in wr else []) + ["priority"]
+    wr = wr.sort_values(order, ascending=False, na_position="last")
     total = len(wr)
     page = wr.iloc[offset:offset + limit]
 
@@ -366,6 +377,7 @@ def get_queue(
             "routed_to": routed.get(key, None),
             "headline": headline.get(key, None),
             "work_description": row.get("work_description"),
+            "lifecycle_stage": row.get("lifecycle_stage"),
         })
     return clean({"scope": scope, "total": total, "offset": offset, "limit": limit, "items": items})
 
@@ -598,19 +610,12 @@ def get_work_ai_assessment(
     work_number: str, scope_house: str, scope_tenure: str,
     claims: dict = Depends(auth.get_current_claims),
 ):
-    """Composite AI read on one work: the rule-based findings already on
-    file, this same work's own ML-predicted delay risk (engine/predictive.py,
-    a specific "will this be late" question), a much broader risk +
-    anomaly read (engine/risk_model.py - ~21 features engineered from raw
-    spine columns across every lifecycle stage, trained against whether
-    the work was ever flagged high-severity by any of the 13 real
-    detectors, not just a delay guideline - independent of both the delay
-    model and the rule findings, with driver explanations computed from
-    the model's own learned feature importances, not canned text), and the
-    constrained LLM narrative for whichever finding is most severe. Four
-    independently-built signals, composited into the one read a reviewing
-    officer actually wants - not four separate calls the frontend has to
-    stitch together."""
+    """Composite read on one work: the rule-based findings already on file,
+    this work's own predicted delay risk (engine/predictive.py), the
+    rule-agreement and anomaly scores (engine/risk_model.py - ranking aids
+    that restate the rules, not an independent risk signal), and the
+    constrained LLM narrative for the most severe finding. A value the models
+    could not compute comes back as null, never a stand-in number."""
     s = get_store()
     work = s.work(work_number, scope_house, scope_tenure)
     if work is None:
@@ -618,17 +623,17 @@ def get_work_ai_assessment(
     auth.check_work_access(claims, work)
     findings = s.findings_for_work(work_number, scope_house, scope_tenure)
 
-    rec_date = work.get("rec_RECOMMENDATION_DATE")
-    month = rec_date.month if pd.notna(rec_date) else 6
-    amount = work.get("rec_RECOMMENDED_AMOUNT")
-    if amount is None or (isinstance(amount, float) and math.isnan(amount)):
-        amount = work.get("SANCTION_AMOUNT") or 500000
-    activity = work.get("rec_ACTIVITY_NAME_CLEAN") or work.get("san_ACTIVITY_NAME_CLEAN") or "General"
+    def present(v):
+        return v if v is not None and not (isinstance(v, float) and math.isnan(v)) and v is not pd.NaT else None
 
+    rec_date = work.get("rec_RECOMMENDATION_DATE")
+    amount = present(work.get("rec_RECOMMENDED_AMOUNT")) or present(work.get("SANCTION_AMOUNT"))
     prediction = predict_work_risk(
-        amount=float(amount), state=work.get("STATE_NAME") or "", activity=activity, month=month,
+        amount=amount, state=present(work.get("STATE_NAME")),
+        activity=present(work.get("rec_ACTIVITY_NAME_CLEAN")) or present(work.get("san_ACTIVITY_NAME_CLEAN")),
+        month=rec_date.month if pd.notna(rec_date) else None,
     )
-    risk_assessment = predict_risk_model(work)
+    rule_agreement = predict_risk_model(work)
 
     severity_rank = {"high": 3, "medium": 2, "low": 1}
     top_finding = max(findings, key=lambda f: severity_rank.get(f["severity"], 0), default=None)
@@ -641,7 +646,7 @@ def get_work_ai_assessment(
             for f in findings
         ],
         "predicted_delay_risk": prediction,
-        "risk_assessment": risk_assessment,
+        "rule_agreement": rule_agreement,
         "top_finding_narrative": narrative,
     })
 
@@ -769,7 +774,7 @@ def get_state(
     if date_to:
         f = f[f["date"] <= pd.Timestamp(date_to)]
     tag_breakdown = f["tag"].value_counts().to_dict()
-    delayed_by_district = f.loc[f["tag"] == "TIME DELAY"].groupby("district")["work_number"].nunique()
+    delayed_by_district = f.loc[f["tag"].isin(TIMING_TAGS)].groupby("district")["work_number"].nunique()
 
     districts = dr[dr["state"].str.casefold() == state_name.casefold()].sort_values("risk_score", ascending=False)
     district_items = []
@@ -1065,7 +1070,7 @@ def get_district(
     # exp_top_ia is only populated once a work has any expenditure (~70% of
     # works nationally), so agency_sp is a real subset of sp, not a bug.
     agency_sp = sp[sp["exp_top_ia"].notna()]
-    delayed_by_agency = (wr[wr["tags"].apply(lambda t: "TIME DELAY" in t)].groupby("exp_top_ia")["work_number"].nunique()
+    delayed_by_agency = (wr[wr["tags"].apply(lambda t: any(x in TIMING_TAGS for x in t))].groupby("exp_top_ia")["work_number"].nunique()
                           if len(wr) else pd.Series(dtype="int64"))
     agency_performance = []
     if len(agency_sp):

@@ -5,17 +5,12 @@ import { useLanguage } from '../i18n'
 import { MospiNav } from '../components/MospiNav'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { SeverityChip, TagChip } from '../components/Chips'
+import { TAG_NAMES } from '../tags'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
-// the fixed, canonical tag vocabulary (config/detectors.yaml's 8 distinct
-// tag values across all 13 detectors) - hardcoded the same way SCOPES above
-// and every other filter dropdown in this app already is, since detectors
-// are a build-time config, not data to fetch.
-const TAGS = [
-  'GHOST ASSET', 'TIME DELAY', 'COST OUTLIER', 'DUPLICATION',
-  'STATUTORY COMPLIANCE', 'OVER ALLOCATION', 'AGENCY CONCENTRATION', 'DATA INTEGRITY',
-]
+// the fixed tag vocabulary from config/tags.yaml (mirrored in ../tags.js)
+const TAGS = TAG_NAMES
 const PAGE_SIZE = 50
 
 export const ANOMALIES_LINK = (navigate) => ({ label: 'Anomalies', onClick: () => navigate('/anomalies') })

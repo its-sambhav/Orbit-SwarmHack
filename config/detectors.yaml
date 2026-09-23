@@ -1,224 +1,339 @@
-# Thresholds and scoring weights for all detectors.
+# Thresholds and scoring for every detector. Tag names/sources/families live
+# in config/tags.yaml; this file holds the numbers.
 #
-# TIME DELAY / GHOST ASSET delay-style detectors no longer use a fixed
-# guideline day-count as their trigger. Measured against the real
-# population (see docs/SCHEMA.md "Flag-rate recalibration"), the MPLADS
-# guidelines themselves (45 days to sanction, 365 to complete) are missed
-# by 28-69% of all real works - hitting the guideline is the norm in this
-# system, not a deviation from it, so gating on it flagged most of the
-# dataset. Each of these now gates on a PERCENTILE of its own real, current
-# population instead (computed fresh every pipeline run - "the norm" is
-# whatever the data actually shows this run, never a hardcoded number) -
-# this is what "deviations from established norms" in the problem
-# statement actually calls for, and it naturally yields a small, meaningful
-# flag rate by construction. `guideline_days` is kept as informational
-# context only (still shown in evidence for reference), not the trigger.
-# confidence is "statistical" for these (peer-relative outlier), not "rule".
+# A flag means "an official should look at this work". It never means fraud.
+# Detection is rule-based or robust-statistical only - the ML in
+# engine/risk_model.py can reorder the queue but never adds, removes or
+# re-grades a flag.
+#
+# Anything marked `verified: false` was not confirmed from the data or from
+# the guideline text available to us - listed in reports/verification_needed.md.
 
-as_of_date: "2026-09-10"   # frozen — matches README snapshot date
+as_of_date: "2026-09-10"   # frozen - matches the data snapshot
+
+# Guideline day counts. Informational context in evidence; the statistical
+# lane gates on peers + floors (delay_gate below), the rule lane on
+# hard_breach below.
+guideline:
+  sanction_days:
+    value: 75
+    verified: false
+    note: >-
+      June 2016 guidelines: sanction within 75 days of recommendation (45 days
+      is the deadline to inform an MP of a rejection - the old config wrongly
+      used 45 as the sanction deadline). Not yet confirmed against the 2023
+      guidelines.
+  completion_days:
+    value: 365
+    verified: false
+    note: "Guidelines para 3.13 - works completed within one year of sanction. Not confirmed against 2023 text."
+
+# Shared statistical delay gate (spec 4.1):
+#   flag when metric > max(P90 of the metric within its peer group, floor)
+# Peer group = state x activity x tenure; if that group has < min_peers
+# works, fall back to state x tenure, then tenure alone. Works younger than
+# min_age_days (since recommendation) are never evaluated.
+delay_gate:
+  peer_levels:
+    - [STATE_NAME, ACTIVITY, SCOPE_TENURE]
+    - [STATE_NAME, SCOPE_TENURE]
+    - [SCOPE_TENURE]
+  min_peers: 30
+  min_age_days: 60
+  severity_percentiles: {low: 90, medium: 95, high: 99}   # raw severity; score.py caps statistical at medium
+  floors:
+    sanction_lag: 180
+    unsanctioned_age: 180
+    open_after_sanction_age: 365
+    completion_lag: 365
+  # Optional: subtract Model Code of Conduct days that fall inside
+  # [recommendation, sanction] from the sanction lag. Off by default -
+  # the windows below are not verified.
+  mcc_adjustment:
+    enabled: false
+    verified: false
+    windows:
+      - ["2019-03-10", "2019-05-26"]   # 2019 general election
+      - ["2024-03-16", "2024-06-06"]   # 2024 general election
+
+# Rule lane (spec 4.2): fixed limits so a very late work is never un-flagged
+# just because its whole state is slow. severity medium; high only when the
+# work's exposure is at least high_exposure or through corroboration.
+hard_breach:
+  sanction_lag_days: 365
+  unsanctioned_age_days: 365
+  open_after_sanction_days: 540
+  high_exposure: 500000
 
 detectors:
-  STALLED_AT_SANCTION:
-    tag: "TIME DELAY"
+  # ---- A. Sanction stage ----
+  DELAY_IN_SANCTION:
+    tag: DELAY_IN_SANCTION
+    enabled: true
     confidence: statistical
-    guideline_days: 45
-    gate_percentile: 90
-    bucket_percentiles: [90, 95, 99]
-    guideline_source: >-
-      MPLADS guideline: sanction expected within 45 days of recommendation.
-      Flagged here for sitting in the slowest 10% of currently-unsanctioned
-      recommendations, not merely for missing the 45-day guideline (69% of
-      this population does).
-
-  SANCTION_DELAY:
-    tag: "TIME DELAY"
+    floor: sanction_lag
+    stage: sanction
+  RECOMMENDATION_PENDING_SANCTION:
+    tag: RECOMMENDATION_PENDING_SANCTION
+    enabled: true
     confidence: statistical
-    guideline_days: 45
-    gate_percentile: 90
-    bucket_percentiles: [90, 95, 99]
-    guideline_source: >-
-      MPLADS guideline: sanction expected within 45 days of recommendation.
-      Flagged here for being in the slowest 10% of actual sanction delays,
-      not merely for missing the 45-day guideline (68% of sanctioned works do).
-
-  STALLED_AT_EXECUTION:
-    tag: "TIME DELAY"
+    floor: unsanctioned_age
+    stage: sanction
+  SANCTIONED_WORK_NOT_TAKEN_UP:
+    tag: SANCTIONED_WORK_NOT_TAKEN_UP
+    enabled: true
     confidence: statistical
-    guideline_days: 365
-    gate_percentile: 90
-    bucket_percentiles: [90, 95, 99]
-    guideline_source: >-
-      MPLADS guideline: work expected complete within 1 year of sanction.
-      Flagged here for sitting in the slowest 10% of currently-uncompleted
-      sanctioned works, not merely for missing the 1-year guideline (45% do).
+    floor: open_after_sanction_age
+    not_started_stages: ["Time Estimation", "Vendor Identification"]
+    stage: execution
 
-  EXECUTION_DELAY:
-    tag: "TIME DELAY"
+  # ---- B. Execution stage ----
+  DELAY_IN_COMPLETION:
+    tag: DELAY_IN_COMPLETION
+    enabled: true
     confidence: statistical
-    guideline_days: 365
-    gate_percentile: 90
-    bucket_percentiles: [90, 95, 99]
-    guideline_source: >-
-      MPLADS guideline: work expected complete within 1 year of sanction.
-      Flagged here for being in the slowest 10% of actual completion times,
-      not merely for missing the 1-year guideline (28% of completions do).
+    floor: completion_lag
+    stage: execution
+  WORK_NOT_COMPLETED:
+    tag: WORK_NOT_COMPLETED
+    enabled: true
+    confidence: statistical
+    floor: open_after_sanction_age
+    no_payment_days: 180
+    stage: execution
+  PAYMENT_WITHOUT_COMPLETION:
+    tag: PAYMENT_WITHOUT_COMPLETION
+    enabled: true
+    confidence: statistical
+    floor: open_after_sanction_age
+    stage: payment
+  PROLONGED_DELAY_SANCTION_LAG:
+    tag: PROLONGED_DELAY_BEYOND_GUIDELINE
+    enabled: true
+    confidence: rule
+    stage: sanction
+  PROLONGED_DELAY_UNSANCTIONED:
+    tag: PROLONGED_DELAY_BEYOND_GUIDELINE
+    enabled: true
+    confidence: rule
+    stage: sanction
+  PROLONGED_DELAY_OPEN:
+    tag: PROLONGED_DELAY_BEYOND_GUIDELINE
+    enabled: true
+    confidence: rule
+    stage: execution
 
-  TEMPORAL_SANCTION_BEFORE_RECOMMENDATION:
-    tag: "DATA INTEGRITY"
+  # ---- C. Expenditure ----
+  EXCESS_EXPENDITURE:
+    tag: EXCESS_EXPENDITURE
+    enabled: true
     confidence: rule
     severity: high
-    guideline_source: "logical constraint: SANCTION_DATE must not precede RECOMMENDATION_DATE"
-
-  TEMPORAL_COMPLETION_BEFORE_SANCTION:
-    tag: "DATA INTEGRITY"
+    max_ratio: 1.01          # paid / sanction
+    stage: payment
+  SANCTION_EXCEEDS_RECOMMENDATION:
+    tag: SANCTION_EXCEEDS_RECOMMENDATION
+    enabled: true
     confidence: rule
     severity: high
-    guideline_source: "logical constraint: ACTUAL_END_DATE must not precede SANCTION_DATE"
-
-  TEMPORAL_PAYMENT_BEFORE_SANCTION:
-    tag: "DATA INTEGRITY"
+    max_ratio: 1.01          # sanction / recommended
+    stage: sanction
+  EXPENDITURE_WITHOUT_SANCTION:
+    tag: EXPENDITURE_WITHOUT_SANCTION
+    enabled: true
     confidence: rule
     severity: high
-    guideline_source: "logical constraint: earliest EXPENDITURE_DATE must not precede SANCTION_DATE"
-
-  GHOST_ASSET:
-    tag: "GHOST ASSET"
-    confidence: rule
-    severity: high
-    guideline_source: >-
-      MPLADS record-keeping norm: a completed, paid work should have a supporting
-      file attached. CAVEAT: presence of ATTACH_ID/FILE_STATUS only confirms some
-      file was attached, not verified to be photographic completion evidence -
-      no field in this dataset distinguishes file type.
-
-  PAID_NOT_COMPLETE:
-    tag: "GHOST ASSET"
+    stage: payment
+  EXPENDITURE_AFTER_COMPLETION:
+    tag: EXPENDITURE_AFTER_COMPLETION
+    enabled: true
     confidence: statistical
-    guideline_days: 365
-    gate_percentile: 90
-    bucket_percentiles: [90, 95, 99]
-    guideline_source: >-
-      MPLADS guideline: work expected complete within 1 year of sanction.
-      Flagged here for being in the slowest 10% of paid-but-uncompleted
-      works, not merely for missing the 1-year guideline (55% do).
-
-  STUCK_STATUS:
-    tag: "TIME DELAY"
+    min_lag_days: 30         # last payment more than this after completion
+    min_post_share: 0.05     # post-completion payments over this share of total paid
+    medium_lag_days: 180
+    stage: payment
+  UNUSUAL_COST:
+    tag: UNUSUAL_COST
+    enabled: true
     confidence: statistical
-    guideline_days: 730
-    gate_percentile: 90
-    bucket_percentiles: [90, 95, 99]
-    early_stages: ["Time Estimation", "Pending for Sanction", "Physical Inspection", "Vendor Identification"]
-    guideline_source: >-
-      A work parked in an early, pre-execution WORK_STAGE for an unusually
-      long time relative to its peers - distinct from STALLED_AT_SANCTION
-      (any not-yet-sanctioned work) and STALLED_AT_EXECUTION (doesn't care
-      which stage a sanctioned work is parked in). Flagged for sitting in the
-      slowest 10% of this early-stage population, not a fixed day count.
-
-  OVER_ALLOCATION:
-    tag: "OVER ALLOCATION"
-    confidence: rule
-    severity: high
-    guideline_source: >-
-      MPLADS guideline: an MP's recommendations may not exceed their allocated
-      limit for the tenure, matched by constituency + tenure. This is a
-      hard compliance check against ALLOCATED_AMT, not a percentile judgement.
-
-  STATUTORY_SC_ST_DEFICIT:
-    tag: "STATUTORY COMPLIANCE"
-    confidence: rule
-    severity: high
-    sc_target_pct: 15.0
-    st_target_pct: 7.5
-    min_evaluated_amount: 20000000  # ₹2 Cr minimum portfolio recommendations to evaluate compliance
-    guideline_source: >-
-      MPLADS Guideline Rule 2.5: at least 15% of annual MPLADS funds must be used
-      for areas inhabited by Scheduled Caste (SC) population and 7.5% for Scheduled
-      Tribe (ST) population. Flagged when an MP's portfolio fails to meet the statutory
-      minimum allocation thresholds.
-
-  COST_OUTLIER:
-    tag: "COST OUTLIER"
-    confidence: statistical
-    peer_key: ["ACTIVITY_NAME_CLEAN", "STATE_NAME"]
+    peer_keys: [STATE_NAME, ACTIVITY]
     min_peers: 30
-    modified_z_threshold: 3.5
-    severity_z: [3.5, 5, 8]   # low/medium/high edges on modified z-score (positive/overrun side only)
-    guideline_source: >-
-      Robust (median + MAD) modified z-score of SANCTION_AMOUNT against peer
-      works of the same cleaned activity type in the same state (n>=30 peers
-      required, or the work is skipped - not enough peers to judge "unusual").
-      Positive-direction only: the problem statement's concern is cost
-      OVERRUNS, not unusually cheap works - a different and differently-
-      actionable signal that flagging both directions conflated. Threshold
-      3.5 is the standard modified-z outlier cutoff (Iglewicz & Hoaglin).
-      A high cost is not evidence of wrongdoing on its own - it
-      says a human should look at why this one differs from its peers.
+    z_low: 5.0
+    z_medium: 6.5
+    # MAD floor in log10 units. Not in the spec - added after measurement:
+    # groups where most works share one round price have a near-zero MAD,
+    # which scored a hand pump at 1.001x its peer median as z=6.8. With this
+    # floor every flag is at least 2.35x its peer median (median 6.2x).
+    min_mad_log10: 0.05
+    stage: sanction
+  PAYMENT_COMPLETION_MISMATCH:
+    tag: PAYMENT_COMPLETION_MISMATCH
+    enabled: true
+    confidence: statistical
+    max_relative_gap: 0.05
+    stage: payment
 
+  # ---- D. Eligibility and entitlement ----
+  PROHIBITED_WORK:
+    tag: PROHIBITED_WORK
+    enabled: true
+    confidence: statistical
+    verified: false
+    # Only the religious-premises item of Annexure-II is matched: it is the
+    # one negative-list item that shows up in descriptions. Land acquisition
+    # matched 0 works; "grant-in-aid" and "electricity charges" only matched
+    # permitted works at aided schools, so those were dropped.
+    patterns:
+      - '\b(?:construction|renovation|repair|beautification|development|extension)\s+of\s+(?:the\s+)?(?:temple|mandir|masjid|mosque|church|gurudwara|gurdwara|dargah)\b'
+      - '\b(?:temple|mandir|masjid|mosque|church|gurudwara|gurdwara|dargah)\s+(?:premises|campus|compound)\b'
+      - '\b(?:acquisition of land|land acquisition|purchase of land)\b'
+    # "near X temple premises" is a location, not the premises itself
+    location_exclusion: '\b(?:near|opposite|beside|behind|infront of|in front of|adjacent to|next to)\s+(?:\w+\s+){0,4}(?:temple|mandir|masjid|mosque|church|gurudwara|gurdwara|dargah)\b'
+    exceptions: '\b(?:crematori\w*|cremation|burial ground|shamshan|smashan|kabristan|kabarstan|graveyard)\b'
+    stage: recommendation
+  TRUST_SOCIETY_LIMIT_EXCEEDED:
+    tag: TRUST_SOCIETY_LIMIT_EXCEEDED
+    enabled: true
+    confidence: statistical
+    severity: medium
+    category: "Trust and Society"
+    cap_per_mp_per_fy:
+      value: 10000000        # Rs 1 crore
+      verified: false
+    stage: recommendation
+  ALLOCATION_LIMIT_EXCEEDED:
+    tag: ALLOCATION_LIMIT_EXCEEDED
+    enabled: true
+    confidence: statistical
+    severity: medium
+    min_overage_share: 0.05
+    # FLAG == 2 on a recommendation: 590 rows, none with a stage or a
+    # sanction - read as cancelled/rejected. Inferred, not documented.
+    inactive_rec_flags:
+      value: [2]
+      verified: false
+    stage: recommendation
+  SC_ST_EARMARK_SHORTFALL:
+    tag: SC_ST_EARMARK_SHORTFALL
+    # Disabled after measurement: with seat suffix + whole-phrase keywords,
+    # 1,060 of 1,064 evaluated MP-tenures show a shortfall - descriptions
+    # rarely say whether a work is in an SC/ST area, so the estimate cannot
+    # tell compliant MPs from non-compliant ones. Re-enable once an
+    # area-level SC/ST field exists. Implemented and tested either way.
+    enabled: false
+    confidence: statistical
+    severity: medium
+    sc_target_share: 0.15
+    st_target_share: 0.075
+    min_portfolio_amount: 20000000
+    min_shortfall_amount: 1000000
+    sc_phrases: '\b(?:scheduled castes?|sc (?:basti|colony|mohalla|para|community|hostel|locality|habitation|ward)|harijan (?:basti|colony|wada|vas|mohalla)|dalit (?:basti|colony|mohalla))\b'
+    st_phrases: '\b(?:scheduled tribes?|st (?:basti|colony|hostel|habitation|locality)|tribal|adivasi|ashram (?:shala|school))\b'
+    stage: recommendation
+  UNSPENT_BALANCE:
+    tag: UNSPENT_BALANCE
+    enabled: true
+    confidence: statistical
+    severity: low
+    min_utilisation: 0.6
+    # Only tenures that have ended: mid-tenure utilisation is naturally low
+    # (482 of 538 current MPs would flag purely because the term is ~45% done).
+    completed_tenures_only: true
+    stage: recommendation
+
+  # ---- E. Duplication and concentration ----
   DUPLICATE_WORK:
-    tag: "DUPLICATION"
+    tag: DUPLICATE_WORK
+    enabled: true
     confidence: statistical
-    min_description_length: 40   # chars - excludes bare category restatements like "table of kitchen"
-    max_group_size: 3            # a real accidental duplicate is a pair (or small handful), not a
-                                  # batch - this is what separates it from normal bulk procurement
-                                  # (e.g. 22 identical benches bought in one order)
-    block_keys: ["CONSTITUENCY_ID", "ACTIVITY_NAME_CLEAN"]
-    guideline_source: >-
-      Exact text match (after normalising case/whitespace) on WORK_DESCRIPTION
-      within the same constituency and cleaned activity category, longer than
-      a bare category restatement, confined to small groups (2-3 works) only.
-      Went through two rejected designs before this one, hand-checking real
-      hits at every step (see docs/SCHEMA.md): fuzzy similarity mostly caught
-      an MP legitimately recommending the same type of work at different real
-      villages via a shared template (the place name is too small a fraction
-      of a long templated sentence to move a similarity score much); exact
-      match alone then caught normal bulk procurement instead (many identical
-      rows is the *correct* way to record buying many identical items). The
-      group-size cap is what's left once both of those are ruled out - a real
-      duplicate is a pair, not a batch. Flags every work in the small group -
-      not proof any of them is fake, but a real description match a human
-      should compare side by side.
-
+    min_description_length: 40
+    min_group_size: 2
+    max_group_size: 3          # a real duplicate is a pair or small handful, not a bulk order
+    exclude_inactive: true
+    stage: recommendation
+  SAME_WORK_MULTIPLE_MPS:
+    tag: SAME_WORK_MULTIPLE_MPS
+    enabled: true
+    confidence: statistical
+    severity: medium
+    min_description_length: 40
+    amount_tolerance: 0.02
+    min_jaccard: 0.9
+    max_group_size: 3
+    stage: recommendation
   AGENCY_CONCENTRATION:
-    tag: "AGENCY CONCENTRATION"
+    tag: AGENCY_CONCENTRATION
+    enabled: true
     confidence: statistical
-    share_basis: value   # "value" or "works" - which share drives the gate + severity
-    gate_percentile: 90
-    bucket_percentiles: [90, 95, 99]
-    min_agency_works: 5        # agency needs at least this many attributed works in the district
-    min_district_agencies: 3   # district needs >=3 distinct attributed agencies, or "100% share" is trivial
-    min_district_value: 5000000   # district's total attributed value (₹50L) must clear this floor
-    guideline_source: >-
-      An implementing agency's share of a district's total attributed
-      (sanctioned, falling back to recommended) works/value among every
-      agency active in that district, gated on a PERCENTILE of the current
-      real distribution of eligible district-agency shares (recomputed
-      every run, same philosophy as the TIME DELAY detectors above) - not a
-      fixed share threshold. Only evaluated for districts with >=3 distinct
-      attributed agencies and >=₹50L total attributed value, and only for
-      agencies with >=5 attributed works in that district, so a tiny-sample
-      district can't trivially flag its one agency at "100% share." The
-      problem statement's own background names single-bid tender
-      manipulation as a failure mode; this dataset has no bid-count field
-      to check that literally, but agency concentration is the closest
-      computable proxy for the same underlying concern.
+    min_district_agencies: 3
+    min_district_value: 5000000   # Rs 50 lakh paid in the district
+    min_hhi: 0.25
+    severity_percentiles: {low: 90, medium: 95, high: 99}
+    stage: execution
+
+  # ---- F. Record integrity ----
+  COMPLETION_EVIDENCE_NOT_ATTACHED:
+    tag: COMPLETION_EVIDENCE_NOT_ATTACHED
+    enabled: true
+    confidence: statistical
+    severity: low
+    stage: payment
+  RECORD_DATE_DISCREPANCY:
+    tag: RECORD_DATE_DISCREPANCY
+    enabled: true
+    confidence: rule
+    severity: low
+    stage: sanction
+  CALAMITY_CONSENT_DISCREPANCY:
+    tag: CALAMITY_CONSENT_DISCREPANCY
+    enabled: true
+    confidence: statistical
+    severity: low
+    max_consent_per_mp:
+      value: 10000000          # Rs 1 crore per MP per tenure
+      verified: false
+    stage: recommendation
+
+# Severity + priority (spec section 5).
+scoring:
+  severity_weight: {low: 0.15, medium: 0.35, high: 0.6}
+  confidence_factor: {rule: 1.0, statistical: 0.6}
+  statistical_max_severity: medium
+  data_integrity_max_weight: 0.05
+  corroboration_min_families: 2
+  corroboration_excluded_families: [data_integrity]
+  exposure_base: 100000          # E = clip(log10(exposure / base) / decades, 0, 1)
+  exposure_decades: 2
+
+# Reviewer feedback (spec section 7) - read from data/finding_status.json.
+feedback:
+  min_reviews_for_high: 50
+  min_wilson_lower_bound: 0.7
+  # false: only tags with >= 50 reviews and a Wilson lower bound < 0.7 lose
+  # "high". true: the literal reading - every tag without 50 reviews is
+  # capped at medium (today that is every tag).
+  require_validation_for_high: false
+  suppression_min_reviews: 10
+  suppression_min_dismissal_rate: 0.8
+  min_reviews_for_label_model: 300
+
+validation:
+  regression_max_change: 0.20
+  hand_check_n_high: 100
+  hand_check_n_other: 100
+  hand_check_seed: 42
+
+link:
+  max_orphan_rate_increase_pp: 1.0   # fail the run if any file's orphan rate jumps by more
 
 queue:
-  # 18th LS only - the reasoning that always excluded 17th LS from the
-  # actionable queue (its MPs' terms ended in 2024; routing a finding to
-  # "MP office" has no real recipient) didn't depend on Rajya Sabha and
-  # still applies now that Rajya Sabha itself is out of scope entirely.
-  # 17th LS stays fully analysed and visible via the scope toggle - just
-  # not in the capped, actionable review queue.
+  # 18th LS only - 17th LS MPs' terms ended in 2024, so there is no one to
+  # route an MP-office finding to. 17th LS stays analysed and visible.
   demo_scopes: ["18th Lok Sabha"]
   materiality_floor: 500000
+  high_severity_min_exposure: 500000
   max_queue_size: 2000
-  # Re-verify the achieved queue % after recalibration - see the pipeline's
-  # printed summary, not a hardcoded expectation here anymore.
+  anomaly_reorder_band: 5     # isolation-forest score only reorders works within the same 5-point priority band
 
-scoring:
-  # priority_score = severity_weight + confidence_weight + exposure_weight * log10(max(financial_exposure,1))
-  severity_weight:    {low: 1, medium: 2, high: 3}
-  confidence_weight:  {rule: 1, statistical: 0.6, llm: 0.3}
-  exposure_weight:    0.5
+rollup:
+  shrinkage_m: 50

@@ -1,0 +1,52 @@
+{
+  "total_findings": 101884,
+  "by_tag": {
+    "AGENCY CONCENTRATION": 350,
+    "COST OUTLIER": 12364,
+    "DATA INTEGRITY": 1,
+    "DUPLICATION": 2194,
+    "GHOST ASSET": 33866,
+    "OVER ALLOCATION": 1,
+    "STATUTORY COMPLIANCE": 1051,
+    "TIME DELAY": 52057
+  },
+  "by_tag_severity": {
+    "AGENCY CONCENTRATION|high": 175,
+    "AGENCY CONCENTRATION|medium": 175,
+    "COST OUTLIER|high": 9076,
+    "COST OUTLIER|medium": 3288,
+    "DATA INTEGRITY|high": 1,
+    "DUPLICATION|high": 1642,
+    "DUPLICATION|medium": 552,
+    "GHOST ASSET|high": 32125,
+    "GHOST ASSET|medium": 1741,
+    "OVER ALLOCATION|high": 1,
+    "STATUTORY COMPLIANCE|high": 1051,
+    "TIME DELAY|high": 25983,
+    "TIME DELAY|medium": 26074
+  },
+  "by_severity": {
+    "high": 70054,
+    "medium": 31830
+  },
+  "by_detector": {
+    "AGENCY_CONCENTRATION": 350,
+    "COST_OUTLIER": 12364,
+    "DUPLICATE_WORK": 2194,
+    "EXECUTION_DELAY": 10620,
+    "GHOST_ASSET": 30393,
+    "OVER_ALLOCATION": 1,
+    "PAID_NOT_COMPLETE": 3473,
+    "SANCTION_DELAY": 17141,
+    "STALLED_AT_EXECUTION": 6406,
+    "STALLED_AT_SANCTION": 3072,
+    "STATUTORY_SC_ST_DEFICIT": 1051,
+    "STUCK_STATUS": 14818,
+    "TEMPORAL_PAYMENT_BEFORE_SANCTION": 1
+  },
+  "flagged_works": 78181,
+  "spine_works": 202766,
+  "flagged_per_1000": 385.6,
+  "flagged_per_1000_18th Lok Sabha": 188.5,
+  "flagged_per_1000_17th Lok Sabha": 610.0
+}

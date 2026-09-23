@@ -1,0 +1,36 @@
+{
+  "total_findings": 101884,
+  "by_tag": {
+    "AGENCY CONCENTRATION": 350,
+    "COST OUTLIER": 12364,
+    "DATA INTEGRITY": 1,
+    "DUPLICATION": 2194,
+    "GHOST ASSET": 33866,
+    "OVER ALLOCATION": 1,
+    "STATUTORY COMPLIANCE": 1051,
+    "TIME DELAY": 52057
+  },
+  "by_severity": {
+    "high": 70054,
+    "medium": 31830
+  },
+  "by_tag_severity": {
+    "AGENCY CONCENTRATION|high": 175,
+    "AGENCY CONCENTRATION|medium": 175,
+    "COST OUTLIER|high": 9076,
+    "COST OUTLIER|medium": 3288,
+    "DATA INTEGRITY|high": 1,
+    "DUPLICATION|high": 1642,
+    "DUPLICATION|medium": 552,
+    "GHOST ASSET|high": 32125,
+    "GHOST ASSET|medium": 1741,
+    "OVER ALLOCATION|high": 1,
+    "STATUTORY COMPLIANCE|high": 1051,
+    "TIME DELAY|high": 25983,
+    "TIME DELAY|medium": 26074
+  },
+  "flagged_works": 78181,
+  "flagged_per_1000": 385.6,
+  "flagged_per_1000_18th Lok Sabha": 188.5,
+  "flagged_per_1000_17th Lok Sabha": 610.0
+}

@@ -1,126 +1,127 @@
 import { formatRupees } from '../api'
 import { useLanguage } from '../i18n'
 
-// Every key any detector in engine/detectors.py puts into evidence.observed/
-// threshold/peer_benchmark needs an entry here - a key missing from LABELS
-// silently fell back to its raw snake_case name, and a key missing from
-// AMOUNT_KEYS/PERCENT_KEYS showed as a bare unformatted number (e.g. a rupee
-// figure printed as "241786200" with no ₹/Cr, indistinguishable from a count
-// or a percentage). That's what made MP-portfolio-level findings (
-// OVER_ALLOCATION, STATUTORY_SC_ST_DEFICIT, AGENCY_CONCENTRATION - whose
-// financial_exposure is a portfolio/district aggregate, not this one work's
-// own amount) read as if the numbers didn't add up, when they were just
-// unlabeled.
+// Every key a detector in engine/detectors.py puts into evidence.observed/
+// threshold/peer_benchmark needs an entry here - a missing label falls back
+// to its raw snake_case name, and a rupee amount missing from AMOUNT_KEYS
+// prints as a bare number. MP- and district-level findings are labelled as
+// such, since their amounts are totals, not this one work's money.
 const LABELS = {
-  // delay-detector day-counts (STALLED_AT_SANCTION/EXECUTION use
-  // age_since_recommendation/age_since_sanction as the literal dict key -
-  // these two previously had no matching LABELS entry at all)
-  age_since_recommendation: 'Days since recommendation',
-  sanction_delay_days: 'Days to sanction (from recommendation)',
-  age_since_sanction: 'Days since sanction',
-  execution_delay_days: 'Days to completion (from sanction)',
-  gate_days_this_run: "This run's flag threshold (days)",
+  // delay gate (statistical lane) and hard-breach lane
+  days: 'Days',
+  days_since_last_payment: 'Days since last payment',
+  gate_days: 'Flag threshold (days)',
+  floor_days: 'Minimum floor (days)',
   guideline_days: 'Guideline (days)',
+  limit_days: 'Fixed limit (days)',
+  high_exposure: 'High severity from exposure of',
+  peer_group: 'Peer group',
+  n_peers: 'Comparable works',
+  peer_median_days: 'Peer median (days)',
+  p90_days: 'Peer 90th percentile (days)',
+  p95_days: 'Peer 95th percentile (days)',
+  p99_days: 'Peer 99th percentile (days)',
 
   // dates
-  first_expenditure_date: 'First disbursement date',
-  sanction_date: 'Sanction date',
   recommendation_date: 'Recommendation date',
-  actual_end_date: 'Completion date',
+  sanction_date: 'Sanction date',
+  completion_date: 'Completion date',
+  first_payment_date: 'First payment date',
+  last_payment_date: 'Last payment date',
+  tenure_end: 'Tenure ended',
 
-  // ghost asset / payment
-  completed: 'Marked complete',
-  actual_amount: 'Completed amount',
-  total_disbursed: 'Total disbursed',
-  disbursement_rows: 'Disbursement count',
-  file_attached: 'Supporting file attached',
-
-  // stuck status
-  work_stage: 'Work stage',
-  early_stages: 'Early-stage vocabulary',
-
-  // over-allocation / statutory SC-ST deficit - both MP-portfolio-level
-  // aggregates (every work this MP recommended this tenure), not this one
-  // work's own amount, which is why these are labelled explicitly as such.
-  total_recommended: 'MP portfolio recommended (all works, this tenure)',
-  allocated_amt: 'MPLADS allocation (this tenure)',
-  overage: 'Amount over allocation',
-  works_counted: 'Works counted toward this total',
-  sc_amount: 'Recommended to SC areas (portfolio)',
-  sc_percentage: 'Share to SC areas',
-  st_amount: 'Recommended to ST areas (portfolio)',
-  st_percentage: 'Share to ST areas',
-  sc_shortfall: 'SC quota shortfall',
-  st_shortfall: 'ST quota shortfall',
-  total_shortfall: "Total quota shortfall (this finding's exposure)",
-  sc_target_pct: 'SC target share',
-  st_target_pct: 'ST target share',
-
-  // cost outlier
+  // money
+  total_paid: 'Total paid',
   sanction_amount: 'Sanctioned amount',
-  modified_z_score: 'Modified z-score',
-  modified_z_threshold: 'Flag threshold (modified z-score)',
-  min_peers: 'Minimum peer group size',
-
-  // duplicate work
-  matched_work_count: 'Matching works found',
-  matched_works: 'Matching work numbers',
   recommended_amount: 'Recommended amount',
+  completed_amount: 'Completed amount (completion record)',
+  ratio: 'Ratio',
+  max_ratio: 'Maximum ratio allowed',
+  relative_gap: 'Gap between paid and completed amount',
+  max_relative_gap: 'Maximum gap allowed',
+  post_completion_paid: 'Paid after completion',
+  post_completion_share: 'Share paid after completion',
+  min_lag_days: 'Minimum days after completion',
+  min_post_share: 'Minimum share paid after completion',
+  robust_z: 'Robust z-score (log amount)',
+  ratio_to_peer_median: 'Times the peer median',
+  z_low: 'Flag threshold (z)',
+  z_medium: 'Medium severity from (z)',
+  min_peers: 'Minimum peer group size',
+  min_mad_log10: 'Minimum spread used (log10)',
+  peer_state: 'Peer group - state',
+  peer_activity: 'Peer group - activity',
+  peer_median_amount: 'Peer median amount',
+  peer_mad_log10: 'Peer spread (log10 MAD)',
+
+  // eligibility - MP-portfolio totals, not this one work's amount
+  matched_phrase: 'Matched phrase',
+  financial_year: 'Financial year',
+  trust_society_recommended: 'Recommended to trusts/societies (MP, this year)',
+  cap: 'Ceiling',
+  total_recommended: 'MP portfolio recommended (active works, this tenure)',
+  allocated: 'MPLADS allocation (this tenure)',
+  overage_share: 'Share over allocation',
+  min_overage_share: 'Flag above share over',
+  works_counted: 'Works counted toward this total',
+  sc_share_estimated: 'Estimated share to SC areas',
+  st_share_estimated: 'Estimated share to ST areas',
+  sc_shortfall: 'SC shortfall (estimated)',
+  st_shortfall: 'ST shortfall (estimated)',
+  sc_target_share: 'SC target share',
+  st_target_share: 'ST target share',
+  utilisation: 'Share of allocation spent',
+  min_utilisation: 'Minimum expected share',
+
+  // duplication
+  matched_works: 'Matching work numbers',
+  matched_work_count: 'Matching works found',
+  other_mps: 'Recommended also by',
   min_description_length: 'Minimum description length',
   max_group_size: 'Maximum group size considered',
+  amount_tolerance: 'Amount tolerance',
+  min_jaccard: 'Minimum text similarity',
 
-  // agency concentration - a district/agency aggregate, not this one work's
-  // own amount.
+  // concentration - a district aggregate, not this one work's amount
   district: 'District',
   agency: 'Implementing agency',
+  agency_paid: "Agency's payments in this district",
+  district_paid: 'Total payments in district',
+  district_agencies: 'Agencies paid in district',
   agency_works: "Agency's works in this district",
-  agency_value: "Agency's value in this district",
-  district_works: 'Total works in district',
-  district_value: 'Total value in district',
-  district_agencies: 'Distinct agencies in district',
-  share_value: "Agency's share of district value",
-  share_works: "Agency's share of district works",
-  gate_share_this_run: "This run's flag threshold (share)",
-  gate_percentile: 'Flag percentile',
-  share_basis: 'Share measured by',
+  share: "Agency's share of district payments",
+  hhi: 'District concentration (HHI)',
+  p90_share: 'Flag threshold (share, 90th percentile)',
+  min_hhi: 'Minimum HHI',
+  min_district_agencies: 'Minimum agencies in district',
+  min_district_value: 'Minimum district payments',
 
-  // peer_benchmark - populated by most statistical detectors but previously
-  // never rendered here at all.
-  population_median_days: 'Peer median (days)',
-  population_p90_days: 'Peer 90th percentile (days)',
-  n_peers: 'Comparable works/pairs this run',
-  peer_activity: 'Peer group — activity',
-  peer_state: 'Peer group — state',
-  peer_median_amount: 'Peer median amount',
-  peer_mad: 'Peer median absolute deviation',
+  // record integrity
+  file_attached: 'Supporting file attached',
+  calamity: 'Calamity',
+  types: 'Recorded as',
+  total_consented: 'Total calamity consent',
+  max_consent_per_mp: 'Consent ceiling per MP',
 }
 
 // rupee amounts
 const AMOUNT_KEYS = new Set([
-  'actual_amount', 'total_disbursed', 'total_recommended', 'allocated_amt', 'overage',
-  'sc_amount', 'st_amount', 'sc_shortfall', 'st_shortfall', 'total_shortfall',
-  'sanction_amount', 'recommended_amount', 'agency_value', 'district_value',
-  'peer_median_amount', 'peer_mad',
+  'total_paid', 'sanction_amount', 'recommended_amount', 'completed_amount', 'post_completion_paid',
+  'peer_median_amount', 'trust_society_recommended', 'cap', 'total_recommended', 'allocated',
+  'sc_shortfall', 'st_shortfall', 'agency_paid', 'district_paid', 'min_district_value',
+  'total_consented', 'max_consent_per_mp', 'high_exposure',
 ])
 // already on a 0-100 scale - just append '%'
-const PERCENT_KEYS = new Set(['sc_percentage', 'st_percentage', 'sc_target_pct', 'st_target_pct'])
+const PERCENT_KEYS = new Set([])
 // a 0-1 fraction - multiply by 100 before appending '%'
-const FRACTION_PERCENT_KEYS = new Set(['share_value', 'share_works', 'gate_share_this_run'])
+const FRACTION_PERCENT_KEYS = new Set([
+  'relative_gap', 'max_relative_gap', 'post_completion_share', 'min_post_share', 'overage_share',
+  'min_overage_share', 'sc_share_estimated', 'st_share_estimated', 'sc_target_share', 'st_target_share',
+  'utilisation', 'min_utilisation', 'share', 'p90_share', 'amount_tolerance',
+])
 
-// engine/detectors.py's dynamic_gate() is one shared helper reused across
-// every percentile-gated detector, keyed generically as if its input were
-// always a day-count (population_median_days/population_p90_days) - true for
-// the 6 delay detectors and STUCK_STATUS, but AGENCY_CONCENTRATION feeds it a
-// 0-1 district-agency SHARE instead. Labelling those two keys "(days)"
-// unconditionally would read as a unit that's actively wrong for that one
-// detector, so this overrides both the label and the value's formatting per
-// detector rather than per key alone.
-const DETECTOR_OVERRIDES = {
-  AGENCY_CONCENTRATION: {
-    population_median_days: { label: 'Peer district-agency share (median, this run)', percent: true },
-    population_p90_days: { label: 'Peer district-agency share (90th percentile, this run)', percent: true },
-  },
-}
+// per-detector label/format overrides (none needed at present)
+const DETECTOR_OVERRIDES = {}
 
 // LABELS/DETECTOR_OVERRIDES above stay in English: they are the lookup key
 // into the STRINGS table, translated at render time below. Values stay as the

@@ -5,7 +5,7 @@ import { MospiNav } from '../components/MospiNav'
 import { LifecycleTimeline } from '../components/LifecycleTimeline'
 import { EvidenceTable } from '../components/EvidenceTable'
 import { Breadcrumb } from '../components/Breadcrumb'
-import { SeverityChip, TagChip, SuppressedChip } from '../components/Chips'
+import { SeverityChip, StageChip, SuppressedChip } from '../components/Chips'
 import { Loading, ErrorView } from '../components/StateViews'
 import { CaseDiscussion } from '../components/CaseDiscussion'
 import { GenerateReportButton } from '../components/ReportTools'
@@ -17,19 +17,10 @@ import { useLanguage } from '../i18n'
 // same kind of signal.
 const RISK_TIER_SEVERITY = { High: 'high', Medium: 'medium', Low: 'low' }
 
-// A separate, independent AI signal from the rule-based findings list -
-// predicts this work's OWN chance of severe delay (engine/predictive.py, a
-// scikit-learn model trained on historical works), fed from its own real
-// recommended amount/state/activity/month, never a hypothetical the viewer
-// has to supply. Fails silently (returns null, not an error banner) since
-// this is a supplementary read, not required to review the case file.
-//
-// Two independent models feed this, shown as two clearly separated,
-// labelled blocks rather than one run-on paragraph - it should always be
-// obvious which model produced which number: a narrow pre-sanction delay
-// predictor (fires at recommendation time, before money moves), and a
-// broader post-hoc risk+anomaly model (scored against every detector's
-// output, once there's a real lifecycle to look at).
+// Two model blocks, clearly separated: the pre-sanction delay predictor
+// (engine/predictive.py), and the rule-agreement + anomaly scores
+// (engine/risk_model.py) - ranking aids only, never a flag of their own.
+// Anything a model couldn't compute shows "not evaluated", not a number.
 function AiRiskPanel({ workNumber, scopeHouse, scopeTenure }) {
   const { t, td } = useLanguage()
   const [assessment, setAssessment] = useState(null)
@@ -41,12 +32,9 @@ function AiRiskPanel({ workNumber, scopeHouse, scopeTenure }) {
 
   if (!assessment) return <p className="ai-risk-empty">{t('Loading…')}</p>
   const pred = assessment.predicted_delay_risk
-  const risk = assessment.risk_assessment
+  const agree = assessment.rule_agreement
+  const pct = (v) => (v === null || v === undefined ? t('not evaluated') : `${Math.round(v * 100)}%`)
 
-  // one reading order per block, the same one both times: score -> what the
-  // score means -> the reasons behind it -> which model produced it. The
-  // figure leads at the top left because that is where the eye lands; the
-  // sentence that used to carry it inline now sits under it as the caption.
   return (
     <>
       <div className="ai-block">
@@ -54,71 +42,60 @@ function AiRiskPanel({ workNumber, scopeHouse, scopeTenure }) {
         <div className="ai-figures">
           <div className="ai-figure">
             <div className="ai-figure-top">
-              <span className="ai-figure-value num">{Math.round(pred.predicted_delay_probability * 100)}%</span>
-              <SeverityChip severity={RISK_TIER_SEVERITY[pred.risk_tier] || 'medium'} />
+              <span className="ai-figure-value num">{pct(pred.predicted_delay_probability)}</span>
+              {pred.risk_tier && <SeverityChip severity={RISK_TIER_SEVERITY[pred.risk_tier]} />}
             </div>
-            {/* no label under this one - the block title above it is already
-                "Pre-sanction delay risk" */}
           </div>
         </div>
-        <p className="ai-lede">
-          {t('Predicted probability of severe delay before sanction or completion.')}
-        </p>
+        <p className="ai-lede">{t('Predicted probability of severe delay before sanction or completion.')}</p>
         {pred.drivers.length > 0 && (
           <div className="ai-why">
             <p className="ai-why-title">{t('Why')}</p>
-            {/* driver strings come from the model's own feature importances - data, left as-is */}
             <ul className="ai-why-list">
               {pred.drivers.map((d, i) => <li key={i}>{td(d)}</li>)}
             </ul>
           </div>
         )}
         <p className="ai-footnote">
-          {t("Model AUC {auc} on held-out historical works - predicts this work's OWN delay risk before/at recommendation, a separate signal from the {n} rule-based findings in the findings list, not a replacement for them.", {
-            auc: pred.model_auc.toFixed(2), n: assessment.rule_based_findings.length,
-          })}
+          {pred.model_auc === null || pred.model_auc === undefined
+            ? t('Model AUC not evaluated.')
+            : t('Model AUC {auc} (out-of-fold, grouped by constituency). A prediction, separate from the {n} rule-based findings - it never adds or removes a flag.', {
+              auc: pred.model_auc.toFixed(2), n: assessment.rule_based_findings.length,
+            })}
         </p>
       </div>
 
-      {risk && risk.risk_score !== null && (
+      {agree && (
         <div className="ai-block">
-          <p className="ai-block-title">{t('Overall risk & anomaly (all detectors)')}</p>
-          {/* the two figures side by side, each captioned with what it
-              actually measures - they answer different questions and were
-              previously separable only by a parenthesis */}
+          <p className="ai-block-title">{t('Rule-agreement and anomaly scores (ranking aids)')}</p>
           <div className="ai-figures">
             <div className="ai-figure">
               <div className="ai-figure-top">
-                <span className="ai-figure-value num">{Math.round(risk.risk_score * 100)}%</span>
-                <SeverityChip severity={RISK_TIER_SEVERITY[risk.risk_tier] || 'medium'} />
+                <span className="ai-figure-value num">{pct(agree.rule_agreement_score)}</span>
               </div>
-              <p className="ai-figure-label">{t('Overall risk')}</p>
-              <p className="ai-figure-caption">{t('Combined risk across every detector')}</p>
+              <p className="ai-figure-label">{t('Rule-agreement score')}</p>
+              <p className="ai-figure-caption">{t('How closely this work resembles works the rules graded high')}</p>
             </div>
             <div className="ai-figure">
               <div className="ai-figure-top">
-                <span className="ai-figure-value num">{Math.round(risk.anomaly_score * 100)}%</span>
+                <span className="ai-figure-value num">{pct(agree.anomaly_score)}</span>
               </div>
               <p className="ai-figure-label">{t('Anomaly score')}</p>
-              <p className="ai-figure-caption">{t('How unusual this work is versus the learned baseline')}</p>
+              <p className="ai-figure-caption">{t('How unusual this work is next to works of a similar amount')}</p>
             </div>
           </div>
-          <p className="ai-lede">
-            {t('Scored against every detector, this work sits in the {tier} band for overall risk, and its shape is {anomaly} for a work of this kind.', {
-              tier: t(risk.risk_tier).toLowerCase(),
-              anomaly: t(risk.is_anomalous ? 'unusual' : 'typical'),
-            })}
-          </p>
-          {risk.top_drivers.length > 0 && (
+          {agree.top_drivers.length > 0 && (
             <div className="ai-why">
               <p className="ai-why-title">{t('Why')}</p>
               <ul className="ai-why-list">
-                {risk.top_drivers.map((d, i) => <li key={i}>{td(d)}</li>)}
+                {agree.top_drivers.map((d, i) => <li key={i}>{td(d)}</li>)}
               </ul>
             </div>
           )}
           <p className="ai-footnote">
-            {t('Model AUC {auc} - a broader model trained on ~21 features engineered from raw amounts, dates, and disbursement records across every lifecycle stage, against whether the work was ever flagged high-severity by any of the 13 rule-based detectors (not just a delay guideline). The anomaly score alongside it is unsupervised - it never learned what "flagged" means, only what a typical work looks like - and the reasons above come from the model\'s own learned feature importances, not a hand-written explanation.', { auc: risk.model_auc.toFixed(2) })}
+            {t('Not an independent risk signal: the rule-agreement model is trained on the rules\' own high-severity grades from largely the same inputs, so its AUC ({auc}) measures agreement with the rules, not real-world risk. Both scores only reorder works inside the same priority band of the queue; neither adds, removes or re-grades a flag.', {
+              auc: agree.model_auc === null || agree.model_auc === undefined ? t('not evaluated') : agree.model_auc.toFixed(2),
+            })}
           </p>
         </div>
       )}
@@ -256,10 +233,10 @@ function FindingCard({ finding, workNumber, scopeHouse, scopeTenure, statusRecor
         onClick={() => setOpen((v) => !v)}
       >
         <span className="finding-card-caret" aria-hidden="true">{open ? '\u2212' : '+'}</span>
-        <span className="finding-card-name">{t(finding.detector.replaceAll('_', ' '))}</span>
+        <span className="finding-card-name">{t(finding.tag)}</span>
         <SeverityChip severity={finding.severity} />
-        <TagChip tag={finding.tag} />
-        {finding.suppressed && <SuppressedChip />}
+        <StageChip stage={finding.evidence.context?.lifecycle_stage} />
+        {finding.suppressed && <SuppressedChip reason={finding.suppression_reason} />}
         {statusRecord && <span className="finding-card-verdict">{t(STATUS_LABEL[statusRecord.status])}</span>}
         <span className="finding-card-amount num">{formatRupees(finding.financial_exposure)}</span>
       </button>
@@ -271,7 +248,17 @@ function FindingCard({ finding, workNumber, scopeHouse, scopeTenure, statusRecor
       {open && (
       <div className="finding-card-body">
       <EvidenceTable finding={finding} />
-      <div className="finding-card-route">{t('Confidence')}: {td(finding.confidence)}</div>
+      <div className="finding-card-route">
+        {t('Source')}: {td(finding.evidence.threshold?.source)}
+        {finding.evidence.source_verified === false && ` (${t('reference not yet verified against the 2023 guidelines')})`}
+      </div>
+      <div className="finding-card-route">
+        {t('Confidence')}: {td(finding.confidence)}
+        {finding.evidence.context?.payment_status && ` · ${t(finding.evidence.context.payment_status)}`}
+        {finding.evidence.context?.category && ` · ${t(finding.evidence.context.category)}`}
+        {finding.evidence.corroborated_by?.length > 0 &&
+          ` · ${t('raised by agreement with: {families}', { families: finding.evidence.corroborated_by.join(', ') })}`}
+      </div>
       <div className="finding-note">
         <p className="finding-card-label">{t('Case-file note')}</p>
         <NarrativeBlock finding={finding} workNumber={workNumber} scopeHouse={scopeHouse} scopeTenure={scopeTenure} />

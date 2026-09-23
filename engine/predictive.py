@@ -9,7 +9,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupKFold
 from sklearn.metrics import roc_auc_score, precision_score, recall_score
 
 from engine.paths import DATA_PROCESSED, ROOT
@@ -28,33 +28,33 @@ def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, dict, dict]:
     ~21-raw-feature risk + anomaly model trained against every detector's
     output, not just a delay guideline."""
     df = df.copy()
-    df["log_amount"] = np.log10(df["rec_RECOMMENDED_AMOUNT"].fillna(df["SANCTION_AMOUNT"]).clip(lower=1000))
-    df["rec_month"] = df["rec_RECOMMENDATION_DATE"].dt.month.fillna(6).astype(int)
-    df["rec_quarter"] = df["rec_RECOMMENDATION_DATE"].dt.quarter.fillna(2).astype(int)
+    # missing stays missing - the classifier handles NaN natively
+    amount = df["rec_RECOMMENDED_AMOUNT"].fillna(df["SANCTION_AMOUNT"])
+    df["log_amount"] = np.log10(amount.where(amount > 0))
+    df["rec_month"] = df["rec_RECOMMENDATION_DATE"].dt.month
+    df["rec_quarter"] = df["rec_RECOMMENDATION_DATE"].dt.quarter
 
     activity_col = "rec_ACTIVITY_NAME_CLEAN" if "rec_ACTIVITY_NAME_CLEAN" in df.columns else "ACTIVITY_NAME"
     activity_counts = df[activity_col].value_counts(normalize=True).to_dict()
-    df["activity_freq"] = df[activity_col].map(activity_counts).fillna(0.0)
+    df["activity_freq"] = df[activity_col].map(activity_counts)
 
     state_counts = df["STATE_NAME"].value_counts(normalize=True).to_dict()
-    df["state_freq"] = df["STATE_NAME"].map(state_counts).fillna(0.0)
+    df["state_freq"] = df["STATE_NAME"].map(state_counts)
 
-    return df[FEATURE_COLS].fillna(0), activity_counts, state_counts
+    return df[FEATURE_COLS], activity_counts, state_counts
 
 
 def build_inference_features(amount, state, activity, month, activity_counts, state_counts) -> pd.DataFrame:
-    """The single-row feature frame for a live prediction - same 5 columns
-    as build_features(), built from the trained model's own stored
-    activity/state frequency tables rather than a fresh corpus."""
-    log_amt = float(np.log10(max(float(amount or 100000), 1000.0)))
-    quarter = (month - 1) // 3 + 1
+    """Single-row feature frame for a live prediction - same 5 columns as
+    build_features(). Unknown inputs are NaN, not a guessed default."""
+    amount = float(amount) if amount is not None and not pd.isna(amount) and float(amount) > 0 else np.nan
     return pd.DataFrame([{
-        "log_amount": log_amt,
-        "rec_month": month,
-        "rec_quarter": quarter,
-        "activity_freq": float(activity_counts.get(activity, 0.005)),
-        "state_freq": float(state_counts.get(state, 0.02)),
-    }])
+        "log_amount": np.log10(amount) if not np.isnan(amount) else np.nan,
+        "rec_month": month if month is not None else np.nan,
+        "rec_quarter": (month - 1) // 3 + 1 if month is not None else np.nan,
+        "activity_freq": activity_counts.get(activity, np.nan),
+        "state_freq": state_counts.get(state, np.nan),
+    }], dtype="float64")
 
 
 def train_model() -> dict:
@@ -98,26 +98,24 @@ def train_model() -> dict:
 
     X, activity_counts, state_counts = build_features(df)
     y = df["target"]
+    groups = df["CONSTITUENCY_ID"].fillna(-1)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-    clf = HistGradientBoostingClassifier(
-        max_iter=100,
-        learning_rate=0.08,
-        max_depth=5,
-        random_state=42,
-    )
-    clf.fit(X_train, y_train)
-
-    y_pred_proba = clf.predict_proba(X_test)[:, 1]
-    y_pred = (y_pred_proba >= 0.5).astype(int)
-
+    params = dict(max_iter=100, learning_rate=0.08, max_depth=5, random_state=42)
+    # out-of-fold scores with GroupKFold by constituency - a random split puts
+    # near-identical works from one constituency on both sides of the split
+    oof = np.full(len(y), np.nan)
+    for train, test in GroupKFold(n_splits=5).split(X, y, groups):
+        fold = HistGradientBoostingClassifier(**params).fit(X.iloc[train], y.iloc[train])
+        oof[test] = fold.predict_proba(X.iloc[test])[:, 1]
     try:
-        auc = float(roc_auc_score(y_test, y_pred_proba))
-    except Exception:
-        auc = 0.70
-    precision = float(precision_score(y_test, y_pred, zero_division=0))
-    recall = float(recall_score(y_test, y_pred, zero_division=0))
+        auc = float(roc_auc_score(y, oof))
+    except ValueError:
+        auc = None          # not evaluated - never a stand-in number
+    y_pred = (oof >= 0.5).astype(int)
+    precision = float(precision_score(y, y_pred, zero_division=0))
+    recall = float(recall_score(y, y_pred, zero_division=0))
+
+    clf = HistGradientBoostingClassifier(**params).fit(X, y)
 
     artifacts = {
         "model": clf,
@@ -125,16 +123,16 @@ def train_model() -> dict:
         "activity_counts": activity_counts,
         "state_counts": state_counts,
         "metrics": {
-            "auc": round(auc, 3),
+            "auc": round(auc, 3) if auc is not None else None,
             "precision": round(precision, 3),
             "recall": round(recall, 3),
-            "n_train": len(X_train),
-            "n_test": len(X_test),
+            "n": len(X),
+            "evaluation": "GroupKFold(5) by constituency, out-of-fold",
         },
     }
 
     joblib.dump(artifacts, MODEL_PATH)
-    print(f"Trained Predictive Delay Risk Model: AUC={auc:.3f}, Precision={precision:.3f}, Recall={recall:.3f}")
+    print(f"  delay model: out-of-fold AUC={artifacts['metrics']['auc']}, precision={precision:.3f}, recall={recall:.3f}")
     print(f"Saved to {MODEL_PATH}")
     return artifacts["metrics"]
 
@@ -151,7 +149,7 @@ def get_model():
     return _model_bundle
 
 
-def predict_work_risk(amount: float, state: str, activity: str, month: int = 6) -> dict:
+def predict_work_risk(amount: float | None, state: str | None, activity: str | None, month: int | None = None) -> dict:
     """Computes predicted delay risk probability and contributing factors."""
     try:
         bundle = get_model()
@@ -159,7 +157,7 @@ def predict_work_risk(amount: float, state: str, activity: str, month: int = 6) 
         act_counts = bundle["activity_counts"]
         st_counts = bundle["state_counts"]
 
-        st_freq = float(st_counts.get(state, 0.02))
+        st_freq = st_counts.get(state)
         features = build_inference_features(amount, state, activity, month, act_counts, st_counts)
 
         proba = float(clf.predict_proba(features)[0, 1])
@@ -173,27 +171,25 @@ def predict_work_risk(amount: float, state: str, activity: str, month: int = 6) 
 
         # Explain key drivers
         drivers = []
-        if amount > 2500000:
+        if amount is not None and not pd.isna(amount) and amount > 2500000:
             drivers.append("High capital expenditure (> ₹25L) historically correlates with execution delay")
         if month in (6, 7, 8):
             drivers.append("Monsoon quarter recommendation historically incurs initial sanction delays")
-        if st_freq < 0.01:
+        if st_freq is not None and st_freq < 0.01:
             drivers.append("Lower volume jurisdiction exhibits higher timeline variability")
-        if not drivers:
-            drivers.append("Standard timeline trajectory based on peer activity baseline")
 
         return {
             "predicted_delay_probability": round(proba, 3),
             "risk_tier": tier,
             "drivers": drivers,
-            "model_auc": bundle["metrics"].get("auc", 0.72),
+            "model_auc": bundle["metrics"].get("auc"),
         }
     except Exception as e:
         return {
-            "predicted_delay_probability": 0.50,
-            "risk_tier": "Medium",
-            "drivers": [f"Standard heuristic baseline (model note: {e})"],
-            "model_auc": 0.70,
+            "predicted_delay_probability": None,
+            "risk_tier": None,
+            "drivers": [f"Model unavailable ({e})"],
+            "model_auc": None,
         }
 
 

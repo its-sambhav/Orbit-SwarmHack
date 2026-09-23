@@ -1,4 +1,5 @@
 import { useLanguage } from '../i18n'
+import { TAGS } from '../tags'
 
 export const SEV_LABEL = { low: 'Low', medium: 'Medium', high: 'High' }
 
@@ -15,19 +16,16 @@ export function SeverityChip({ severity }) {
   )
 }
 
-// only the 3 most common finding tags get an identity colour (validated
-// all-pairs categorical set, see tokens.css) - every other tag (DATA
-// INTEGRITY, DUPLICATION, OVER ALLOCATION, all rare) keeps the neutral
-// outline rather than stretching a 3-colour set past what's been validated.
-// The colour lookup stays keyed by the engine's own English tag string (the
-// only stable identity the pipeline emits); only the visible text is
-// translated, so a language switch never changes which tag reads as which
-// colour.
-export const TAG_COLOR_KEY = {
-  'GHOST ASSET': 'ghost-asset',
-  'COST OUTLIER': 'cost-outlier',
-  'TIME DELAY': 'time-delay',
-}
+// Colour by tag FAMILY (config/tags.yaml), using the one validated 3-colour
+// categorical set in tokens.css: timing, money and documentation each get
+// one identity colour; guideline, concentration and data-integrity tags keep
+// the neutral outline rather than stretching the set past what's validated.
+// Keyed by the engine's own English tag name; only the visible text is
+// translated, so a language switch never changes a tag's colour.
+const FAMILY_COLOR = { timing: 'time-delay', money: 'cost-outlier', documentation: 'ghost-asset' }
+export const TAG_COLOR_KEY = Object.fromEntries(
+  TAGS.filter((t) => FAMILY_COLOR[t.family]).map((t) => [t.name, FAMILY_COLOR[t.family]]),
+)
 
 export function TagChip({ tag }) {
   const { t } = useLanguage()
@@ -40,9 +38,18 @@ export function TagChip({ tag }) {
   )
 }
 
-export function SuppressedChip() {
+// suppression now comes from reviewer feedback (engine/validation.py) - the
+// reason says which pattern reviewers kept dismissing
+export function SuppressedChip({ reason }) {
+  const { t, td } = useLanguage()
+  return <span className="chip suppressed-chip" title={reason ? td(reason) : undefined}>{t('Suppressed')}</span>
+}
+
+// the work's portal lifecycle stage ("Pending for Sanction", "Work Completed", ...)
+export function StageChip({ stage }) {
   const { t } = useLanguage()
-  return <span className="chip suppressed-chip">{t('Suppressed — calamity consent on record')}</span>
+  if (!stage) return null
+  return <span className="chip tag-chip">{t(stage)}</span>
 }
 
 // MP status - "Active" (currently serving) gets the institutional-gold

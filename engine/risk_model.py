@@ -1,38 +1,28 @@
-"""A real, raw-data-driven risk + anomaly model - the upgrade from
-engine/predictive.py's and the retired engine/anomaly.py's shared 5
-hand-picked features (log_amount, rec_month, rec_quarter, activity_freq,
-state_freq) to ~21 features engineered automatically from raw spine
-columns spanning every lifecycle stage: amounts and their ratios across
-recommendation/sanction/payment, every real day-gap between stages,
-disbursement volume, lifecycle-flag booleans, and frequency-encoded
-identity (activity/state/agency/vendor - rarity itself is a signal).
+"""Machine learning - ranking only (spec section 6). Nothing here adds,
+removes or re-grades a flag.
 
-The target is upgraded too: instead of a narrow hand-defined "was this
-work late" label, this trains against `max_severity == "high"` from
-data/findings/work_risk.parquet - a real, already-computed signal built
-from all 13 rule-based detectors combined (ghost assets, cost outliers,
-duplicates, statutory deficits, agency concentration, every delay
-detector), not just two guideline day-counts. A work can now be "risky"
-for reasons the old delay-only model had no way to know about.
+1. Isolation Forest, one per amount tier: an "unusual shape" score used only
+   to reorder works that already sit in the same priority band of the queue
+   (engine/rollup.py build_queue).
 
-Explanations are model-derived, not canned strings: sklearn.inspection.
-permutation_importance is run once at training time against the trained
-model itself (which features it actually learned matter, ranked), and at
-inference time a work's own driver sentences report which of the model's
-own top-ranked features this work sits in an extreme percentile for -
-computed from the model's real learned structure and this work's real
-data, not a human's guess about what correlates with risk.
+2. Rule-agreement score: a gradient-boosting classifier trained on
+   max_severity == "high" from the rules, using largely the same raw inputs
+   the rules read. Its AUC therefore measures how well it reproduces the
+   rules, not real-world risk - so it is reported as a "rule-agreement
+   score", never as an independent risk signal. Evaluated with GroupKFold by
+   constituency (a random split leaks near-identical works from the same
+   constituency into both sides). The old agency_freq/vendor_freq features
+   are gone - they treated "rare" as "risky" and so penalised small agencies.
 
-Also does the unsupervised anomaly job the retired engine/anomaly.py did,
-on this same richer feature set - an Isolation Forest, since more real
-raw signal is exactly what makes "how unusual is this work" a sharper
-question than the old 5-feature version could ask.
+3. A model on real reviewer labels (data/finding_status.json) is trained
+   only once there are >= min_reviews_for_label_model reviewed findings;
+   isotonic-calibrated, reported with precision@k.
 """
 import numpy as np
 import pandas as pd
 import joblib
 from sklearn.ensemble import HistGradientBoostingClassifier, IsolationForest
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupKFold
 from sklearn.metrics import roc_auc_score
 from sklearn.inspection import permutation_importance
 
@@ -41,6 +31,8 @@ from engine.detectors import load_config as load_detector_config
 
 MODEL_DIR = ROOT / "data" / "models"
 MODEL_PATH = MODEL_DIR / "risk_model.joblib"
+LABEL_MODEL_PATH = MODEL_DIR / "label_model.joblib"
+N_TIERS = 4
 
 FEATURE_COLS = [
     "log_recommended_amount", "log_sanctioned_amount", "log_paid_amount",
@@ -49,7 +41,7 @@ FEATURE_COLS = [
     "days_rec_to_sanction", "days_sanction_to_complete", "days_since_recommendation",
     "exp_row_count", "exp_vendor_count",
     "has_sanctioned", "has_completed", "has_expenditure", "exp_any_success", "exp_any_inprogress",
-    "activity_freq", "state_freq", "agency_freq", "vendor_freq",
+    "activity_freq", "state_freq",
 ]
 
 HUMAN_LABEL = {
@@ -72,172 +64,170 @@ HUMAN_LABEL = {
     "exp_any_inprogress": "Any in-progress disbursement",
     "activity_freq": "How common this activity type is",
     "state_freq": "How common works from this state are",
-    "agency_freq": "How common this implementing agency is",
-    "vendor_freq": "How common this vendor is",
 }
 
 
 def build_features(df: pd.DataFrame, as_of: pd.Timestamp) -> tuple[pd.DataFrame, dict]:
-    """Given the full spine, returns (X, freq_tables) - freq_tables carries
-    the activity/state/agency/vendor frequency maps forward so a single
-    live work can be encoded the same way at inference time. NaN is left
-    as real NaN wherever a lifecycle stage hasn't happened yet (e.g. no
-    sanction date) - HistGradientBoostingClassifier handles missing values
-    natively, so the model itself learns what "not yet sanctioned" means
-    from the missingness pattern rather than being handed a fabricated
-    sentinel value pretending to be a real amount or day-count."""
+    """Missing lifecycle stages stay NaN - the classifier handles NaN
+    natively, so it learns what 'not yet sanctioned' means instead of being
+    handed a made-up amount or day count."""
     df = df.copy()
-
-    df["log_recommended_amount"] = np.log10(df["rec_RECOMMENDED_AMOUNT"].fillna(df["SANCTION_AMOUNT"]).clip(lower=1000))
-    df["log_sanctioned_amount"] = np.log10(df["SANCTION_AMOUNT"].clip(lower=1))
+    rec = df["rec_RECOMMENDED_AMOUNT"]
+    df["log_recommended_amount"] = np.log10(rec.where(rec > 0))
+    df["log_sanctioned_amount"] = np.log10(df["SANCTION_AMOUNT"].where(df["SANCTION_AMOUNT"] > 0))
     df["log_paid_amount"] = np.log10(df["exp_total_disbursed"].fillna(0) + 1)
-
-    df["sanction_to_recommended_ratio"] = df["SANCTION_AMOUNT"] / df["rec_RECOMMENDED_AMOUNT"].clip(lower=1)
-    df["paid_to_sanctioned_ratio"] = df["exp_total_disbursed"] / df["SANCTION_AMOUNT"].clip(lower=1)
-
+    df["sanction_to_recommended_ratio"] = df["SANCTION_AMOUNT"] / rec.where(rec > 0)
+    df["paid_to_sanctioned_ratio"] = df["exp_total_disbursed"] / df["SANCTION_AMOUNT"].where(df["SANCTION_AMOUNT"] > 0)
     df["rec_month"] = df["rec_RECOMMENDATION_DATE"].dt.month
     df["rec_quarter"] = df["rec_RECOMMENDATION_DATE"].dt.quarter
-
     df["days_rec_to_sanction"] = (df["SANCTION_DATE"] - df["rec_RECOMMENDATION_DATE"]).dt.days
     df["days_sanction_to_complete"] = (df["comp_ACTUAL_END_DATE"] - df["SANCTION_DATE"]).dt.days
     df["days_since_recommendation"] = (as_of - df["rec_RECOMMENDATION_DATE"]).dt.days
-
     df["exp_row_count"] = df["exp_row_count"].fillna(0)
     df["exp_vendor_count"] = df["exp_vendor_count"].fillna(0)
-
-    df["has_sanctioned"] = df["has_sanctioned"].astype(int)
-    df["has_completed"] = df["has_completed"].astype(int)
-    df["has_expenditure"] = df["has_expenditure"].astype(int)
-    df["exp_any_success"] = df["exp_any_success"].fillna(False).astype(int)
-    df["exp_any_inprogress"] = df["exp_any_inprogress"].fillna(False).astype(int)
-
+    for col in ("has_sanctioned", "has_completed", "has_expenditure", "exp_any_success", "exp_any_inprogress"):
+        df[col] = df[col].fillna(False).astype(bool).astype(int)
     freq_tables = {}
-    for feat_name, col in [("activity", "rec_ACTIVITY_NAME_CLEAN"), ("state", "STATE_NAME"),
-                            ("agency", "exp_top_ia"), ("vendor", "exp_top_vendor")]:
+    for name, col in (("activity", "rec_ACTIVITY_NAME_CLEAN"), ("state", "STATE_NAME")):
         counts = df[col].value_counts(normalize=True).to_dict()
-        df[f"{feat_name}_freq"] = df[col].map(counts).fillna(0.0)
-        freq_tables[feat_name] = counts
-
+        df[f"{name}_freq"] = df[col].map(counts)
+        freq_tables[name] = counts
     return df[FEATURE_COLS], freq_tables
 
 
 def build_inference_features(work: dict, freq_tables: dict, as_of: pd.Timestamp) -> pd.DataFrame:
-    """Same 21 columns as build_features(), for one live work - work is the
-    raw spine-row dict api/main.py already has from Store.work(...), so no
-    extra lookup is needed at the call site."""
-    def get(key):
-        v = work.get(key)
-        return None if pd.isna(v) else v
+    row = pd.DataFrame([work])
+    for col in ("rec_RECOMMENDATION_DATE", "SANCTION_DATE", "comp_ACTUAL_END_DATE"):
+        row[col] = pd.to_datetime(row[col]) if col in row else pd.NaT
+    for col in ("rec_RECOMMENDED_AMOUNT", "SANCTION_AMOUNT", "exp_total_disbursed", "exp_row_count", "exp_vendor_count"):
+        row[col] = pd.to_numeric(row[col], errors="coerce") if col in row else np.nan
+    for col in ("has_sanctioned", "has_completed", "has_expenditure", "exp_any_success", "exp_any_inprogress",
+                "rec_ACTIVITY_NAME_CLEAN", "STATE_NAME"):
+        if col not in row:
+            row[col] = None
+    X, _ = build_features(row, as_of)
+    X["activity_freq"] = freq_tables["activity"].get(work.get("rec_ACTIVITY_NAME_CLEAN"), np.nan)
+    X["state_freq"] = freq_tables["state"].get(work.get("STATE_NAME"), np.nan)
+    return X
 
-    rec_amount = get("rec_RECOMMENDED_AMOUNT")
-    sanction_amount = get("SANCTION_AMOUNT")
-    paid = get("exp_total_disbursed")
-    rec_ts = pd.Timestamp(get("rec_RECOMMENDATION_DATE")) if get("rec_RECOMMENDATION_DATE") is not None else None
-    sanction_ts = pd.Timestamp(get("SANCTION_DATE")) if get("SANCTION_DATE") is not None else None
-    complete_ts = pd.Timestamp(get("comp_ACTUAL_END_DATE")) if get("comp_ACTUAL_END_DATE") is not None else None
 
-    fallback_amount = rec_amount if rec_amount is not None else (sanction_amount if sanction_amount is not None else 1000.0)
+# ---------------------------------------------------------------------------
+# isolation forest per amount tier
+# ---------------------------------------------------------------------------
+def _amount(df: pd.DataFrame) -> pd.Series:
+    return df["SANCTION_AMOUNT"].fillna(df["rec_RECOMMENDED_AMOUNT"])
 
-    row = {
-        "log_recommended_amount": float(np.log10(max(float(fallback_amount), 1000.0))),
-        "log_sanctioned_amount": float(np.log10(max(float(sanction_amount), 1.0))) if sanction_amount is not None else np.nan,
-        "log_paid_amount": float(np.log10((float(paid) if paid is not None else 0.0) + 1.0)),
-        "sanction_to_recommended_ratio": (float(sanction_amount) / max(float(rec_amount), 1.0))
-            if sanction_amount is not None and rec_amount is not None else np.nan,
-        "paid_to_sanctioned_ratio": (float(paid) / max(float(sanction_amount), 1.0))
-            if paid is not None and sanction_amount is not None else np.nan,
-        "rec_month": rec_ts.month if rec_ts is not None else 6,
-        "rec_quarter": rec_ts.quarter if rec_ts is not None else 2,
-        "days_rec_to_sanction": (sanction_ts - rec_ts).days if sanction_ts is not None and rec_ts is not None else np.nan,
-        "days_sanction_to_complete": (complete_ts - sanction_ts).days if complete_ts is not None and sanction_ts is not None else np.nan,
-        "days_since_recommendation": (as_of - rec_ts).days if rec_ts is not None else np.nan,
-        "exp_row_count": float(get("exp_row_count") or 0),
-        "exp_vendor_count": float(get("exp_vendor_count") or 0),
-        "has_sanctioned": int(bool(get("has_sanctioned"))),
-        "has_completed": int(bool(get("has_completed"))),
-        "has_expenditure": int(bool(get("has_expenditure"))),
-        "exp_any_success": int(bool(get("exp_any_success"))),
-        "exp_any_inprogress": int(bool(get("exp_any_inprogress"))),
-        "activity_freq": freq_tables["activity"].get(get("rec_ACTIVITY_NAME_CLEAN"), 0.005),
-        "state_freq": freq_tables["state"].get(get("STATE_NAME"), 0.02),
-        "agency_freq": freq_tables["agency"].get(get("exp_top_ia"), 0.001),
-        "vendor_freq": freq_tables["vendor"].get(get("exp_top_vendor"), 0.0005),
-    }
-    return pd.DataFrame([row])[FEATURE_COLS]
+
+def fit_tier_forests(X: pd.DataFrame, amount: pd.Series, medians: dict) -> dict:
+    edges = list(np.nanquantile(np.log10(amount.where(amount > 0)), np.linspace(0, 1, N_TIERS + 1))[1:-1])
+    tier = np.digitize(np.log10(amount.where(amount > 0)).fillna(-1), edges)
+    Xf = X.fillna(medians)
+    forests = {}
+    for t in range(N_TIERS):
+        part = Xf[tier == t]
+        if len(part) < 200:
+            continue
+        iso = IsolationForest(n_estimators=200, contamination="auto", random_state=42).fit(part)
+        s = iso.score_samples(part)
+        forests[t] = {"iso": iso, "range": (float(s.min()), float(s.max()))}
+    return {"edges": edges, "forests": forests}
+
+
+def tier_anomaly(X: pd.DataFrame, amount: pd.Series, bundle: dict, medians: dict) -> np.ndarray:
+    tier = np.digitize(np.log10(amount.where(amount > 0)).fillna(-1), bundle["edges"])
+    Xf = X.fillna(medians)
+    out = np.full(len(X), np.nan)
+    for t, fm in bundle["forests"].items():
+        mask = tier == t
+        if mask.any():
+            lo, hi = fm["range"]
+            raw = fm["iso"].score_samples(Xf[mask])
+            out[mask] = np.clip((hi - raw) / (hi - lo), 0, 1) if hi > lo else np.nan
+    return out
+
+
+def anomaly_scores(spine: pd.DataFrame | None = None) -> pd.DataFrame:
+    """[work_number, scope_house, scope_tenure, anomaly_score] for every work
+    - attached to work_risk to reorder the queue within a priority band."""
+    cfg = load_detector_config()
+    as_of = pd.Timestamp(cfg["as_of_date"])
+    spine = spine if spine is not None else pd.read_parquet(DATA_PROCESSED / "spine.parquet")
+    X, _ = build_features(spine, as_of)
+    medians = {c: float(X[c].median()) for c in FEATURE_COLS}
+    amount = _amount(spine)
+    forests = fit_tier_forests(X, amount, medians)
+    return pd.DataFrame({
+        "work_number": spine["WORK_RECOMMENDATION_DTL_ID"].astype("int64").astype(str),
+        "scope_house": spine["SCOPE_HOUSE"], "scope_tenure": spine["SCOPE_TENURE"],
+        "anomaly_score": np.round(tier_anomaly(X, amount, forests, medians), 4),
+    })
+
+
+# ---------------------------------------------------------------------------
+# rule-agreement classifier
+# ---------------------------------------------------------------------------
+def grouped_auc(clf, X, y, groups, n_splits=5):
+    """Out-of-fold AUC with GroupKFold. None when a fold can't be scored
+    (one class only) - never a stand-in number."""
+    oof = np.full(len(y), np.nan)
+    for train, test in GroupKFold(n_splits=n_splits).split(X, y, groups):
+        if y.iloc[train].nunique() < 2:
+            return None, None, None
+        model = clf.__class__(**clf.get_params()).fit(X.iloc[train], y.iloc[train])
+        oof[test] = model.predict_proba(X.iloc[test])[:, 1]
+        last = (model, test)
+    try:
+        auc = float(roc_auc_score(y, oof))
+    except ValueError:
+        auc = None
+    return auc, oof, last
 
 
 def train_model() -> dict:
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    spine_path = DATA_PROCESSED / "spine.parquet"
-    work_risk_path = DATA_FINDINGS / "work_risk.parquet"
-    if not spine_path.exists() or not work_risk_path.exists():
-        raise FileNotFoundError(f"spine.parquet and work_risk.parquet are both required - run the pipeline first.")
-
+    spine_path, wr_path = DATA_PROCESSED / "spine.parquet", DATA_FINDINGS / "work_risk.parquet"
+    if not spine_path.exists() or not wr_path.exists():
+        raise FileNotFoundError("spine.parquet and work_risk.parquet are both required - run the pipeline first.")
     cfg = load_detector_config()
     as_of = pd.Timestamp(cfg["as_of_date"])
-
     spine = pd.read_parquet(spine_path)
-    work_risk = pd.read_parquet(work_risk_path)
-
-    # trained on the FULL spine (both tenures) - the old predictive.py only
-    # ever trained on 17th Lok Sabha's 94,795 rows; max_severity is real for
-    # every work regardless of tenure, so there's no reason to leave the
-    # 18th LS's 107,971 rows unused.
-    spine = spine.copy()
+    work_risk = pd.read_parquet(wr_path)
     spine["work_number"] = spine["WORK_RECOMMENDATION_DTL_ID"].astype("int64").astype(str)
 
     high = work_risk.loc[work_risk["max_severity"] == "high", ["work_number", "scope_house", "scope_tenure"]].drop_duplicates()
-    high["is_high_risk"] = 1
-    df = spine.merge(
-        high, how="left",
-        left_on=["work_number", "SCOPE_HOUSE", "SCOPE_TENURE"],
-        right_on=["work_number", "scope_house", "scope_tenure"],
-    )
-    df["is_high_risk"] = df["is_high_risk"].fillna(0).astype(int)
-
+    high["is_high"] = 1
+    df = spine.merge(high, how="left", left_on=["work_number", "SCOPE_HOUSE", "SCOPE_TENURE"],
+                     right_on=["work_number", "scope_house", "scope_tenure"])
+    y = df["is_high"].fillna(0).astype(int)
     X, freq_tables = build_features(df, as_of)
-    y = df["is_high_risk"]
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+    groups = df["CONSTITUENCY_ID"].fillna(-1)
 
     clf = HistGradientBoostingClassifier(max_iter=150, learning_rate=0.08, max_depth=6, random_state=42)
-    clf.fit(X_train, y_train)
+    auc, _oof, last = grouped_auc(clf, X, y, groups)
+    importance_ranking = []
+    if last is not None:
+        model, test = last
+        sample = test[:20000]
+        perm = permutation_importance(model, X.iloc[sample], y.iloc[sample], n_repeats=5, random_state=42,
+                                      scoring="roc_auc", n_jobs=-1)
+        importance_ranking = sorted(zip(FEATURE_COLS, perm.importances_mean.tolist()), key=lambda kv: kv[1], reverse=True)
+    clf.fit(X, y)
 
-    proba = clf.predict_proba(X_test)[:, 1]
-    auc = float(roc_auc_score(y_test, proba))
-
-    # what the trained model actually learned matters, ranked - not a
-    # human's guess about what should matter. Run once here (against the
-    # held-out test set), stored in the bundle, reused for every live
-    # prediction's driver explanation.
-    perm = permutation_importance(clf, X_test, y_test, n_repeats=8, random_state=42, scoring="roc_auc", n_jobs=-1)
-    importance_ranking = sorted(zip(FEATURE_COLS, perm.importances_mean.tolist()), key=lambda kv: kv[1], reverse=True)
-
-    feature_stats = {
-        c: {"p10": float(X[c].quantile(0.1)), "p90": float(X[c].quantile(0.9)), "median": float(X[c].median())}
-        for c in FEATURE_COLS
-    }
-
-    # Isolation Forest can't take NaN - filled with the real training
-    # median only for this model; the classifier above still sees real NaN.
-    X_filled = X.fillna({c: feature_stats[c]["median"] for c in FEATURE_COLS})
-    iso = IsolationForest(n_estimators=200, contamination=0.05, random_state=42)
-    iso.fit(X_filled)
-    train_scores = iso.score_samples(X_filled)
+    feature_stats = {c: {"p10": float(X[c].quantile(0.1)), "p90": float(X[c].quantile(0.9)),
+                         "median": float(X[c].median())} for c in FEATURE_COLS}
+    medians = {c: s["median"] for c, s in feature_stats.items()}
+    forests = fit_tier_forests(X, _amount(df), medians)
 
     bundle = {
-        "clf": clf, "iso": iso, "freq_tables": freq_tables, "as_of": as_of,
+        "clf": clf, "forests": forests, "freq_tables": freq_tables, "as_of": as_of,
         "importance_ranking": importance_ranking, "feature_stats": feature_stats,
-        "anomaly_score_range": (float(train_scores.min()), float(train_scores.max())),
-        "metrics": {
-            "auc": round(auc, 3), "n_train": len(X_train), "n_test": len(X_test),
-            "positive_rate": round(float(y.mean()), 4), "n_features": len(FEATURE_COLS),
-        },
+        "metrics": {"rule_agreement_auc": round(auc, 3) if auc is not None else None,
+                    "evaluation": "GroupKFold(5) by constituency, out-of-fold",
+                    "n": int(len(X)), "positive_rate": round(float(y.mean()), 4), "n_features": len(FEATURE_COLS)},
     }
     joblib.dump(bundle, MODEL_PATH)
-    print(f"Trained risk model: AUC={auc:.3f}, positive_rate={y.mean():.3f} (is_high_risk), n={len(X):,}, features={len(FEATURE_COLS)}")
-    print("Top learned risk factors:", ", ".join(f"{f} ({imp:.4f})" for f, imp in importance_ranking[:5]))
-    print(f"Saved to {MODEL_PATH}")
+    print(f"  rule-agreement model: out-of-fold AUC={bundle['metrics']['rule_agreement_auc']} "
+          f"(GroupKFold by constituency), positive rate {y.mean():.3f}, n={len(X):,}")
     return bundle["metrics"]
 
 
@@ -250,6 +240,9 @@ def get_model():
         if not MODEL_PATH.exists():
             train_model()
         _model_bundle = joblib.load(MODEL_PATH)
+        if "forests" not in _model_bundle:          # bundle from before this change
+            train_model()
+            _model_bundle = joblib.load(MODEL_PATH)
     return _model_bundle
 
 
@@ -258,54 +251,87 @@ def explain_drivers(features_row: dict, importance_ranking: list, feature_stats:
     for rank, (feat, _imp) in enumerate(importance_ranking, start=1):
         if len(drivers) >= top_n:
             break
-        val = features_row.get(feat)
-        if val is None or pd.isna(val):
+        v = features_row.get(feat)
+        if v is None or pd.isna(v):
             continue
-        stats = feature_stats[feat]
+        s = feature_stats[feat]
         label = HUMAN_LABEL.get(feat, feat)
-        if val >= stats["p90"]:
-            drivers.append(f"{label} is in the top 10% of all works - the model's #{rank} most important learned factor")
-        elif val <= stats["p10"]:
-            drivers.append(f"{label} is in the bottom 10% of all works - the model's #{rank} most important learned factor")
-    if not drivers:
-        drivers.append("No single factor stands out - risk here comes from a combination of moderate factors the model weighs together")
+        if v >= s["p90"]:
+            drivers.append(f"{label} is in the top 10% of all works (the model's #{rank} factor)")
+        elif v <= s["p10"]:
+            drivers.append(f"{label} is in the bottom 10% of all works (the model's #{rank} factor)")
     return drivers
 
 
 def predict(work: dict) -> dict:
-    """work: the raw spine-row dict for one work (api/main.py already has
-    this from Store.work(...)). Returns a comprehensive risk read - a
-    supervised risk score, an unsupervised anomaly score, and real
-    model-derived driver sentences - from ~21 automatically-engineered raw
-    features, not the old 5 hand-picked ones."""
+    """work: the raw spine row for one work. Returns the rule-agreement
+    score (how closely this work resembles works the rules graded high) and
+    the anomaly score. Neither is a risk judgement of its own."""
     try:
         bundle = get_model()
-        features_row = build_inference_features(work, bundle["freq_tables"], bundle["as_of"])
-
-        proba = float(bundle["clf"].predict_proba(features_row)[0, 1])
-        tier = "High" if proba >= 0.70 else "Medium" if proba >= 0.40 else "Low"
-
-        filled = features_row.fillna({c: bundle["feature_stats"][c]["median"] for c in FEATURE_COLS})
-        raw_score = float(bundle["iso"].score_samples(filled)[0])
-        is_anomalous = bool(bundle["iso"].predict(filled)[0] == -1)
-        lo, hi = bundle["anomaly_score_range"]
-        anomaly_score = float(np.clip((hi - raw_score) / (hi - lo), 0.0, 1.0)) if hi > lo else 0.0
-
-        drivers = explain_drivers(features_row.iloc[0].to_dict(), bundle["importance_ranking"], bundle["feature_stats"])
-
+        X = build_inference_features(work, bundle["freq_tables"], bundle["as_of"])
+        score = float(bundle["clf"].predict_proba(X)[0, 1])
+        medians = {c: s["median"] for c, s in bundle["feature_stats"].items()}
+        amount = pd.Series([work.get("SANCTION_AMOUNT") if pd.notna(work.get("SANCTION_AMOUNT"))
+                            else work.get("rec_RECOMMENDED_AMOUNT")], dtype="float64")
+        anomaly = tier_anomaly(X, amount, bundle["forests"], medians)[0]
         return {
-            "risk_score": round(proba, 3),
-            "risk_tier": tier,
-            "anomaly_score": round(anomaly_score, 3),
-            "is_anomalous": is_anomalous,
-            "top_drivers": drivers,
-            "model_auc": bundle["metrics"]["auc"],
+            "rule_agreement_score": round(score, 3),
+            "anomaly_score": None if np.isnan(anomaly) else round(float(anomaly), 3),
+            "top_drivers": explain_drivers(X.iloc[0].to_dict(), bundle["importance_ranking"], bundle["feature_stats"]),
+            "model_auc": bundle["metrics"].get("rule_agreement_auc"),
+            "evaluation": bundle["metrics"].get("evaluation"),
         }
     except Exception as e:
-        return {
-            "risk_score": None, "risk_tier": "Medium", "anomaly_score": None, "is_anomalous": False,
-            "top_drivers": [f"Model unavailable ({e})"], "model_auc": None,
-        }
+        return {"rule_agreement_score": None, "anomaly_score": None,
+                "top_drivers": [f"Model unavailable ({e})"], "model_auc": None, "evaluation": None}
+
+
+# ---------------------------------------------------------------------------
+# model on real reviewer labels (spec 6.6)
+# ---------------------------------------------------------------------------
+def precision_at_k(y_true: np.ndarray, scores: np.ndarray, k: int) -> float | None:
+    if len(y_true) < k:
+        return None
+    top = np.argsort(-scores)[:k]
+    return float(np.mean(y_true[top]))
+
+
+def train_label_model() -> dict:
+    """Trained only on officer verdicts (verified = 1, dismissed = 0). Below
+    the threshold it reports why and does nothing."""
+    from sklearn.calibration import CalibratedClassifierCV
+    from engine.validation import load_statuses
+
+    cfg = load_detector_config()
+    need = cfg["feedback"]["min_reviews_for_label_model"]
+    statuses = [s for s in load_statuses() if s["status"] in ("verified", "dismissed")]
+    if len(statuses) < need:
+        msg = f"label model not trained: {len(statuses)} reviewed findings < {need} required"
+        print(f"  {msg}")
+        return {"trained": False, "reason": msg}
+
+    as_of = pd.Timestamp(cfg["as_of_date"])
+    spine = pd.read_parquet(DATA_PROCESSED / "spine.parquet")
+    spine["work_number"] = spine["WORK_RECOMMENDATION_DTL_ID"].astype("int64").astype(str)
+    labels = pd.DataFrame(statuses)
+    labels["y"] = (labels["status"] == "verified").astype(int)
+    df = labels.merge(spine, left_on=["work_number", "scope_house", "scope_tenure"],
+                      right_on=["work_number", "SCOPE_HOUSE", "SCOPE_TENURE"])
+    X, freq_tables = build_features(df, as_of)
+    y, groups = df["y"], df["CONSTITUENCY_ID"].fillna(-1)
+    base = HistGradientBoostingClassifier(max_iter=100, learning_rate=0.08, max_depth=4, random_state=42)
+    oof = np.full(len(y), np.nan)
+    for train, test in GroupKFold(n_splits=5).split(X, y, groups):
+        model = CalibratedClassifierCV(base, method="isotonic", cv=3).fit(X.iloc[train], y.iloc[train])
+        oof[test] = model.predict_proba(X.iloc[test])[:, 1]
+    final = CalibratedClassifierCV(base, method="isotonic", cv=3).fit(X, y)
+    metrics = {"trained": True, "n": int(len(y)),
+               "precision_at_50": precision_at_k(y.values, oof, 50),
+               "precision_at_100": precision_at_k(y.values, oof, 100)}
+    joblib.dump({"model": final, "freq_tables": freq_tables, "metrics": metrics}, LABEL_MODEL_PATH)
+    print(f"  label model: {metrics}")
+    return metrics
 
 
 if __name__ == "__main__":

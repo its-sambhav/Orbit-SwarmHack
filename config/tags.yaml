@@ -1,0 +1,172 @@
+# Tag registry - the only names a finding's `tag` field may carry.
+#
+# Keyed by a stable ID (what config/detectors.yaml and the code refer to);
+# `name` is the wording officials already know and is what the API and UI
+# show. `verified: true` means the source is a field we can read straight out
+# of the portal data; `verified: false` means the paragraph/annexure/CAG
+# reference was supplied by the spec and has NOT been checked against the
+# 2023 guideline text - see reports/verification_needed.md.
+#
+# `family` drives scoring (engine/score.py): findings in one family don't
+# corroborate each other, findings in two different families do.
+# data_integrity never corroborates and carries at most weight 0.05.
+
+families: [timing, money, documentation, concentration, guideline, data_integrity]
+
+tags:
+  # ---- A. Sanction stage ----
+  DELAY_IN_SANCTION:
+    name: "Delay in Sanction"
+    family: timing
+    source: "MPLADS Guidelines para 3.12 (sanction within 75 days of recommendation)"
+    verified: false
+  RECOMMENDATION_PENDING_SANCTION:
+    name: "Recommendation Pending Sanction"
+    family: timing
+    source: "Portal work stage 'Pending for Sanction'"
+    verified: true
+  SANCTIONED_WORK_NOT_TAKEN_UP:
+    name: "Sanctioned Work Not Taken Up"
+    family: timing
+    source: "CAG audit observation (sanctioned works not started); portal stage 'Time Estimation' / 'Vendor Identification'"
+    verified: false
+
+  # ---- B. Execution stage ----
+  DELAY_IN_COMPLETION:
+    name: "Delay in Completion"
+    family: timing
+    source: "MPLADS Guidelines para 3.13 (completion within one year of sanction)"
+    verified: false
+  WORK_NOT_COMPLETED:
+    name: "Work Not Completed"
+    family: timing
+    source: "Portal work stage and payment records (no payment in the last 180 days)"
+    verified: true
+  PAYMENT_WITHOUT_COMPLETION:
+    name: "Payment Without Completion"
+    family: timing
+    source: "Portal payment status 'Payment Success' with no completion record"
+    verified: true
+  PROLONGED_DELAY_BEYOND_GUIDELINE:
+    name: "Prolonged Delay Beyond Guideline"
+    family: timing
+    source: "MPLADS Guidelines paras 3.12-3.13 - fixed hard-breach limits, independent of how slow peers are"
+    verified: false
+
+  # ---- C. Expenditure ----
+  EXCESS_EXPENDITURE:
+    name: "Excess Expenditure"
+    family: money
+    source: "CAG audit observation (expenditure in excess of sanctioned amount)"
+    verified: false
+  SANCTION_EXCEEDS_RECOMMENDATION:
+    name: "Sanction Exceeds Recommendation"
+    family: money
+    source: "CAG audit observation (sanction without recommendation of the MP)"
+    verified: false
+  EXPENDITURE_WITHOUT_SANCTION:
+    name: "Expenditure Without Sanction"
+    family: money
+    source: "Portal payment records against work stage 'Pending for Sanction' / sanction date"
+    verified: true
+  EXPENDITURE_AFTER_COMPLETION:
+    name: "Expenditure After Completion"
+    family: money
+    source: "Portal payment dates against the completion date"
+    verified: true
+  UNUSUAL_COST:
+    name: "Unusual Cost"
+    family: money
+    source: "Robust peer comparison of sanctioned amount within the same state and activity"
+    verified: true
+  PAYMENT_COMPLETION_MISMATCH:
+    name: "Payment and Completion Mismatch"
+    family: money
+    source: "Portal total paid against the completion record's actual amount"
+    verified: true
+
+  # ---- D. Eligibility and entitlement ----
+  PROHIBITED_WORK:
+    name: "Prohibited Work"
+    family: guideline
+    source: "MPLADS Guidelines Annexure-II (list of works not permissible)"
+    verified: false
+  TRUST_SOCIETY_LIMIT_EXCEEDED:
+    name: "Trust/Society Limit Exceeded"
+    family: guideline
+    source: "MPLADS Guidelines para 3.21 (ceiling on works for trusts and societies)"
+    verified: false
+  ALLOCATION_LIMIT_EXCEEDED:
+    name: "Allocation Limit Exceeded"
+    family: guideline
+    source: "Portal allocation table - recommendations above the MP's allocation for the tenure"
+    verified: false
+  SC_ST_EARMARK_SHORTFALL:
+    name: "SC/ST Earmark Shortfall"
+    family: guideline
+    source: "MPLADS Guidelines para 2.5 (15% for SC areas, 7.5% for ST areas) - estimated"
+    verified: false
+  UNSPENT_BALANCE:
+    name: "Unspent Balance"
+    family: guideline
+    source: "CAG audit observation (unspent MPLADS balance at end of tenure)"
+    verified: false
+
+  # ---- E. Duplication and concentration ----
+  DUPLICATE_WORK:
+    name: "Duplicate Work"
+    family: money
+    source: "Identical work description within the same constituency and activity"
+    verified: true
+  SAME_WORK_MULTIPLE_MPS:
+    name: "Same Work Recommended by Multiple MPs"
+    family: money
+    source: "Same implementing district, same description and amount, recommended by different MPs"
+    verified: true
+  AGENCY_CONCENTRATION:
+    name: "Concentration of Works in a Single Agency"
+    family: concentration
+    source: "Portal payment records - agency share of district payments (HHI)"
+    verified: true
+
+  # ---- F. Record integrity (kept apart from misuse) ----
+  COMPLETION_EVIDENCE_NOT_ATTACHED:
+    name: "Completion Evidence Not Attached"
+    family: documentation
+    source: "Portal completion record attachment field (no supporting file on the completion record)"
+    verified: true
+  RECORD_DATE_DISCREPANCY:
+    name: "Record Date Discrepancy"
+    family: data_integrity
+    source: "Logical date order: recommendation <= sanction <= completion"
+    verified: true
+  CALAMITY_CONSENT_DISCREPANCY:
+    name: "Calamity Consent Discrepancy"
+    family: documentation
+    source: "Portal calamity consent table - event type and per-MP consent ceiling"
+    verified: false
+
+# Context shown on every finding, read straight from the portal fields.
+lifecycle_stage_tags:
+  - "Pending for Sanction"
+  - "Time Estimation"
+  - "Vendor Identification"
+  - "Sanction"
+  - "Physical Inspection"
+  - "Work partially Completed"
+  - "Work Completed"
+payment_tags: ["Payment In-Progress", "Payment Success"]
+category_tags: ["Normal/Others", "Trust and Society", "Repair and Renovation", "Bar and Associations"]
+
+# Old tag -> new tags, for anyone reading findings exported before this change.
+old_tag_mapping:
+  "TIME DELAY": [DELAY_IN_SANCTION, RECOMMENDATION_PENDING_SANCTION, SANCTIONED_WORK_NOT_TAKEN_UP,
+                 DELAY_IN_COMPLETION, WORK_NOT_COMPLETED, PAYMENT_WITHOUT_COMPLETION,
+                 PROLONGED_DELAY_BEYOND_GUIDELINE]
+  "COST OUTLIER": [UNUSUAL_COST]
+  "DUPLICATION": [DUPLICATE_WORK, SAME_WORK_MULTIPLE_MPS]
+  "AGENCY CONCENTRATION": [AGENCY_CONCENTRATION]
+  "GHOST ASSET": [COMPLETION_EVIDENCE_NOT_ATTACHED]
+  "OVER ALLOCATION": [ALLOCATION_LIMIT_EXCEEDED]
+  "STATUTORY COMPLIANCE": [SC_ST_EARMARK_SHORTFALL]
+  "DATA INTEGRITY": [RECORD_DATE_DISCREPANCY]
