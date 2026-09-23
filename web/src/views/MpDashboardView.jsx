@@ -6,7 +6,6 @@ import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart
 import { RankChart } from '../components/RankChart'
 import { DonutCard } from '../components/DonutCard'
 import { StatCard } from '../components/StatCard'
-import { Breadcrumb } from '../components/Breadcrumb'
 import { TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
@@ -16,6 +15,10 @@ import { useLanguage } from '../i18n'
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
 const PIPELINE_STAGE_LABEL = { recommendation: 'Recommendation', sanction: 'Sanction', execution: 'Execution', payment: 'Payment' }
+
+function scrollToId(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 // The MP's own dashboard - constituency development and recommendations,
 // not administrative execution. Shows the FULL recommended-works portfolio
@@ -116,28 +119,30 @@ export function MpDashboardView() {
         profileRole="Member of Parliament"
         avatarLetter="M"
         drawerLinks={[
+          { label: 'Overview', onClick: () => scrollToId('mospi-overview') },
           { label: 'Map', onClick: () => navigate(mapUrl) },
+          { label: 'Works', onClick: () => navigate(`/mp/${encodeURIComponent(mpName)}/works?${params.toString()}`) },
         ]}
       />
       <div className="mospi-body" id="report-capture">
-        <div className="report-toolbar">
-          <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
-          <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
-          <GenerateReportButton
-            level="mp" scope={scope} dateFrom={dateFrom} dateTo={dateTo}
-            title={`${data.mp_name} — ${scopeLabel(scope)}`} summary={scorecard}
-          />
-        </div>
-
         <div className="map-drill-header" style={{ marginBottom: 18 }}>
-          <Breadcrumb items={[{ label: data.mp_name }]} />
-          <h1 style={{ margin: '4px 0 2px' }}>{td(data.mp_name)}</h1>
-          <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>
+          <div className="mospi-header-row">
+            <h1 style={{ margin: 0 }}>{td(data.mp_name)}</h1>
+            <div className="report-toolbar">
+              <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
+              <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
+              <GenerateReportButton
+                level="mp" scope={scope} dateFrom={dateFrom} dateTo={dateTo}
+                title={`${data.mp_name} — ${scopeLabel(scope)}`} summary={scorecard}
+              />
+            </div>
+          </div>
+          <div className="mospi-header-meta">
             {td(data.constituency)}, {td(data.state)} · {t(scopeLabel(scope))} · {t(data.status)}
           </div>
         </div>
 
-        <div className="mospi-stats">
+        <div className="mospi-stats" id="mospi-overview">
           {cards.map((c) => (
             <StatCard
               key={c.label} label={c.label} value={c.value} sub={c.sub}

@@ -143,25 +143,29 @@ export function DistrictView() {
         ]}
       />
       <div className="mospi-body" id="report-capture">
-        <div className="report-toolbar">
-          <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
-          <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
-          <GenerateReportButton
-            level="district" scope={scope} dateFrom={dateFrom} dateTo={dateTo}
-            state={data.state} district={data.district}
-            title={`${data.district}, ${data.state} — ${scopeLabel(scope)}`}
-            summary={data.scorecard}
-          />
-        </div>
-
         <div className="map-drill-header" style={{ marginBottom: 18 }}>
-          <Breadcrumb items={isRoleView ? [{ label: data.district }] : [
-            { label: data.state, to: `/mospi/map?state=${encodeURIComponent(data.state)}` },
-            { label: data.district },
-          ]} />
-          <h1 style={{ margin: '4px 0 2px' }}>{td(data.district)}</h1>
-          <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>
-            {t('role.district')} · {td(data.state)} · {t(scopeLabel(scope))}
+          {/* a single-item breadcrumb (the role's own dashboard) just repeats
+              the h1 below it with no back arrow - only worth showing when
+              MoSPI's own drill-down gives it a real parent (state) to link
+              back to. */}
+          {!isRoleView && (
+            <Breadcrumb items={[
+              { label: data.state, to: `/mospi/map?state=${encodeURIComponent(data.state)}` },
+              { label: data.district },
+            ]} />
+          )}
+          <div className="mospi-header-row">
+            <h1 style={{ margin: 0 }}>{td(data.district)}</h1>
+            <div className="report-toolbar">
+              <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
+              <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
+              <GenerateReportButton
+                level="district" scope={scope} dateFrom={dateFrom} dateTo={dateTo}
+                state={data.state} district={data.district}
+                title={`${data.district}, ${data.state} — ${scopeLabel(scope)}`}
+                summary={data.scorecard}
+              />
+            </div>
           </div>
         </div>
 

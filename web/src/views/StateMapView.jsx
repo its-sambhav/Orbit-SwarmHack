@@ -208,13 +208,17 @@ export function StateMapView() {
             <div className="map-drill-findings">
               {data ? (
                 <>
-                  <h3>{t('Anomalies ({n})', { n: data.queue.length })}</h3>
-                  {data.queue.length ? (
-                    <>
+                  <div className="queue-panel-header">
+                    <h3>{t('Risks ({n})', { n: data.queue.length })}</h3>
+                    {data.queue.length > 0 && (
                       <input
                         type="search" className="queue-search-input" placeholder={t('Search works…')} aria-label={t('Search works')}
                         value={queueSearch} onChange={(e) => setQueueSearch(e.target.value)}
                       />
+                    )}
+                  </div>
+                  {data.queue.length ? (
+                    <>
                       {filteredQueue.length ? (
                         <div className="queue-list">
                           {filteredQueue.map((item) => (

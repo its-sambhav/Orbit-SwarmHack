@@ -16,20 +16,27 @@ const QUEUE_LIMIT = 60
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
 
-function QueueList({ items, navigate }) {
+// title + search share one row (.queue-panel-header) instead of the search
+// sitting on its own row below the heading - both this component's own
+// callers (India-level and per-state) pass a plain "Risks (N)" title.
+function QueueList({ title, items, navigate }) {
   const { t, td } = useLanguage()
   const [search, setSearch] = useState('')
-  if (!items.length) {
-    return <EmptyState title="No findings above the queue threshold here" subtitle="Try a different scope or wait for the next pipeline run." />
-  }
   const filtered = items.filter((item) => queueItemMatches(item, search))
   return (
     <>
-      <input
-        type="search" className="queue-search-input" placeholder={t('Search works…')} aria-label={t('Search works')}
-        value={search} onChange={(e) => setSearch(e.target.value)}
-      />
-      {filtered.length ? (
+      <div className="queue-panel-header">
+        <h3>{title}</h3>
+        {items.length > 0 && (
+          <input
+            type="search" className="queue-search-input" placeholder={t('Search works…')} aria-label={t('Search works')}
+            value={search} onChange={(e) => setSearch(e.target.value)}
+          />
+        )}
+      </div>
+      {!items.length ? (
+        <EmptyState title="No findings above the queue threshold here" subtitle="Try a different scope or wait for the next pipeline run." />
+      ) : filtered.length ? (
         <div className="queue-list">
           {filtered.map((item) => (
             <button
@@ -386,19 +393,13 @@ export function MospiMapView() {
 
           <div className="map-drill-findings">
             {level === 'india' ? (
-              <>
-                <h3>{nationalQueue
-                  ? t('Review queue — {n} works', { n: nationalQueue.total.toLocaleString('en-IN') })
-                  : t('Review queue')}</h3>
-                {nationalQueue ? <QueueList items={nationalQueue.items} navigate={navigate} /> : <Loading />}
-              </>
+              nationalQueue
+                ? <QueueList title={t('Risks ({n})', { n: nationalQueue.total.toLocaleString('en-IN') })} items={nationalQueue.items} navigate={navigate} />
+                : <Loading />
             ) : (
-              <>
-                <h3>{stateDetail
-                  ? t('{name} review queue — {n} works', { name: td(selectedState), n: stateDetail.works_flagged.toLocaleString('en-IN') })
-                  : t('{name} review queue', { name: td(selectedState) })}</h3>
-                {stateDetail ? <QueueList items={stateDetail.queue} navigate={navigate} /> : <Loading />}
-              </>
+              stateDetail
+                ? <QueueList title={t('Risks ({n})', { n: stateDetail.works_flagged.toLocaleString('en-IN') })} items={stateDetail.queue} navigate={navigate} />
+                : <Loading />
             )}
           </div>
         </div>

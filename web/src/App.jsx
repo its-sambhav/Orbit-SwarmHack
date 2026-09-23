@@ -11,6 +11,7 @@ import { DistrictMapView } from './views/DistrictMapView'
 import { ConstituencyView } from './views/ConstituencyView'
 import { MpDashboardView } from './views/MpDashboardView'
 import { MpMapView } from './views/MpMapView'
+import { MpWorksView } from './views/MpWorksView'
 import { AgencyView } from './views/AgencyView'
 import { CaseFileView } from './views/CaseFileView'
 import { MpAuditsView } from './views/MpAuditsView'
@@ -50,6 +51,7 @@ export default function App() {
           (same component MP Audits' profile pages link out to). */}
       <Route path="/mp/:id" element={<MpDashboardView />} />
       <Route path="/mp/:id/map" element={<MpMapView />} />
+      <Route path="/mp/:id/works" element={<MpWorksView />} />
       <Route path="/constituency/:id" element={<ConstituencyView />} />
       <Route path="/agency/:agencyName" element={<AgencyView />} />
       <Route path="/work/:workNumber" element={<CaseFileView />} />

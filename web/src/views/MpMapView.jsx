@@ -121,6 +121,7 @@ export function MpMapView() {
         avatarLetter="M"
         drawerLinks={[
           { label: 'Overview', onClick: () => navigate(overviewUrl) },
+          { label: 'Works', onClick: () => navigate(`/mp/${encodeURIComponent(mpName)}/works?${params.toString()}`) },
         ]}
       />
       <div className="mospi-map-page-body" id="report-capture">
@@ -208,7 +209,7 @@ export function MpMapView() {
                     <button
                       key={w.work_number}
                       className="queue-item"
-                      onClick={() => navigate(`/work/${w.work_number}?scope_house=Lok%20Sabha&scope_tenure=${encodeURIComponent(scope)}&role=mp&role_name=${encodeURIComponent(data.mp_name)}`)}
+                      onClick={() => navigate(`/work/${w.work_number}?scope_house=Lok%20Sabha&scope_tenure=${encodeURIComponent(scope)}&role=mp&role_name=${encodeURIComponent(data.mp_name)}&from=map`)}
                     >
                       <div className="queue-item-top">
                         <span className="queue-item-title">{w.activity ? td(w.activity) : t('Work #{n}', { n: w.work_number })}</span>

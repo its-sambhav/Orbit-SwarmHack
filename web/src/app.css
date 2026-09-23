@@ -511,6 +511,15 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 .queue-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 .queue-grid .queue-item { border: 1px solid var(--border); border-radius: var(--radius-md); }
 
+/* one full-width row per item, but each its own bordered card with a gap
+   between rows, rather than a hairline border-bottom separator - MpWorksView's
+   own single-column list; the narrow side-panel risk queues elsewhere
+   (StateMapView/DistrictMapView/ConstituencyView) keep the plain thin-line
+   list, which reads better at that width. */
+.queue-list-cards { display: flex; flex-direction: column; gap: 10px; }
+.queue-list-cards .queue-item { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.queue-list-cards .queue-item:hover { border-color: var(--accent); background: var(--surface); }
+
 /* ---------- map legend ---------- */
 .map-legend {
   position: absolute; bottom: 12px; left: 12px; z-index: 10;
@@ -902,6 +911,24 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 .map-drill-details h3:first-child, .map-drill-findings h3:first-child, .map-drill-center h3:first-child { margin-top: 0; }
 .map-drill-findings { display: flex; flex-direction: column; }
 .map-drill-findings .queue-list { flex: 1; }
+
+/* the risk/anomaly queue's own heading + its search box on one line, not
+   the search sitting on a second row below - every map view that surfaces a
+   flagged-works list on its right panel shares this one row. */
+.queue-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; margin: 20px 0 10px; }
+.queue-panel-header:first-child { margin-top: 0; }
+.queue-panel-header h3 { margin: 0; flex: none; }
+.queue-panel-header .queue-search-input { margin: 0; width: 150px; flex: none; }
+/* everything besides the "Works (N)" title itself - section tabs, a
+   district filter, the search box - grouped into one wrapping row on the
+   header's own right-hand side, instead of each stacking as its own row
+   underneath (MpWorksView's own works list, the one queue-panel-header
+   consumer with more than just a search box alongside the title). */
+.queue-panel-header-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.queue-panel-header-select {
+  font-family: inherit; font-size: 12px; padding: 5px 8px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink); flex: none;
+}
 
 .map-drill-map { position: relative; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
 

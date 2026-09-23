@@ -41,6 +41,7 @@ const NAV_ICON = {
   'Map (all India)': MapPinIcon,
   Anomalies: WarningIcon,
   'MP Audits': ClipboardIcon,
+  Works: ClipboardIcon,
   Reports: DocumentIcon,
 }
 const iconFor = (label) => { const Icon = NAV_ICON[label] || DotIcon; return <Icon /> }
@@ -52,7 +53,7 @@ const iconFor = (label) => { const Icon = NAV_ICON[label] || DotIcon; return <Ic
 // working unchanged instead of importing i18n itself.
 const DRAWER_LABEL_KEY = {
   Overview: 'drawer.overview', Map: 'drawer.map', 'Map (all India)': 'drawer.mapAllIndia',
-  Anomalies: 'drawer.anomalies', 'MP Audits': 'drawer.mpAudits', Reports: 'drawer.reports',
+  Anomalies: 'drawer.anomalies', 'MP Audits': 'drawer.mpAudits', Works: 'drawer.works', Reports: 'drawer.reports',
 }
 const ROLE_LABEL_KEY = {
   'State Nodal Authority': 'role.state', 'District Authority': 'role.district',

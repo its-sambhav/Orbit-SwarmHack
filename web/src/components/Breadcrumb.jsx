@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useLanguage } from '../i18n'
+import { STRINGS } from '../strings'
 
 const BackArrowIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -18,16 +19,23 @@ const BackArrowIcon = () => (
  * drill-down row, below the nav bar. */
 export function Breadcrumb({ items }) {
   const { t, td } = useLanguage()
+  // most labels are entity data (a state/district/MP/work name) and need
+  // td(); a few callers instead pass one of this app's own dotted UI-chrome
+  // keys (e.g. 'drawer.map') meant for t() - STRINGS only ever holds the
+  // latter, so an exact hit there is what tells the two apart. Without this,
+  // a chrome key fell through td()'s English short-circuit and rendered as
+  // its own raw key ("drawer.map") instead of the translated word.
+  const translateLabel = (label) => (STRINGS[label] ? t(label) : td(label))
   const parent = items.length > 1 ? items[items.length - 2] : null
   return (
     <nav className="breadcrumb" aria-label={t('Breadcrumb')}>
       {parent && (
         parent.to ? (
-          <Link className="breadcrumb-back" to={parent.to} aria-label={t('Back to {label}', { label: td(parent.label) })}>
+          <Link className="breadcrumb-back" to={parent.to} aria-label={t('Back to {label}', { label: translateLabel(parent.label) })}>
             <BackArrowIcon />
           </Link>
         ) : (
-          <button type="button" className="breadcrumb-back" onClick={parent.onClick} aria-label={t('Back to {label}', { label: td(parent.label) })}>
+          <button type="button" className="breadcrumb-back" onClick={parent.onClick} aria-label={t('Back to {label}', { label: translateLabel(parent.label) })}>
             <BackArrowIcon />
           </button>
         )
@@ -37,11 +45,11 @@ export function Breadcrumb({ items }) {
         return (
           <span className="breadcrumb-segment" key={i}>
             {isLast ? (
-              <span className="breadcrumb-current">{td(item.label)}</span>
+              <span className="breadcrumb-current">{translateLabel(item.label)}</span>
             ) : item.to ? (
-              <Link to={item.to}>{td(item.label)}</Link>
+              <Link to={item.to}>{translateLabel(item.label)}</Link>
             ) : (
-              <button type="button" className="breadcrumb-link" onClick={item.onClick}>{td(item.label)}</button>
+              <button type="button" className="breadcrumb-link" onClick={item.onClick}>{translateLabel(item.label)}</button>
             )}
             {!isLast && <span className="breadcrumb-sep">/</span>}
           </span>

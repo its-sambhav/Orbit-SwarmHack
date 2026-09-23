@@ -278,7 +278,13 @@ export function DistrictMapView() {
             </div>
 
             <div className="map-drill-findings">
-              <h3>{t('Pending action ({n})', { n: filteredQueue.length })}</h3>
+              <div className="queue-panel-header">
+                <h3>{t('Risks ({n})', { n: filteredQueue.length })}</h3>
+                <input
+                  type="search" className="queue-search-input" placeholder={t('Search works…')} aria-label={t('Search works')}
+                  value={queueSearch} onChange={(e) => setQueueSearch(e.target.value)}
+                />
+              </div>
               <div className="filters" style={{ marginBottom: 10 }}>
                 <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)}>
                   <option value="">{t('All severities')}</option>
@@ -287,10 +293,6 @@ export function DistrictMapView() {
                   <option value="low">{t('Low')}</option>
                 </select>
               </div>
-              <input
-                type="search" className="queue-search-input" placeholder={t('Search works…')} aria-label={t('Search works')}
-                value={queueSearch} onChange={(e) => setQueueSearch(e.target.value)}
-              />
               {filteredQueue.length ? (
                 <div className="queue-list">
                   {filteredQueue.map((item) => (

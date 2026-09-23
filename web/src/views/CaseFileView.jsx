@@ -134,6 +134,32 @@ const STATUS_LABEL = {
 const ROLE_LABEL = { state: 'State Nodal Authority', district: 'District Authority', agency: 'Implementing Agency', mp: 'Member of Parliament' }
 const ROLE_AVATAR = { state: 'S', district: 'D', agency: 'A', mp: 'M' }
 
+// a work opened from within a role dashboard used to get an empty side
+// rail (drawerLinks={role ? [] : [...]} below) - the only way back was one
+// breadcrumb segment hardcoded to that role's Overview page, regardless of
+// whether the reviewer actually came from its Map or Works page. Each of
+// these mirrors the same drawerLinks that role's own dashboard/map/works
+// pages already build for themselves.
+const ROLE_DRAWER_LINKS = {
+  state: (navigate, roleName, work, scopeTenure) => [
+    { label: 'Overview', onClick: () => navigate(`/state/${encodeURIComponent(roleName)}`) },
+    { label: 'Map', onClick: () => navigate(`/state/${encodeURIComponent(roleName)}/map?scope=${encodeURIComponent(scopeTenure)}`) },
+    { label: 'Anomalies', onClick: () => navigate(`/anomalies?state=${encodeURIComponent(roleName)}&scope=${encodeURIComponent(scopeTenure)}`) },
+  ],
+  district: (navigate, roleName, work, scopeTenure) => [
+    { label: 'Overview', onClick: () => navigate(`/district-authority/${encodeURIComponent(work.state)}/${encodeURIComponent(roleName)}`) },
+    { label: 'Map', onClick: () => navigate(`/district-authority/${encodeURIComponent(work.state)}/${encodeURIComponent(roleName)}/map?scope=${encodeURIComponent(scopeTenure)}`) },
+  ],
+  agency: (navigate, roleName) => [
+    { label: 'Overview', onClick: () => navigate(`/agency/${encodeURIComponent(roleName)}`) },
+  ],
+  mp: (navigate, roleName, work, scopeTenure) => [
+    { label: 'Overview', onClick: () => navigate(`/mp/${encodeURIComponent(roleName)}?scope=${encodeURIComponent(scopeTenure)}`) },
+    { label: 'Map', onClick: () => navigate(`/mp/${encodeURIComponent(roleName)}/map?scope=${encodeURIComponent(scopeTenure)}`) },
+    { label: 'Works', onClick: () => navigate(`/mp/${encodeURIComponent(roleName)}/works?scope=${encodeURIComponent(scopeTenure)}`) },
+  ],
+}
+
 function NarrativeBlock({ finding, workNumber, scopeHouse, scopeTenure }) {
   const { t } = useLanguage()
   const [state, setState] = useState({ status: 'idle' }) // idle | loading | done | failed
@@ -301,6 +327,11 @@ export function CaseFileView() {
   // own authorized pages, never fall back to MoSPI's own nav/breadcrumb.
   const role = params.get('role')
   const roleName = params.get('role_name')
+  // which of that role's own pages this work was opened from (Map vs Works
+  // vs the Overview default) - so the breadcrumb's "back" segment returns
+  // there instead of always bouncing to Overview regardless of where the
+  // reviewer actually came from.
+  const from = params.get('from')
   const [work, setWork] = useState(null)
   const [error, setError] = useState(null)
   // keyed by finding_id - an officer's saved verdict on each finding, if any
@@ -353,7 +384,14 @@ export function CaseFileView() {
       ]
     : role === 'mp'
     ? [
-        { label: roleName, to: `/mp/${encodeURIComponent(roleName)}?scope=${encodeURIComponent(scopeTenure)}` },
+        {
+          label: roleName,
+          to: from === 'map'
+            ? `/mp/${encodeURIComponent(roleName)}/map?scope=${encodeURIComponent(scopeTenure)}`
+            : from === 'works'
+            ? `/mp/${encodeURIComponent(roleName)}/works?scope=${encodeURIComponent(scopeTenure)}`
+            : `/mp/${encodeURIComponent(roleName)}?scope=${encodeURIComponent(scopeTenure)}`,
+        },
         { label: t('Work #{n}', { n: work.work_number }) },
       ]
     : [
@@ -375,7 +413,7 @@ export function CaseFileView() {
         profileName={role ? roleName : undefined}
         profileRole={role ? ROLE_LABEL[role] : undefined}
         avatarLetter={role ? ROLE_AVATAR[role] : undefined}
-        drawerLinks={role ? [] : [
+        drawerLinks={role ? (ROLE_DRAWER_LINKS[role]?.(navigate, roleName, work, scopeTenure) || []) : [
           { label: 'Overview', onClick: () => navigate('/mospi') },
           { label: 'Map', onClick: () => navigate('/mospi/map') },
           { label: 'Anomalies', onClick: () => navigate('/anomalies') },

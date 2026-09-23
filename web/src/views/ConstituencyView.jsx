@@ -274,13 +274,17 @@ export function ConstituencyView() {
         <div className="map-drill-findings">
           {data ? (
             <>
-              <h3>{t('Findings ({n})', { n: data.findings.length })}</h3>
-              {data.findings.length ? (
-                <>
+              <div className="queue-panel-header">
+                <h3>{t('Risks ({n})', { n: data.findings.length })}</h3>
+                {data.findings.length > 0 && (
                   <input
                     type="search" className="queue-search-input" placeholder={t('Search works…')} aria-label={t('Search works')}
                     value={queueSearch} onChange={(e) => setQueueSearch(e.target.value)}
                   />
+                )}
+              </div>
+              {data.findings.length ? (
+                <>
                   {data.findings.filter((f) => queueItemMatches(f, queueSearch)).length ? (
                     <div className="queue-list">
                       {data.findings.filter((f) => queueItemMatches(f, queueSearch)).map((f) => (
