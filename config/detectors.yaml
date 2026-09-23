@@ -113,21 +113,31 @@ detectors:
     confidence: statistical
     floor: open_after_sanction_age
     stage: payment
+  # merge_into: the statistical detectors that measure the SAME delay on the
+  # same work. When both lanes fire on one work, they are one problem seen
+  # two ways, so they become one finding: the more specific statistical tag
+  # is kept, it takes rule confidence (a fixed limit was breached) and both
+  # lanes' evidence. A hard breach with no statistical sibling (e.g. a work
+  # in a state where everything is slow) still stands on its own, so a very
+  # late work is never un-flagged.
   PROLONGED_DELAY_SANCTION_LAG:
     tag: PROLONGED_DELAY_BEYOND_GUIDELINE
     enabled: true
     confidence: rule
     stage: sanction
+    merge_into: [DELAY_IN_SANCTION]
   PROLONGED_DELAY_UNSANCTIONED:
     tag: PROLONGED_DELAY_BEYOND_GUIDELINE
     enabled: true
     confidence: rule
     stage: sanction
+    merge_into: [RECOMMENDATION_PENDING_SANCTION]
   PROLONGED_DELAY_OPEN:
     tag: PROLONGED_DELAY_BEYOND_GUIDELINE
     enabled: true
     confidence: rule
     stage: execution
+    merge_into: [SANCTIONED_WORK_NOT_TAKEN_UP, WORK_NOT_COMPLETED, PAYMENT_WITHOUT_COMPLETION]
 
   # ---- C. Expenditure ----
   EXCESS_EXPENDITURE:
@@ -305,8 +315,23 @@ detectors:
     stage: recommendation
 
 # Severity + priority (spec section 5).
+#
+# Every finding carries a continuous severity_score x in [0, 1] from its
+# detector - how far past its threshold the work is (peer percentile, days
+# past a fixed limit, robust z, overage ratio...). The three labels are bands
+# of x: low [0, 1/3), medium [1/3, 2/3), high [2/3, 1]. A detector's label is
+# never changed by x; x only says where inside that band the finding sits.
+#
+# strength s = severity_curve(x) * confidence_factor. The curve is linear
+# through (0, floor), each band's centre at its old fixed weight (x = 1/6,
+# 1/2, 5/6 -> severity_weight low/medium/high) and (1, ceiling), so a
+# finding right in the middle of its band scores exactly what it used to;
+# one just past a threshold scores a little less, an extreme one a little
+# more. Before this, every finding in a band had the
+# same weight and 1,439 of the 2,000 queue works tied with another on priority.
 scoring:
-  severity_weight: {low: 0.15, medium: 0.35, high: 0.6}
+  severity_weight: {low: 0.15, medium: 0.35, high: 0.6}    # the curve's band-centre values
+  severity_curve: {floor: 0.10, ceiling: 0.70}             # weight at x = 0 and x = 1
   confidence_factor: {rule: 1.0, statistical: 0.6}
   statistical_max_severity: medium
   data_integrity_max_weight: 0.05
@@ -346,4 +371,28 @@ queue:
   anomaly_reorder_band: 5     # isolation-forest score only reorders works within the same 5-point priority band
 
 rollup:
-  shrinkage_m: 50
+  # Prior strength m for a region's shrunk flagged rate (k + p0*m)/(n + m).
+  # "auto" estimates it from the data at each level (empirical Bayes, beta-
+  # binomial method of moments): m = p0(1-p0)/tau^2 - 1, where tau^2 is the
+  # real between-region variance of flagged rates once binomial noise is
+  # taken out. States (36 big groups) and constituencies (538 small ones)
+  # need different amounts of shrinkage; a fixed 50 over-shrinks one and
+  # under-shrinks the other. A number here pins it instead.
+  shrinkage_m: auto
+  shrinkage_m_bounds: [5, 1000]
+
+# Model settings for engine/predictive.py and engine/risk_model.py. The ML
+# never adds, removes or re-grades a flag - see the header of this file.
+models:
+  delay:
+    params: {max_iter: 100, learning_rate: 0.08, max_depth: 5}
+    calibrate: isotonic          # so "0.7" means about a 70% observed delay rate
+    tiers: {high: 0.70, medium: 0.40}
+  rule_agreement:
+    params: {max_iter: 150, learning_rate: 0.08, max_depth: 6}
+  isolation_forest:
+    n_tiers: 4
+    n_estimators: 200
+    min_tier_rows: 200
+  cv_folds: 5
+  random_state: 42

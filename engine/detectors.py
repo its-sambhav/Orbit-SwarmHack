@@ -15,7 +15,16 @@ Two lanes (config/detectors.yaml):
   caps statistical findings at medium unless another family corroborates.
 
 `severity` stays low/medium/high and `confidence` rule/statistical - no new
-tiers. Values that can't be computed are None, never a stand-in number.
+tiers. Alongside the label every finding carries `severity_score` in [0, 1]
+(engine/severity.py): how far into its band the work is, from the
+detector's own measure (peer percentile, times past a fixed limit, robust z,
+overage ratio). The label is still the detector's rule; the score only
+separates a work just past a threshold from an extreme one.
+
+When the rule lane and a statistical lane flag the same delay on the same
+work they are merged into one finding (merge_delay_lanes, driven by
+`merge_into` in config/detectors.yaml). Values that can't be computed are
+None, never a stand-in number.
 """
 import re
 import warnings
@@ -25,12 +34,13 @@ import pandas as pd
 import yaml
 
 from engine.paths import CONFIG_DIR, DATA_INTERIM, DATA_PROCESSED
+from engine.severity import SEVERITIES, STEP, clamp_to_band, ramp
 
 # config regexes use groups for readability; str.contains only needs a yes/no
 warnings.filterwarnings("ignore", message="This pattern is interpreted as a regular expression, and has match groups")
 
 WORK_KEY = ["WORK_RECOMMENDATION_DTL_ID", "SCOPE_HOUSE", "SCOPE_TENURE"]
-SEVERITIES = ["low", "medium", "high"]
+LOW, MED, HIGH = 0.0, STEP, 2 * STEP        # bottom edge of each severity band
 
 
 def load_config() -> dict:
@@ -178,8 +188,13 @@ def _get(row, name):
 
 def build_finding(row, detector_id: str, c: dict, ctx: dict, *, severity: str, financial_exposure,
                   observed: dict, threshold: dict, deviation: str, stage: str | None = None,
-                  peer_benchmark: dict | None = None, scope: str = "work", method: str | None = None) -> dict:
+                  peer_benchmark: dict | None = None, scope: str = "work", method: str | None = None,
+                  intensity: float | None = None) -> dict:
+    """`intensity` is the detector's continuous severity measure; it is
+    clamped into `severity`'s band, and a detector with nothing to grade by
+    (a fixed-severity rule) gets the band centre."""
     tag = ctx["tags"][c["tag"]]
+    x = clamp_to_band(intensity, severity)
     wid = int(getattr(row, "WORK_RECOMMENDATION_DTL_ID"))
     house, tenure = _get(row, "SCOPE_HOUSE"), _get(row, "SCOPE_TENURE")
     has_exp = bool(_get(row, "has_expenditure"))
@@ -190,6 +205,7 @@ def build_finding(row, detector_id: str, c: dict, ctx: dict, *, severity: str, f
         "detector": detector_id,
         "tag": tag["name"],
         "severity": severity,
+        "severity_score": x,
         "confidence": c["confidence"],
         "financial_exposure": exposure if exposure is not None else 0.0,
         "evidence": {
@@ -201,6 +217,7 @@ def build_finding(row, detector_id: str, c: dict, ctx: dict, *, severity: str, f
             "tag_key": c["tag"],
             "source_verified": bool(tag["verified"]),
             "raw_severity": severity,
+            "raw_severity_score": x,
             "scope": scope,          # work | mp_portfolio | district | calamity
             "method": method,
             "context": {
@@ -304,11 +321,14 @@ def _delay(spine, cfg, ctx, det_id, base_mask, metric, exposure_fn, what, hit_fi
         p = peers.loc[row.Index]
         v = float(getattr(row, metric))
         sev = "high" if v > p.p_high else "medium" if v > p.p_medium else "low"
+        # P90 -> P95 -> P99 are the band edges; past P99 the score keeps
+        # rising until one more (P99 - P90) span beyond it
+        x = ramp(v, [p.p_low, p.p_medium, p.p_high, 2 * p.p_high - p.p_low], [LOW, MED, HIGH, 1.0])
         observed = {"days": v}
         if extra_observed:
             observed.update(extra_observed(row))
         findings.append(build_finding(
-            row, det_id, c, ctx, severity=sev, financial_exposure=exposure_fn(row),
+            row, det_id, c, ctx, severity=sev, financial_exposure=exposure_fn(row), intensity=x,
             observed=observed,
             threshold={"gate_days": round(float(gate[row.Index]), 1), "floor_days": float(floor),
                        "guideline_days": float(guideline) if guideline else None},
@@ -402,9 +422,11 @@ def detect_prolonged_delay(spine, cfg, ctx):
             v = float(getattr(row, metric))
             exposure = num(getattr(row, amount_col))
             ratio = v / limit
-            sev = "high" if ratio >= hb["severity_high_ratio"] else "medium"
+            hi = hb["severity_high_ratio"]
+            sev = "high" if ratio >= hi else "medium"
+            x = ramp(ratio, [1.0, hi, 2 * hi], [MED, HIGH, 1.0])
             out.append(build_finding(
-                row, det_id, c, ctx, severity=sev, financial_exposure=exposure,
+                row, det_id, c, ctx, severity=sev, financial_exposure=exposure, intensity=x,
                 observed={"days": v},
                 threshold={"limit_days": float(limit), "severity_high_ratio": float(hb["severity_high_ratio"])},
                 deviation=text.format(v=v) + f" - past the fixed {limit}-day limit "
@@ -425,6 +447,7 @@ def detect_excess_expenditure(spine, cfg, ctx):
     return [build_finding(
         r, "EXCESS_EXPENDITURE", c, ctx, severity=c["severity"],
         financial_exposure=r.exp_total_disbursed - r.SANCTION_AMOUNT,
+        intensity=ramp(r.exp_total_disbursed / r.SANCTION_AMOUNT, [c["max_ratio"], 2.0], [HIGH, 1.0]),
         observed={"total_paid": num(r.exp_total_disbursed), "sanction_amount": num(r.SANCTION_AMOUNT),
                   "ratio": round(r.exp_total_disbursed / r.SANCTION_AMOUNT, 4)},
         threshold={"max_ratio": c["max_ratio"]},
@@ -441,6 +464,7 @@ def detect_sanction_exceeds_recommendation(spine, cfg, ctx):
     return [build_finding(
         r, "SANCTION_EXCEEDS_RECOMMENDATION", c, ctx, severity=c["severity"],
         financial_exposure=r.SANCTION_AMOUNT - r.rec_RECOMMENDED_AMOUNT,
+        intensity=ramp(r.SANCTION_AMOUNT / r.rec_RECOMMENDED_AMOUNT, [c["max_ratio"], 2.0], [HIGH, 1.0]),
         observed={"sanction_amount": num(r.SANCTION_AMOUNT), "recommended_amount": num(r.rec_RECOMMENDED_AMOUNT),
                   "ratio": round(r.SANCTION_AMOUNT / r.rec_RECOMMENDED_AMOUNT, 4)},
         threshold={"max_ratio": c["max_ratio"]},
@@ -492,6 +516,7 @@ def detect_expenditure_after_completion(spine, cfg, ctx):
         out.append(build_finding(
             r, "EXPENDITURE_AFTER_COMPLETION", c, ctx,
             severity="medium" if days > c["medium_lag_days"] else "low",
+            intensity=ramp(days, [c["min_lag_days"], c["medium_lag_days"], 3 * c["medium_lag_days"]], [LOW, MED, HIGH]),
             financial_exposure=r.post_paid,
             observed={"completion_date": iso(r.comp_ACTUAL_END_DATE), "last_payment_date": iso(r.exp_last_date),
                       "days": days, "post_completion_paid": num(r.post_paid),
@@ -524,6 +549,7 @@ def detect_unusual_cost(spine, cfg, ctx):
         median_amt = 10 ** r.peer_median_log
         out.append(build_finding(
             r, "UNUSUAL_COST", c, ctx, severity="medium" if r.z >= c["z_medium"] else "low",
+            intensity=ramp(r.z, [c["z_low"], c["z_medium"], 2 * c["z_medium"], 3 * c["z_medium"]], [LOW, MED, HIGH, 1.0]),
             financial_exposure=r.SANCTION_AMOUNT - median_amt,
             observed={"sanction_amount": num(r.SANCTION_AMOUNT), "robust_z": round(float(r.z), 2),
                       "ratio_to_peer_median": round(float(r.SANCTION_AMOUNT / median_amt), 2)},
@@ -548,6 +574,7 @@ def detect_payment_completion_mismatch(spine, cfg, ctx):
     m &= gap > c["max_relative_gap"]
     return [build_finding(
         r, "PAYMENT_COMPLETION_MISMATCH", c, ctx, severity="low",
+        intensity=ramp(float(gap[r.Index]), [c["max_relative_gap"], 0.5], [LOW, MED]),
         financial_exposure=abs(r.exp_total_disbursed - r.comp_ACTUAL_AMOUNT),
         observed={"total_paid": num(r.exp_total_disbursed), "completed_amount": num(r.comp_ACTUAL_AMOUNT),
                   "relative_gap": round(float(gap[r.Index]), 4)},
@@ -598,6 +625,7 @@ def detect_trust_society_limit(spine, cfg, ctx):
         r = _anchor(grp)
         out.append(build_finding(
             r, "TRUST_SOCIETY_LIMIT_EXCEEDED", c, ctx, severity=c["severity"], financial_exposure=total - cap,
+            intensity=ramp(total / cap, [1.0, 2.0], [MED, HIGH]),
             observed={"financial_year": f"{int(fy)}-{str(int(fy) + 1)[-2:]}", "trust_society_recommended": float(total),
                       "works_counted": int(len(grp))},
             threshold={"cap": float(cap)}, scope="mp_portfolio",
@@ -625,6 +653,7 @@ def detect_allocation_limit(spine, cfg, ctx):
         overage = row.recommended - row.allocated
         out.append(build_finding(
             _anchor(grp), "ALLOCATION_LIMIT_EXCEEDED", c, ctx, severity=c["severity"], financial_exposure=overage,
+            intensity=ramp(float(overage / row.allocated), [c["min_overage_share"], 0.5], [MED, HIGH]),
             observed={"total_recommended": float(row.recommended), "allocated": float(row.allocated),
                       "overage_share": round(float(overage / row.allocated), 4), "works_counted": int(len(grp))},
             threshold={"min_overage_share": c["min_overage_share"]}, scope="mp_portfolio",
@@ -695,6 +724,7 @@ def detect_unspent_balance(spine, cfg, ctx):
             continue
         out.append(build_finding(
             _anchor(grp), "UNSPENT_BALANCE", c, ctx, severity=c["severity"],
+            intensity=ramp(1 - float(row.util), [1 - c["min_utilisation"], 1.0], [LOW, MED]),
             financial_exposure=row.allocated - row.paid,
             observed={"allocated": float(row.allocated), "total_paid": float(row.paid),
                       "utilisation": round(float(row.util), 4), "tenure_end": iso(row.end)},
@@ -838,6 +868,7 @@ def detect_agency_concentration(spine, cfg, ctx):
         sev = "high" if h.share > h.p_high else "medium" if h.share > h.p_medium else "low"
         out.append(build_finding(
             row, "AGENCY_CONCENTRATION", c, ctx, severity=sev, financial_exposure=h.agency_paid,
+            intensity=ramp(h.share, [h.p_low, h.p_medium, h.p_high, 1.0], [LOW, MED, HIGH, 1.0]),
             observed={"district": h.DISTRICT, "agency": h.IA_NAME_CLEAN, "agency_paid": float(h.agency_paid),
                       "district_paid": float(h.district_paid), "district_agencies": int(h.district_agencies),
                       "share": round(float(h.share), 4), "hhi": round(float(h.hhi), 4),
@@ -946,6 +977,56 @@ DETECTORS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# one delay, one finding
+# ---------------------------------------------------------------------------
+def _absorb(stat: dict, rule: dict) -> None:
+    """Fold a hard-breach finding into the statistical finding that measured
+    the same delay on the same work. The statistical tag is kept (it says
+    more - "paid but not completed" rather than just "late"); confidence
+    becomes rule, since a fixed limit was breached; severity is the stronger
+    of the two; both lanes' thresholds and texts are kept as evidence."""
+    rank = {v: i for i, v in enumerate(SEVERITIES)}
+    label = max(stat["severity"], rule["severity"], key=rank.get)
+    x = clamp_to_band(max(stat["severity_score"], rule["severity_score"]), label)
+    ev, rev = stat["evidence"], rule["evidence"]
+    stat["severity"], stat["severity_score"], stat["confidence"] = label, x, "rule"
+    stat["financial_exposure"] = max(stat["financial_exposure"], rule["financial_exposure"])
+    ev["threshold"] = {**ev["threshold"], **{k: v for k, v in rev["threshold"].items() if k != "source"}}
+    ev["deviation"] = f"{ev['deviation']}. Fixed-limit check: {rev['deviation']}"
+    ev["method"] = f"{ev['method']} + fixed hard-breach limit"
+    ev["raw_severity"], ev["raw_severity_score"] = label, x
+    ev["merged_from"] = ev.get("merged_from", []) + [rule["finding_id"]]
+
+
+def merge_delay_lanes(findings: list[dict], cfg: dict) -> tuple[list[dict], int]:
+    """A hard-breach finding (rule lane) whose work also has a statistical
+    finding on the same delay - named by the rule detector's `merge_into` -
+    is folded into that finding instead of standing as a second one. Only
+    the strongest sibling absorbs it. A hard breach with no sibling is kept
+    as it is. Returns (findings, number merged)."""
+    owner = {t: det for det, c in cfg["detectors"].items() for t in (c.get("merge_into") or [])}
+    if not owner:
+        return findings, 0
+
+    def work(f):
+        return f["work_number"], f["entities"]["scope_house"], f["entities"]["scope_tenure"]
+
+    siblings: dict[tuple, list[dict]] = {}
+    for f in findings:
+        if f["detector"] in owner:
+            siblings.setdefault((*work(f), owner[f["detector"]]), []).append(f)
+    out, merged = [], 0
+    for f in findings:
+        sibs = siblings.get((*work(f), f["detector"]))
+        if sibs:
+            _absorb(max(sibs, key=lambda s: s["severity_score"]), f)
+            merged += 1
+        else:
+            out.append(f)
+    return out, merged
+
+
 def load_context() -> dict:
     def maybe(path):
         return pd.read_parquet(path) if path.exists() else None
@@ -973,7 +1054,9 @@ def run(spine: pd.DataFrame | None = None, cfg: dict | None = None, ctx: dict | 
             counts[x["detector"]] = counts.get(x["detector"], 0) + 1
         for det, n in sorted(counts.items()):
             print(f"  {det:42} {n:>8,}")
-    print(f"\n  total findings: {len(findings):,}")
+    findings, merged = merge_delay_lanes(findings, cfg)
+    print(f"\n  merged {merged:,} hard-breach findings into the statistical finding on the same delay")
+    print(f"  total findings: {len(findings):,}")
     return findings
 
 

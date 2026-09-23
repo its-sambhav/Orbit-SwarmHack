@@ -8,8 +8,9 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import GroupKFold
-from sklearn.metrics import roc_auc_score, precision_score, recall_score
+from sklearn.metrics import brier_score_loss, roc_auc_score, precision_score, recall_score
 
 from engine.paths import DATA_PROCESSED, ROOT
 from engine.detectors import load_config as load_detector_config
@@ -181,7 +182,10 @@ def train_model() -> dict:
     # trained to say "on time" about works that had been stuck for years.
     # The fix scores those against the work's age as of the snapshot date
     # instead of a completion date that doesn't exist.
-    as_of = pd.Timestamp(load_detector_config()["as_of_date"])
+    cfg = load_detector_config()
+    mcfg = cfg.get("models", {})
+    dcfg = mcfg.get("delay", {})
+    as_of = pd.Timestamp(cfg["as_of_date"])
     san_delay = (df["san_SANCTION_DATE"] - df["rec_RECOMMENDATION_DATE"]).dt.days
     exec_delay = (df["comp_ACTUAL_END_DATE"] - df["san_SANCTION_DATE"]).dt.days
     san_gate = san_delay.dropna().quantile(0.90)
@@ -199,12 +203,15 @@ def train_model() -> dict:
     y = df["target"]
     groups = df["CONSTITUENCY_ID"].fillna(-1)
 
-    params = dict(max_iter=100, learning_rate=0.08, max_depth=5, random_state=42)
+    params = {**dict(max_iter=100, learning_rate=0.08, max_depth=5), **dcfg.get("params", {}),
+              "random_state": mcfg.get("random_state", 42)}
+    calibrate = dcfg.get("calibrate")
+
     # out-of-fold scores with GroupKFold by constituency - a random split puts
     # near-identical works from one constituency on both sides of the split
     oof = np.full(len(y), np.nan)
     last = None
-    for train, test in GroupKFold(n_splits=5).split(X, y, groups):
+    for train, test in GroupKFold(n_splits=mcfg.get("cv_folds", 5)).split(X, y, groups):
         fold = HistGradientBoostingClassifier(**params).fit(X.iloc[train], y.iloc[train])
         oof[test] = fold.predict_proba(X.iloc[test])[:, 1]
         last = (fold, test)
@@ -212,7 +219,18 @@ def train_model() -> dict:
         auc = float(roc_auc_score(y, oof))
     except ValueError:
         auc = None          # not evaluated - never a stand-in number
-    y_pred = (oof >= 0.5).astype(int)
+
+    # Isotonic calibration fitted on those same out-of-fold scores: the
+    # boosted score ranks well but isn't a probability; calibrated, 0.7 means
+    # about 70% of such works really were delayed, so the fixed High/Medium
+    # tier cut-offs mean something. Fitting it on grouped out-of-fold scores
+    # (rather than sklearn's CalibratedClassifierCV, whose unshuffled inner
+    # folds each saw different states - AUC fell to 0.605 that way) keeps it
+    # honest and costs no extra training. Isotonic is monotone, so it can't
+    # reorder works - AUC is reported on the raw scores.
+    calibrator = IsotonicRegression(out_of_bounds="clip", y_min=0, y_max=1).fit(oof, y) if calibrate else None
+    oof_p = calibrator.predict(oof) if calibrator is not None else oof
+    y_pred = (oof_p >= 0.5).astype(int)
     precision = float(precision_score(y, y_pred, zero_division=0))
     recall = float(recall_score(y, y_pred, zero_division=0))
     # precision@10% - the slice of the queue officers actually act on, same
@@ -220,6 +238,7 @@ def train_model() -> dict:
     k = max(1, len(y) // 10)
     top_k = np.argsort(-np.nan_to_num(oof, nan=-1))[:k]
     precision_at_10pct = float(y.iloc[top_k].mean())
+    brier = float(brier_score_loss(y, oof_p))
 
     importance_ranking = []
     if last is not None:
@@ -231,8 +250,10 @@ def train_model() -> dict:
 
     artifacts = {
         "model": clf,
+        "calibrator": calibrator,
         "feature_cols": FEATURE_COLS,
         "tables": tables,
+        "tiers": dcfg.get("tiers", {"high": 0.70, "medium": 0.40}),
         "importance_ranking": importance_ranking,
         "feature_stats": feature_stats,
         "metrics": {
@@ -240,6 +261,8 @@ def train_model() -> dict:
             "precision": round(precision, 3),
             "recall": round(recall, 3),
             "precision_at_10pct": round(precision_at_10pct, 3),
+            "brier": round(brier, 4),
+            "calibration": calibrate or "none",
             "n": len(X),
             "positive_rate": round(float(y.mean()), 4),
             "evaluation": "GroupKFold(5) by constituency, out-of-fold",
@@ -248,7 +271,7 @@ def train_model() -> dict:
 
     joblib.dump(artifacts, MODEL_PATH)
     print(f"  delay model: out-of-fold AUC={artifacts['metrics']['auc']}, precision={precision:.3f}, "
-          f"recall={recall:.3f}, precision@10%={precision_at_10pct:.3f}, positive rate={y.mean():.3f}")
+          f"recall={recall:.3f}, precision@10%={precision_at_10pct:.3f}, Brier={brier:.4f}, positive rate={y.mean():.3f}")
     print(f"Saved to {MODEL_PATH}")
     return artifacts["metrics"]
 
@@ -283,13 +306,11 @@ def predict_work_risk(amount: float | None, state: str | None, activity: str | N
                                             district=district, days_left_in_term=days_left_in_term)
 
         proba = float(clf.predict_proba(features)[0, 1])
+        if bundle.get("calibrator") is not None:
+            proba = float(bundle["calibrator"].predict([proba])[0])
 
-        if proba >= 0.70:
-            tier = "High"
-        elif proba >= 0.40:
-            tier = "Medium"
-        else:
-            tier = "Low"
+        tiers = bundle.get("tiers", {"high": 0.70, "medium": 0.40})
+        tier = "High" if proba >= tiers["high"] else "Medium" if proba >= tiers["medium"] else "Low"
 
         drivers = explain_drivers(features.iloc[0].to_dict(), bundle.get("importance_ranking", []),
                                   bundle.get("feature_stats", {}), HUMAN_LABEL)

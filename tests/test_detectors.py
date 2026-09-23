@@ -81,14 +81,52 @@ def test_payment_without_completion(cfg, ctx):
 
 
 def test_prolonged_delay_rule_lane(cfg, ctx):
-    rows = [sanctioned(1, lag=400, rec_days_ago=450, amount=2e5),     # lag > 365, small
-            sanctioned(2, lag=400, rec_days_ago=450, amount=6e5),     # lag > 365, >= 5 lakh
+    rows = [sanctioned(1, lag=400, rec_days_ago=450, amount=5e7),     # 1.1x the 365-day limit, expensive
+            sanctioned(2, lag=600, rec_days_ago=650, amount=2e5),     # 1.6x the limit, small
             sanctioned(3, lag=300, rec_days_ago=350),                 # under the limit
             work(4, rec_RECOMMENDATION_DATE=ago(400))]                # unsanctioned > 365
     out = {int(f["work_number"]): f for f in run_one(d.detect_prolonged_delay, rows, cfg, ctx)}
     assert set(out) == {1, 2, 4}
+    # severity is how late, never how expensive - money counts once, in priority
     assert out[1]["severity"] == "medium" and out[2]["severity"] == "high"
+    assert out[2]["severity_score"] > out[1]["severity_score"]
     assert all(f["confidence"] == "rule" and f["tag"] == "Prolonged Delay Beyond Guideline" for f in out.values())
+
+
+def test_severity_score_orders_findings_inside_one_band(cfg, ctx):
+    # both are "medium" (between 1x and 1.5x the limit), the later one scores higher
+    rows = [sanctioned(1, lag=380, rec_days_ago=450), sanctioned(2, lag=520, rec_days_ago=600)]
+    out = {int(f["work_number"]): f for f in run_one(d.detect_prolonged_delay, rows, cfg, ctx)}
+    assert out[1]["severity"] == out[2]["severity"] == "medium"
+    assert 1 / 3 <= out[1]["severity_score"] < out[2]["severity_score"] < 2 / 3
+
+
+def test_merge_delay_lanes_keeps_one_finding_per_delay(cfg, ctx):
+    # 40 peers sanctioned in 30 days; work 1 took 500 days: both the peer gate
+    # and the 365-day fixed limit fire on the same sanction lag
+    rows = peers(lag=30, rec_days_ago=700) + [sanctioned(1, lag=500, rec_days_ago=700)]
+    prepared = d.prepare_spine(__import__("conftest").spine(rows), cfg)
+    stat = d.detect_delay_in_sanction(prepared, cfg, ctx)
+    rule = d.detect_prolonged_delay(prepared, cfg, ctx)
+    assert 1 in ids(stat) and 1 in ids(rule)
+    merged, n = d.merge_delay_lanes(stat + rule, cfg)
+    mine = [f for f in merged if f["work_number"] == "1"]
+    assert n == 1 and len(mine) == 1
+    f = mine[0]
+    assert f["detector"] == "DELAY_IN_SANCTION" and f["confidence"] == "rule"
+    assert f["evidence"]["merged_from"] == ["PROLONGED_DELAY_SANCTION_LAG:1:Lok Sabha:18th Lok Sabha"]
+    assert f["evidence"]["threshold"]["limit_days"] == 365.0 and f["evidence"]["threshold"]["gate_days"] is not None
+
+
+def test_hard_breach_without_statistical_sibling_is_kept(cfg, ctx):
+    # everyone is equally slow, so the peer gate doesn't fire - the fixed limit still does
+    rows = peers(lag=500, rec_days_ago=700) + [sanctioned(1, lag=500, rec_days_ago=700)]
+    prepared = d.prepare_spine(__import__("conftest").spine(rows), cfg)
+    stat = d.detect_delay_in_sanction(prepared, cfg, ctx)
+    rule = d.detect_prolonged_delay(prepared, cfg, ctx)
+    merged, _ = d.merge_delay_lanes(stat + rule, cfg)
+    assert 1 not in ids(stat)
+    assert any(f["work_number"] == "1" and f["detector"] == "PROLONGED_DELAY_SANCTION_LAG" for f in merged)
 
 
 # ------------------------------------------------------------- C. expenditure

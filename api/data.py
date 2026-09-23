@@ -146,11 +146,12 @@ class Store:
 
         # work_risk's own groupby (tags/severity/exposure/priority per work)
         # doesn't depend on which scope is "in demo scope" - only the
-        # in_demo_scope boolean column does. Build the groupby once, then just
-        # re-stamp that one column per scope before handing it to the 3
-        # rollup-level builders (constituency/district/state), instead of
-        # re-running the full findings groupby 5x for identical output.
-        base_work_risk = rollup.build_work_risk(self.findings, self.spine, self.demo_scopes)
+        # in_demo_scope boolean column does. work_risk.parquet already IS that
+        # groupby (engine/rollup.build_work_risk, written by the pipeline), so
+        # it's reused as-is and only that one column is re-stamped per scope -
+        # re-running the findings groupby here at every startup produced the
+        # same table again.
+        base_work_risk = self.work_risk
         self._constituency_risk_by_scope: dict[str, pd.DataFrame] = {}
         self._district_risk_by_scope: dict[str, pd.DataFrame] = {}
         self._state_risk_by_scope: dict[str, pd.DataFrame] = {}

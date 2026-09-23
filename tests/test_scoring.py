@@ -124,7 +124,40 @@ def test_work_risk_combines_families_but_not_within_one(cfg):
     assert wr.loc["1", "risk"] == pytest.approx(100 * (1 - (1 - s) ** 2), abs=0.01)
 
 
+def test_band_centre_keeps_the_old_fixed_weights(cfg):
+    sc = cfg["scoring"]
+    for label, w in sc["severity_weight"].items():
+        assert score.strength(label, "rule", "money", sc) == pytest.approx(w, abs=1e-3)
+
+
+def test_statistical_cap_compresses_and_keeps_order(cfg):
+    fs = [finding(work=str(i), severity="high") for i in range(3)]
+    for f, x in zip(fs, [0.7, 0.85, 1.0]):
+        f["severity_score"] = x
+    score.apply_severity_policy(fs, cfg)
+    xs = [f["severity_score"] for f in fs]
+    assert all(f["severity"] == "medium" for f in fs)
+    assert xs[0] < xs[1] < xs[2] < 2 / 3              # capped, but no tie at the cap
+
+
+def test_continuous_strength_separates_findings_in_one_band(cfg):
+    sc = cfg["scoring"]
+    weak, strong = finding(severity="medium"), finding(severity="medium")
+    weak["severity_score"], strong["severity_score"] = 0.35, 0.65
+    assert score.priority_score(strong, sc) > score.priority_score(finding(severity="medium"), sc) > score.priority_score(weak, sc)
+
+
+def test_estimated_prior_strength():
+    # identical true rates everywhere: all spread is noise -> shrink hard (upper bound)
+    n = pd.Series([1000] * 50)
+    assert rollup.estimate_prior_strength(pd.Series([100] * 50), n) == 1000
+    # regions that really differ (5% vs 40%) -> trust each region's own rate much more
+    k = pd.Series([50] * 25 + [400] * 25)
+    assert rollup.estimate_prior_strength(k, n) < 20
+
+
 def test_region_rollup_uses_shrunk_rate_not_sum_of_priority(cfg):
+    cfg["rollup"]["shrinkage_m"] = 50
     sp = _spine(200)
     fs = [finding(work=str(i), severity="medium") for i in [0, 1, 100, 101, 102, 103, 104, 105]]
     df = pd.DataFrame(fs)

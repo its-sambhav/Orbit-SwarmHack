@@ -50,6 +50,11 @@ def feedback_summary(findings: list[dict], statuses: list[dict]) -> dict:
     findings that no longer exist are ignored. `under_investigation` is not
     a verdict and doesn't count."""
     by_id = {f["finding_id"]: f for f in findings}
+    # a hard-breach finding merged into its statistical sibling
+    # (detectors.merge_delay_lanes) keeps any verdict given under its old id
+    for f in findings:
+        for old in (f["evidence"].get("merged_from") or []):
+            by_id.setdefault(old, f)
     per_tag = defaultdict(lambda: {"verified": 0, "dismissed": 0})
     per_pattern = defaultdict(lambda: {"verified": 0, "dismissed": 0})
     for s in statuses:

@@ -1,17 +1,20 @@
 """Stage 6: aggregate findings into work_risk and the region rollups.
 
 work_risk (one row per flagged work) - spec 5.5-5.7:
-  per family, take the strongest finding s_f = severity_weight * confidence
-  factor; Risk = 100 * [1 - prod_f (1 - s_f)]. Correlated tags inside one
-  family (three delay tags on one stalled work) don't stack; independent
-  families do. priority = Risk * (0.5 + 0.5 * E) with E from the work's own
-  exposure. Suppressed findings don't count.
+  per family, take the strongest finding's strength s_f (engine/score.py
+  stores it on every finding: severity curve of its continuous
+  severity_score * confidence factor); Risk = 100 * [1 - prod_f (1 - s_f)].
+  Correlated tags inside one family (three delay tags on one stalled work)
+  don't stack; independent families do. priority = Risk * (0.5 + 0.5 * E)
+  with E from the work's own exposure. Suppressed findings don't count.
 
 constituency / district / state / agency rollups - spec 5.9:
-  shrunk flagged rate (k + a) / (n + a + b), a = p0*m, b = (1 - p0)*m, and
-  exposure-weighted Risk sum(exposure * Risk) / sum(exposure). risk_score =
-  shrunk rate * exposure-weighted Risk. Never sum(priority), which ranks a
-  place by how many works it has rather than how it runs them.
+  shrunk flagged rate (k + p0*m) / (n + m) and exposure-weighted Risk
+  sum(exposure * Risk) / sum(exposure); risk_score = shrunk rate *
+  exposure-weighted Risk. Never sum(priority), which ranks a place by how
+  many works it has rather than how it runs them. m (how hard a small
+  region is pulled toward the overall rate) is estimated from the data at
+  each level by default - see estimate_prior_strength.
 """
 import json
 
@@ -19,7 +22,8 @@ import numpy as np
 import pandas as pd
 
 from engine.paths import DATA_PROCESSED
-from engine.score import strength, exposure_factor
+from engine.score import strength
+from engine.severity import CENTRE as _BAND_CENTRE
 
 SEV_RANK = {"low": 1, "medium": 2, "high": 3}
 KEY = ["work_number", "scope_house", "scope_tenure"]
@@ -41,6 +45,57 @@ KEY = ["work_number", "scope_house", "scope_tenure"]
 NON_SUBSTANTIVE_FAMILIES = {"documentation", "data_integrity"}
 
 
+RANK_SEV = {v: k for k, v in SEV_RANK.items()}
+
+
+def _finding_strengths(f: pd.DataFrame, sc: dict) -> pd.Series:
+    """The strength engine/score.py stored on each finding; computed here
+    only for rows that don't have one (an older findings file, a test)."""
+    s = f["strength"].astype(float) if "strength" in f else pd.Series(np.nan, index=f.index)
+    missing = s.isna()
+    if missing.any():
+        g = f[missing]
+        xs = g["severity_score"] if "severity_score" in g else g["severity"]
+        xs = [x if isinstance(x, str) or pd.notna(x) else sev for x, sev in zip(xs, g["severity"])]
+        s[missing] = [strength(x, conf, fam, sc) for x, conf, fam in zip(xs, g["confidence"], g["family"])]
+    return s
+
+
+def exposure_factors(exposure: pd.Series, sc: dict) -> np.ndarray:
+    """Vectorised engine/score.py exposure_factor: clip(log10(x / base) /
+    decades, 0, 1), and 0 for no or non-positive exposure."""
+    x = exposure.astype(float).to_numpy()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        e = np.log10(x / sc["exposure_base"]) / sc["exposure_decades"]
+    return np.where(x > 0, np.clip(np.nan_to_num(e, nan=0.0, neginf=0.0), 0, 1), 0.0)
+
+
+def estimate_prior_strength(k: pd.Series, n: pd.Series, bounds=(5, 1000)) -> float:
+    """Empirical-Bayes prior strength m for flagged rates k/n across regions
+    (beta-binomial method of moments). The spread of observed rates is part
+    real difference between regions (tau^2) and part binomial noise; with
+    N = sum(n), p0 = sum(k)/N:
+        sum n_i (r_i - p0)^2  ~  (R - 1) p0 (1 - p0) + tau^2 (N - sum(n_i^2)/N)
+    and a Beta prior with mean p0 and variance tau^2 has m = p0(1-p0)/tau^2 - 1.
+    Little real spread -> large m (trust the overall rate); a lot -> small m
+    (trust each region's own rate). Clipped to `bounds`."""
+    lo, hi = bounds
+    keep = n > 0
+    k, n = k[keep].astype(float), n[keep].astype(float)
+    N = n.sum()
+    if len(n) < 3 or N == 0:
+        return float(hi)
+    p0 = k.sum() / N
+    if p0 <= 0 or p0 >= 1:
+        return float(hi)
+    between = float((n * (k / n - p0) ** 2).sum())
+    denom = N - float((n ** 2).sum()) / N
+    tau2 = (between - (len(n) - 1) * p0 * (1 - p0)) / denom if denom > 0 else 0.0
+    if tau2 <= 0:
+        return float(hi)
+    return float(np.clip(p0 * (1 - p0) / tau2 - 1, lo, hi))
+
+
 def _cfg(cfg):
     if cfg is None:
         from engine.detectors import load_config
@@ -54,7 +109,8 @@ def build_work_risk(findings_df: pd.DataFrame, spine: pd.DataFrame, demo_scopes:
     if "suppressed" in f:
         f = f[~f["suppressed"].fillna(False).astype(bool)]
     f = f.assign(family=f["evidence"].apply(lambda e: e["family"]))
-    f = f.assign(s=[strength(sev, conf, fam, sc) for sev, conf, fam in zip(f.severity, f.confidence, f.family)])
+    f = f.assign(s=_finding_strengths(f, sc), sev_rank=f["severity"].map(SEV_RANK),
+                 sev_x=f["severity_score"] if "severity_score" in f else f["severity"].map(_BAND_CENTRE))
 
     per_family = f.groupby(KEY + ["family"])["s"].max().reset_index()
     per_family["log_keep"] = np.log1p(-per_family["s"].clip(upper=0.999999))
@@ -66,8 +122,11 @@ def build_work_risk(findings_df: pd.DataFrame, spine: pd.DataFrame, demo_scopes:
         tags=("tag", lambda s: sorted(set(s))),
         detectors=("detector", lambda s: sorted(set(s))),
         finding_count=("finding_id", "size"),
-        max_severity=("severity", lambda s: max(s, key=lambda v: SEV_RANK[v])),
+        sev_rank=("sev_rank", "max"),
+        max_severity_score=("sev_x", "max"),
     ).reset_index().merge(risk[KEY + ["risk", "families"]], on=KEY)
+    work_risk["max_severity"] = work_risk.pop("sev_rank").map(RANK_SEV)
+    work_risk["max_severity_score"] = work_risk["max_severity_score"].astype(float).round(4)
 
     spine_subset = spine[["WORK_RECOMMENDATION_DTL_ID", "SCOPE_HOUSE", "SCOPE_TENURE",
                           "STATE_NAME", "CONSTITUENCY", "CONSTITUENCY_ID", "MP_NAME",
@@ -84,8 +143,7 @@ def build_work_risk(findings_df: pd.DataFrame, spine: pd.DataFrame, demo_scopes:
     # its findings' exposures, which include MP- and district-level totals
     work_risk["total_exposure"] = work_risk["SANCTION_AMOUNT"].fillna(work_risk["rec_RECOMMENDED_AMOUNT"]).fillna(0.0)
     work_risk = work_risk.drop(columns=["SANCTION_AMOUNT", "rec_RECOMMENDED_AMOUNT"])
-    work_risk["priority"] = (work_risk["risk"] * (0.5 + 0.5 * work_risk["total_exposure"].map(
-        lambda e: exposure_factor(e, sc)))).round(3)
+    work_risk["priority"] = (work_risk["risk"] * (0.5 + 0.5 * exposure_factors(work_risk["total_exposure"], sc))).round(3)
     work_risk["in_demo_scope"] = work_risk["scope_tenure"].isin(demo_scopes)
     work_risk["is_substantive"] = work_risk["families"].apply(lambda fams: not set(fams).issubset(NON_SUBSTANTIVE_FAMILIES))
     return work_risk
@@ -107,7 +165,7 @@ def _tag_counts(flagged: pd.DataFrame, group_cols: list[str]) -> dict:
 
 def _region_rollup(work_risk: pd.DataFrame, spine: pd.DataFrame, demo_scopes: list[str],
                    spine_group: list[str], wr_group: list[str], extra_agg: dict | None = None,
-                   m: float = 50.0) -> pd.DataFrame:
+                   m: float | str = 50.0, m_bounds=(5, 1000)) -> pd.DataFrame:
     scoped = spine[spine["SCOPE_TENURE"].isin(demo_scopes)]
     # "flagged" here means materially flagged - a work whose only findings
     # are paperwork/data-entry ones (is_substantive False) doesn't count
@@ -131,9 +189,11 @@ def _region_rollup(work_risk: pd.DataFrame, spine: pd.DataFrame, demo_scopes: li
 
     n_all, k_all = out["works_total"].sum(), out["works_flagged"].sum()
     p0 = k_all / n_all if n_all else 0.0
-    a, b = p0 * m, (1 - p0) * m
+    if m == "auto":
+        m = estimate_prior_strength(out["works_flagged"], out["works_total"], m_bounds)
     out["breach_rate"] = out["works_flagged"] / out["works_total"]
-    out["shrunk_rate"] = (out["works_flagged"] + a) / (out["works_total"] + a + b)
+    out["shrunk_rate"] = (out["works_flagged"] + p0 * m) / (out["works_total"] + m)
+    out["shrinkage_m"] = round(float(m), 2)
     out["exposure_weighted_risk"] = np.where(out["total_exposure"] > 0,
                                              out["exp_x_risk"] / out["total_exposure"].replace(0, np.nan),
                                              out["mean_risk"])
@@ -149,21 +209,25 @@ def _m(cfg):
     return _cfg(cfg).get("rollup", {}).get("shrinkage_m", 50)
 
 
+def _m_bounds(cfg):
+    return tuple(_cfg(cfg).get("rollup", {}).get("shrinkage_m_bounds", (5, 1000)))
+
+
 def build_constituency_risk(work_risk, spine, demo_scopes, cfg=None):
     out = _region_rollup(work_risk, spine, demo_scopes, ["CONSTITUENCY_ID"], ["CONSTITUENCY_ID"],
-                         {"constituency": ("CONSTITUENCY", "first"), "state": ("STATE_NAME", "first")}, _m(cfg))
+                         {"constituency": ("CONSTITUENCY", "first"), "state": ("STATE_NAME", "first")}, _m(cfg), _m_bounds(cfg))
     return out
 
 
 def build_district_risk(work_risk, spine, demo_scopes, cfg=None):
     out = _region_rollup(work_risk, spine, demo_scopes, ["STATE_NAME", "DISTRICT"], ["STATE_NAME", "DISTRICT"],
-                         None, _m(cfg))
+                         None, _m(cfg), _m_bounds(cfg))
     return out.rename(columns={"STATE_NAME": "state", "DISTRICT": "district"})
 
 
 def build_state_risk(work_risk, spine, demo_scopes, cfg=None):
     out = _region_rollup(work_risk, spine, demo_scopes, ["STATE_NAME"], ["STATE_NAME"],
-                         {"districts": ("DISTRICT", "nunique")}, _m(cfg))
+                         {"districts": ("DISTRICT", "nunique")}, _m(cfg), _m_bounds(cfg))
     return out.rename(columns={"STATE_NAME": "state"})
 
 
@@ -172,7 +236,7 @@ def build_agency_risk(work_risk, spine, demo_scopes, cfg=None):
     only set once a work has any payment - works with none have no agency
     and are left out rather than lumped into an 'Unknown' row."""
     out = _region_rollup(work_risk, spine[spine["exp_top_ia"].notna()], demo_scopes, ["exp_top_ia"], ["exp_top_ia"],
-                         None, _m(cfg))
+                         None, _m(cfg), _m_bounds(cfg))
     return out.rename(columns={"exp_top_ia": "agency"})
 
 

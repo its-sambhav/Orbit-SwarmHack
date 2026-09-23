@@ -32,7 +32,7 @@ from engine.explain import compute_importance_ranking, compute_feature_stats, ex
 MODEL_DIR = ROOT / "data" / "models"
 MODEL_PATH = MODEL_DIR / "risk_model.joblib"
 LABEL_MODEL_PATH = MODEL_DIR / "label_model.joblib"
-N_TIERS = 4
+N_TIERS = 4          # default; config/detectors.yaml models.isolation_forest.n_tiers
 
 FEATURE_COLS = [
     "log_recommended_amount", "log_sanctioned_amount", "log_paid_amount",
@@ -118,16 +118,24 @@ def _amount(df: pd.DataFrame) -> pd.Series:
     return df["SANCTION_AMOUNT"].fillna(df["rec_RECOMMENDED_AMOUNT"])
 
 
+def _model_cfg() -> dict:
+    return load_detector_config().get("models", {})
+
+
 def fit_tier_forests(X: pd.DataFrame, amount: pd.Series, medians: dict) -> dict:
-    edges = list(np.nanquantile(np.log10(amount.where(amount > 0)), np.linspace(0, 1, N_TIERS + 1))[1:-1])
+    mcfg = _model_cfg()
+    icfg = mcfg.get("isolation_forest", {})
+    n_tiers = icfg.get("n_tiers", N_TIERS)
+    edges = list(np.nanquantile(np.log10(amount.where(amount > 0)), np.linspace(0, 1, n_tiers + 1))[1:-1])
     tier = np.digitize(np.log10(amount.where(amount > 0)).fillna(-1), edges)
     Xf = X.fillna(medians)
     forests = {}
-    for t in range(N_TIERS):
+    for t in range(n_tiers):
         part = Xf[tier == t]
-        if len(part) < 200:
+        if len(part) < icfg.get("min_tier_rows", 200):
             continue
-        iso = IsolationForest(n_estimators=200, contamination="auto", random_state=42).fit(part)
+        iso = IsolationForest(n_estimators=icfg.get("n_estimators", 200), contamination="auto",
+                              random_state=mcfg.get("random_state", 42)).fit(part)
         s = iso.score_samples(part)
         forests[t] = {"iso": iso, "range": (float(s.min()), float(s.max()))}
     return {"edges": edges, "forests": forests}
@@ -166,10 +174,11 @@ def anomaly_scores(spine: pd.DataFrame | None = None) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # rule-agreement classifier
 # ---------------------------------------------------------------------------
-def grouped_auc(clf, X, y, groups, n_splits=5):
+def grouped_auc(clf, X, y, groups, n_splits=None):
     """Out-of-fold AUC with GroupKFold. None when a fold can't be scored
     (one class only) - never a stand-in number."""
     oof = np.full(len(y), np.nan)
+    n_splits = n_splits or _model_cfg().get("cv_folds", 5)
     for train, test in GroupKFold(n_splits=n_splits).split(X, y, groups):
         if y.iloc[train].nunique() < 2:
             return None, None, None
@@ -202,7 +211,10 @@ def train_model() -> dict:
     X, freq_tables = build_features(df, as_of)
     groups = df["CONSTITUENCY_ID"].fillna(-1)
 
-    clf = HistGradientBoostingClassifier(max_iter=150, learning_rate=0.08, max_depth=6, random_state=42)
+    mcfg = cfg.get("models", {})
+    clf = HistGradientBoostingClassifier(**{**dict(max_iter=150, learning_rate=0.08, max_depth=6),
+                                            **mcfg.get("rule_agreement", {}).get("params", {}),
+                                            "random_state": mcfg.get("random_state", 42)})
     auc, _oof, last = grouped_auc(clf, X, y, groups)
     importance_ranking = []
     if last is not None:
