@@ -197,7 +197,12 @@ class Store:
             paid=("exp_total_disbursed", "sum"),
         )
 
-        wr_grouped = self.work_risk.groupby(["MP_NAME", "scope_tenure"], as_index=False).agg(
+        # substantive only - see rollup.py's NON_SUBSTANTIVE_FAMILIES; a work
+        # flagged only for a missing scan or a date-entry mismatch shouldn't
+        # count toward an MP's works_flagged/breach_rate in the directory.
+        wr_grouped = self.work_risk[self.work_risk["is_substantive"]].groupby(
+            ["MP_NAME", "scope_tenure"], as_index=False
+        ).agg(
             works_flagged=("work_number", "nunique"), total_exposure=("total_exposure", "sum"),
         ).rename(columns={"scope_tenure": "SCOPE_TENURE"})
 

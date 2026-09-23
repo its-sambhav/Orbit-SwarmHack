@@ -14,7 +14,7 @@ const LABELS = {
   floor_days: 'Minimum floor (days)',
   guideline_days: 'Guideline (days)',
   limit_days: 'Fixed limit (days)',
-  high_exposure: 'High severity from exposure of',
+  severity_high_ratio: 'Ratio past the limit for "high" severity',
   peer_group: 'Peer group',
   n_peers: 'Comparable works',
   peer_median_days: 'Peer median (days)',
@@ -109,7 +109,7 @@ const AMOUNT_KEYS = new Set([
   'total_paid', 'sanction_amount', 'recommended_amount', 'completed_amount', 'post_completion_paid',
   'peer_median_amount', 'trust_society_recommended', 'cap', 'total_recommended', 'allocated',
   'sc_shortfall', 'st_shortfall', 'agency_paid', 'district_paid', 'min_district_value',
-  'total_consented', 'max_consent_per_mp', 'high_exposure',
+  'total_consented', 'max_consent_per_mp',
 ])
 // already on a 0-100 scale - just append '%'
 const PERCENT_KEYS = new Set([])

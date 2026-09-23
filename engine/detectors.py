@@ -401,12 +401,14 @@ def detect_prolonged_delay(spine, cfg, ctx):
         for row in spine[mask].itertuples():
             v = float(getattr(row, metric))
             exposure = num(getattr(row, amount_col))
-            sev = "high" if exposure is not None and exposure >= hb["high_exposure"] else "medium"
+            ratio = v / limit
+            sev = "high" if ratio >= hb["severity_high_ratio"] else "medium"
             out.append(build_finding(
                 row, det_id, c, ctx, severity=sev, financial_exposure=exposure,
                 observed={"days": v},
-                threshold={"limit_days": float(limit), "high_exposure": float(hb["high_exposure"])},
-                deviation=text.format(v=v) + f" - past the fixed {limit}-day limit",
+                threshold={"limit_days": float(limit), "severity_high_ratio": float(hb["severity_high_ratio"])},
+                deviation=text.format(v=v) + f" - past the fixed {limit}-day limit "
+                           f"({ratio:.1f}x that limit)",
                 method="fixed hard-breach limit"))
     return out
 

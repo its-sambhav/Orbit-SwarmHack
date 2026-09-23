@@ -24,6 +24,22 @@ from engine.score import strength, exposure_factor
 SEV_RANK = {"low": 1, "medium": 2, "high": 3}
 KEY = ["work_number", "scope_house", "scope_tenure"]
 
+# A work whose only findings are paperwork (documentation) or a date-entry
+# mismatch (data_integrity) hasn't shown a rupee or a timeline problem - see
+# engine/score.py's own corroboration_excluded_families, which already
+# treats these two families as not real corroborating evidence for the same
+# reason. COMPLETION_EVIDENCE_NOT_ATTACHED alone was 28.6% of every
+# completed+paid work (measured on the 2026-09-10 snapshot) and is_flagged
+# rate/risk_score is a region's headline number - one detector about missing
+# scans dominating "works flagged" made every district's ranking partly a
+# measure of how well it uploads files rather than how it runs its works.
+# is_substantive stays False->still visible: the work keeps its row (and its
+# own low Risk, typically ~9) in work_risk and on its case file - it's only
+# left out of the flagged counts and region risk_score fed by
+# _region_rollup() below, which is a materiality judgement, not a decision
+# to hide anything.
+NON_SUBSTANTIVE_FAMILIES = {"documentation", "data_integrity"}
+
 
 def _cfg(cfg):
     if cfg is None:
@@ -71,6 +87,7 @@ def build_work_risk(findings_df: pd.DataFrame, spine: pd.DataFrame, demo_scopes:
     work_risk["priority"] = (work_risk["risk"] * (0.5 + 0.5 * work_risk["total_exposure"].map(
         lambda e: exposure_factor(e, sc)))).round(3)
     work_risk["in_demo_scope"] = work_risk["scope_tenure"].isin(demo_scopes)
+    work_risk["is_substantive"] = work_risk["families"].apply(lambda fams: not set(fams).issubset(NON_SUBSTANTIVE_FAMILIES))
     return work_risk
 
 
@@ -92,7 +109,11 @@ def _region_rollup(work_risk: pd.DataFrame, spine: pd.DataFrame, demo_scopes: li
                    spine_group: list[str], wr_group: list[str], extra_agg: dict | None = None,
                    m: float = 50.0) -> pd.DataFrame:
     scoped = spine[spine["SCOPE_TENURE"].isin(demo_scopes)]
-    flagged = work_risk[work_risk["in_demo_scope"]].copy()
+    # "flagged" here means materially flagged - a work whose only findings
+    # are paperwork/data-entry ones (is_substantive False) doesn't count
+    # toward a region's works_flagged/breach_rate/risk_score. See
+    # NON_SUBSTANTIVE_FAMILIES above.
+    flagged = work_risk[work_risk["in_demo_scope"] & work_risk["is_substantive"]].copy()
     flagged["exp_x_risk"] = flagged["total_exposure"] * flagged["risk"]
 
     base = scoped.groupby(spine_group).agg(works_total=("WORK_RECOMMENDATION_DTL_ID", "size"),
@@ -160,6 +181,11 @@ def build_queue(work_risk: pd.DataFrame, queue_cfg: dict) -> pd.DataFrame:
     (if attached) only reorders works inside the same priority band - it
     never brings a work in or pushes one out (spec 6.1)."""
     eligible = work_risk[work_risk["in_demo_scope"] & (work_risk["total_exposure"] >= queue_cfg["materiality_floor"])]
+    # only bites if high_severity_min_exposure is ever raised above
+    # materiality_floor - at today's equal values (both 500000) every row
+    # here has already cleared the floor above, so this drops nothing; kept
+    # so a future config change can't silently let a high-severity, low-
+    # exposure work back into the queue.
     eligible = eligible[~((eligible["max_severity"] == "high")
                           & (eligible["total_exposure"] < queue_cfg["high_severity_min_exposure"]))]
     queue = eligible.nlargest(queue_cfg["max_queue_size"], "priority").copy()

@@ -4,7 +4,6 @@ Trains a HistGradientBoostingClassifier on historical 17th Lok Sabha works
 to predict the probability of a work experiencing severe execution/sanction
 delays at the moment of recommendation, before public funds are locked.
 """
-from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
@@ -13,26 +12,85 @@ from sklearn.model_selection import GroupKFold
 from sklearn.metrics import roc_auc_score, precision_score, recall_score
 
 from engine.paths import DATA_PROCESSED, ROOT
+from engine.detectors import load_config as load_detector_config
+from engine.explain import compute_importance_ranking, compute_feature_stats, explain_drivers
 
 MODEL_DIR = ROOT / "data" / "models"
 MODEL_PATH = MODEL_DIR / "delay_predictor.joblib"
 
-FEATURE_COLS = ["log_amount", "rec_month", "rec_quarter", "activity_freq", "state_freq"]
+# 9 features, all knowable at the moment of recommendation (no leakage of
+# anything decided later). Wider than the original 5 (log_amount, rec_month,
+# rec_quarter, activity_freq, state_freq, kept below) - see
+# engine/risk_model.py for the broader, ~19-raw-feature risk + anomaly model
+# trained against every detector's output, not just a delay guideline. This
+# model stays a distinct, narrower question ("will THIS work be late") on
+# purpose; the addition here is depth of evidence for that one question, not
+# scope creep into risk_model.py's job.
+FEATURE_COLS = [
+    "log_amount", "rec_month", "rec_quarter", "is_fy_end_quarter",
+    "days_left_in_term", "relative_cost",
+    "activity_freq", "state_freq", "district_freq",
+]
+
+HUMAN_LABEL = {
+    "log_amount": "Recommended amount",
+    "rec_month": "Recommendation month",
+    "rec_quarter": "Recommendation quarter",
+    "is_fy_end_quarter": "Recommended in the Jan-Mar financial-year-end window",
+    "days_left_in_term": "Days left in the Lok Sabha term at recommendation",
+    "relative_cost": "Cost vs. similar works in the same state and activity",
+    "activity_freq": "How common this activity type is",
+    "state_freq": "How common works from this state are",
+    "district_freq": "How common works from this district are",
+}
 
 
-def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, dict, dict]:
-    """Given an already-scoped spine slice, returns (X, activity_counts,
-    state_counts) - the 5-column feature frame this module's own delay
-    classifier trains and predicts on. Deliberately narrow and specific
-    ("will this work be late") - see engine/risk_model.py for the broader,
-    ~21-raw-feature risk + anomaly model trained against every detector's
-    output, not just a delay guideline."""
+def _cost_lookup_table(log_amount: pd.Series, state: pd.Series, activity: pd.Series) -> dict:
+    """{(state, activity): median log10 amount} for groups with >= 5 works,
+    plus a per-state and an overall fallback - same specific-to-general
+    fallback engine/detectors.py's peer_percentiles() uses for the delay
+    gate, so a work in a thin (state, activity) cell still gets a sensible
+    "expensive for its peers" comparison instead of NaN."""
+    d = pd.DataFrame({"log_amount": log_amount, "state": state, "activity": activity}).dropna(subset=["log_amount"])
+    overall = float(d["log_amount"].median()) if len(d) else 0.0
+    by_state = d.groupby("state")["log_amount"].median().to_dict()
+    sizes = d.groupby(["state", "activity"])["log_amount"].transform("size")
+    by_group = d[sizes >= 5].groupby(["state", "activity"])["log_amount"].median().to_dict()
+    return {"by_group": by_group, "by_state": by_state, "overall": overall}
+
+
+def _relative_cost(log_amt: float, state, activity, table: dict) -> float:
+    if log_amt is None or (isinstance(log_amt, float) and np.isnan(log_amt)):
+        return np.nan
+    if (state, activity) in table["by_group"]:
+        base = table["by_group"][(state, activity)]
+    elif state in table["by_state"]:
+        base = table["by_state"][state]
+    else:
+        base = table["overall"]
+    return log_amt - base
+
+
+def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Given an already-scoped spine slice, returns (X, lookup_tables) - the
+    feature frame this module's delay classifier trains and predicts on.
+    Missing stays missing - the classifier handles NaN natively, so it
+    learns what "unknown" means instead of being handed a guessed value."""
     df = df.copy()
-    # missing stays missing - the classifier handles NaN natively
     amount = df["rec_RECOMMENDED_AMOUNT"].fillna(df["SANCTION_AMOUNT"])
-    df["log_amount"] = np.log10(amount.where(amount > 0))
+    log_amount = np.log10(amount.where(amount > 0))
+    df["log_amount"] = log_amount
     df["rec_month"] = df["rec_RECOMMENDATION_DATE"].dt.month
     df["rec_quarter"] = df["rec_RECOMMENDATION_DATE"].dt.quarter
+    # Jan-Mar: the Indian financial year's closing quarter, when MPLADS
+    # sanctioning authorities are historically working through a backlog to
+    # keep the year's utilisation numbers up - a distinct effect from the
+    # already-present calendar rec_quarter, which a tree model can split on
+    # numerically but not name.
+    df["is_fy_end_quarter"] = df["rec_month"].isin([1, 2, 3]).astype(float)
+
+    tenure_end = df["rec_TENURE_END_DATE"] if "rec_TENURE_END_DATE" in df.columns else pd.Series(pd.NaT, index=df.index)
+    df["days_left_in_term"] = (tenure_end - df["rec_RECOMMENDATION_DATE"]).dt.days
 
     activity_col = "rec_ACTIVITY_NAME_CLEAN" if "rec_ACTIVITY_NAME_CLEAN" in df.columns else "ACTIVITY_NAME"
     activity_counts = df[activity_col].value_counts(normalize=True).to_dict()
@@ -41,19 +99,50 @@ def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, dict, dict]:
     state_counts = df["STATE_NAME"].value_counts(normalize=True).to_dict()
     df["state_freq"] = df["STATE_NAME"].map(state_counts)
 
-    return df[FEATURE_COLS], activity_counts, state_counts
+    if "DISTRICT" in df.columns:
+        district_counts = df["DISTRICT"].value_counts(normalize=True).to_dict()
+        df["district_freq"] = df["DISTRICT"].map(district_counts)
+    else:
+        district_counts = {}
+        df["district_freq"] = np.nan
+
+    cost_table = _cost_lookup_table(log_amount, df["STATE_NAME"], df[activity_col])
+    df["relative_cost"] = [
+        _relative_cost(la, st, ac, cost_table)
+        for la, st, ac in zip(log_amount, df["STATE_NAME"], df[activity_col])
+    ]
+
+    tables = {"activity": activity_counts, "state": state_counts, "district": district_counts, "cost": cost_table,
+             # a single scope-wide default so a live "what if" prediction
+             # that doesn't name a real work (no tenure_end of its own) can
+             # still get a days-left-in-term figure - the current scope's
+             # own median, computed once here rather than guessed at
+             # inference time.
+             "default_days_left_in_term": float(df["days_left_in_term"].median()) if df["days_left_in_term"].notna().any() else None}
+    return df[FEATURE_COLS], tables
 
 
-def build_inference_features(amount, state, activity, month, activity_counts, state_counts) -> pd.DataFrame:
-    """Single-row feature frame for a live prediction - same 5 columns as
-    build_features(). Unknown inputs are NaN, not a guessed default."""
+def build_inference_features(amount, state, activity, month, tables: dict,
+                             district=None, days_left_in_term=None) -> pd.DataFrame:
+    """Single-row feature frame for a live prediction - same columns as
+    build_features(). Unknown inputs are NaN, not a guessed default, except
+    days_left_in_term, which falls back to the training scope's own median
+    when the caller (a "what if this were recommended today" query with no
+    real work behind it) doesn't supply one."""
     amount = float(amount) if amount is not None and not pd.isna(amount) and float(amount) > 0 else np.nan
+    log_amount = np.log10(amount) if not np.isnan(amount) else np.nan
+    if days_left_in_term is None:
+        days_left_in_term = tables.get("default_days_left_in_term")
     return pd.DataFrame([{
-        "log_amount": np.log10(amount) if not np.isnan(amount) else np.nan,
+        "log_amount": log_amount,
         "rec_month": month if month is not None else np.nan,
         "rec_quarter": (month - 1) // 3 + 1 if month is not None else np.nan,
-        "activity_freq": activity_counts.get(activity, np.nan),
-        "state_freq": state_counts.get(state, np.nan),
+        "is_fy_end_quarter": float(month in (1, 2, 3)) if month is not None else np.nan,
+        "days_left_in_term": days_left_in_term if days_left_in_term is not None else np.nan,
+        "relative_cost": _relative_cost(log_amount, state, activity, tables["cost"]),
+        "activity_freq": tables["activity"].get(activity, np.nan),
+        "state_freq": tables["state"].get(state, np.nan),
+        "district_freq": tables["district"].get(district, np.nan),
     }], dtype="float64")
 
 
@@ -76,27 +165,37 @@ def train_model() -> dict:
     # docs/SCHEMA.md's "Flag-rate recalibration") after finding the fixed
     # MPLADS guideline (45 days to sanction, 365 to complete) is missed by
     # 28-69% of real works - failing the guideline is this system's norm, not
-    # a deviation from it. An earlier version of this file trained the
-    # target against that same fixed guideline: ~79% of the 17th Lok Sabha
-    # training population came out "delayed", so the classifier correctly
-    # learned to output a high probability for most works - an accurate fit
-    # to a miscalibrated target, not a modelling bug, but it made the
-    # resulting risk tier read as "High" for the large majority of works
-    # (verified: 84% of a live 18th Lok Sabha sample), which defeats the
-    # point of a differentiating risk signal. Gating each delay metric on
-    # its own 90th percentile (same convention as detectors.py's
-    # dynamic_gate()) fixes the target at its source instead of just
-    # relabelling the output - about 1 in 5 works ends up "delayed" by this
-    # definition, matching the rest of the system's p90-based severity gates.
+    # a deviation from it. Gating each delay metric on its own 90th
+    # percentile (same convention as detectors.py's dynamic_gate()) fixes the
+    # target at its source instead of just relabelling the output.
+    #
+    # A sanctioned work with no completion date is either genuinely still
+    # running or has stalled - comp_ACTUAL_END_DATE being NaT does not mean
+    # "on time", and treating it that way is itself a bug that was here
+    # before this comment: of the 20,362 17th-Lok-Sabha works sanctioned and
+    # never completed, 17,261 had already sat open for a median of 918 days
+    # (past the 699-day execution-delay gate) and were still being scored as
+    # "not delayed" purely because dt.days on a NaT comparison is NaN, which
+    # `>` silently evaluates to False. Every one of those was mislabelled
+    # negative, which is most of why recall was only 0.163 - the model was
+    # trained to say "on time" about works that had been stuck for years.
+    # The fix scores those against the work's age as of the snapshot date
+    # instead of a completion date that doesn't exist.
+    as_of = pd.Timestamp(load_detector_config()["as_of_date"])
     san_delay = (df["san_SANCTION_DATE"] - df["rec_RECOMMENDATION_DATE"]).dt.days
     exec_delay = (df["comp_ACTUAL_END_DATE"] - df["san_SANCTION_DATE"]).dt.days
     san_gate = san_delay.dropna().quantile(0.90)
     exec_gate = exec_delay.dropna().quantile(0.90)
+    age_since_sanction = (as_of - df["san_SANCTION_DATE"]).dt.days
+    open_overdue = df["has_sanctioned"] & ~df["has_completed"] & (age_since_sanction > exec_gate)
 
-    is_delayed = ((san_delay > san_gate) | (exec_delay > exec_gate) | (df["has_recommended"] & ~df["has_sanctioned"])).astype(int)
+    is_delayed = (
+        (san_delay > san_gate) | (exec_delay > exec_gate)
+        | (df["has_recommended"] & ~df["has_sanctioned"]) | open_overdue
+    ).astype(int)
     df["target"] = is_delayed
 
-    X, activity_counts, state_counts = build_features(df)
+    X, tables = build_features(df)
     y = df["target"]
     groups = df["CONSTITUENCY_ID"].fillna(-1)
 
@@ -104,9 +203,11 @@ def train_model() -> dict:
     # out-of-fold scores with GroupKFold by constituency - a random split puts
     # near-identical works from one constituency on both sides of the split
     oof = np.full(len(y), np.nan)
+    last = None
     for train, test in GroupKFold(n_splits=5).split(X, y, groups):
         fold = HistGradientBoostingClassifier(**params).fit(X.iloc[train], y.iloc[train])
         oof[test] = fold.predict_proba(X.iloc[test])[:, 1]
+        last = (fold, test)
     try:
         auc = float(roc_auc_score(y, oof))
     except ValueError:
@@ -114,25 +215,40 @@ def train_model() -> dict:
     y_pred = (oof >= 0.5).astype(int)
     precision = float(precision_score(y, y_pred, zero_division=0))
     recall = float(recall_score(y, y_pred, zero_division=0))
+    # precision@10% - the slice of the queue officers actually act on, same
+    # spirit as risk_model.py's precision_at_k for the reviewer-label model.
+    k = max(1, len(y) // 10)
+    top_k = np.argsort(-np.nan_to_num(oof, nan=-1))[:k]
+    precision_at_10pct = float(y.iloc[top_k].mean())
+
+    importance_ranking = []
+    if last is not None:
+        fold, test = last
+        importance_ranking = compute_importance_ranking(fold, X.iloc[test], y.iloc[test], FEATURE_COLS)
 
     clf = HistGradientBoostingClassifier(**params).fit(X, y)
+    feature_stats = compute_feature_stats(X, FEATURE_COLS)
 
     artifacts = {
         "model": clf,
         "feature_cols": FEATURE_COLS,
-        "activity_counts": activity_counts,
-        "state_counts": state_counts,
+        "tables": tables,
+        "importance_ranking": importance_ranking,
+        "feature_stats": feature_stats,
         "metrics": {
             "auc": round(auc, 3) if auc is not None else None,
             "precision": round(precision, 3),
             "recall": round(recall, 3),
+            "precision_at_10pct": round(precision_at_10pct, 3),
             "n": len(X),
+            "positive_rate": round(float(y.mean()), 4),
             "evaluation": "GroupKFold(5) by constituency, out-of-fold",
         },
     }
 
     joblib.dump(artifacts, MODEL_PATH)
-    print(f"  delay model: out-of-fold AUC={artifacts['metrics']['auc']}, precision={precision:.3f}, recall={recall:.3f}")
+    print(f"  delay model: out-of-fold AUC={artifacts['metrics']['auc']}, precision={precision:.3f}, "
+          f"recall={recall:.3f}, precision@10%={precision_at_10pct:.3f}, positive rate={y.mean():.3f}")
     print(f"Saved to {MODEL_PATH}")
     return artifacts["metrics"]
 
@@ -146,19 +262,25 @@ def get_model():
         if not MODEL_PATH.exists():
             train_model()
         _model_bundle = joblib.load(MODEL_PATH)
+        if "tables" not in _model_bundle:          # bundle from before this change
+            train_model()
+            _model_bundle = joblib.load(MODEL_PATH)
     return _model_bundle
 
 
-def predict_work_risk(amount: float | None, state: str | None, activity: str | None, month: int | None = None) -> dict:
-    """Computes predicted delay risk probability and contributing factors."""
+def predict_work_risk(amount: float | None, state: str | None, activity: str | None, month: int | None = None,
+                      district: str | None = None, days_left_in_term: float | None = None) -> dict:
+    """Computes predicted delay risk probability and contributing factors.
+    `district` and `days_left_in_term` are optional - the standalone
+    /api/predict_risk "what if" form doesn't have a real work's tenure dates
+    to draw on, so both fall back sensibly (district frequency to NaN, days
+    left in term to the training scope's own median)."""
     try:
         bundle = get_model()
         clf = bundle["model"]
-        act_counts = bundle["activity_counts"]
-        st_counts = bundle["state_counts"]
-
-        st_freq = st_counts.get(state)
-        features = build_inference_features(amount, state, activity, month, act_counts, st_counts)
+        tables = bundle["tables"]
+        features = build_inference_features(amount, state, activity, month, tables,
+                                            district=district, days_left_in_term=days_left_in_term)
 
         proba = float(clf.predict_proba(features)[0, 1])
 
@@ -169,14 +291,8 @@ def predict_work_risk(amount: float | None, state: str | None, activity: str | N
         else:
             tier = "Low"
 
-        # Explain key drivers
-        drivers = []
-        if amount is not None and not pd.isna(amount) and amount > 2500000:
-            drivers.append("High capital expenditure (> ₹25L) historically correlates with execution delay")
-        if month in (6, 7, 8):
-            drivers.append("Monsoon quarter recommendation historically incurs initial sanction delays")
-        if st_freq is not None and st_freq < 0.01:
-            drivers.append("Lower volume jurisdiction exhibits higher timeline variability")
+        drivers = explain_drivers(features.iloc[0].to_dict(), bundle.get("importance_ranking", []),
+                                  bundle.get("feature_stats", {}), HUMAN_LABEL)
 
         return {
             "predicted_delay_probability": round(proba, 3),

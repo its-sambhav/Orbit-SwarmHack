@@ -57,13 +57,19 @@ delay_gate:
       - ["2024-03-16", "2024-06-06"]   # 2024 general election
 
 # Rule lane (spec 4.2): fixed limits so a very late work is never un-flagged
-# just because its whole state is slow. severity medium; high only when the
-# work's exposure is at least high_exposure or through corroboration.
+# just because its whole state is slow. severity medium; high once the work
+# is severity_high_ratio times past the fixed limit, or through
+# corroboration - severity is how late the work is, never how much it costs.
+# Money's own effect on ranking runs only through priority_score's exposure
+# factor (engine/score.py) - putting it in severity too double-counted it,
+# since priority already multiplies severity by exposure. A ratio of 1.5
+# means "50% later than the limit that already made it a hard breach": e.g.
+# open_after_sanction_days=540 -> high at 810 days.
 hard_breach:
   sanction_lag_days: 365
   unsanctioned_age_days: 365
   open_after_sanction_days: 540
-  high_exposure: 500000
+  severity_high_ratio: 1.5
 
 detectors:
   # ---- A. Sanction stage ----
@@ -156,7 +162,11 @@ detectors:
     tag: UNUSUAL_COST
     enabled: true
     confidence: statistical
-    peer_keys: [STATE_NAME, ACTIVITY]
+    # SCOPE_TENURE included so a 2024 work's cost is never benchmarked
+    # against 2019 prices for the same state+activity (or vice versa) -
+    # construction costs drift across a 5-year election cycle, and without
+    # this a newer work can look like a cost outlier purely from inflation.
+    peer_keys: [STATE_NAME, ACTIVITY, SCOPE_TENURE]
     min_peers: 30
     z_low: 5.0
     z_medium: 6.5

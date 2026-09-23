@@ -165,7 +165,7 @@ def login(body: LoginRequest):
 def get_meta():
     s = get_store()
     in_scope_spine = s.spine[s.spine["SCOPE_TENURE"].isin(s.demo_scopes)]
-    in_scope_flagged = s.work_risk[s.work_risk["in_demo_scope"]]
+    in_scope_flagged = s.work_risk[s.work_risk["in_demo_scope"] & s.work_risk["is_substantive"]]
     return clean({
         "as_of_date": s.cfg["as_of_date"],
         "scopes": [{"value": v, "label": SCOPE_LABELS[v]} for v in SCOPES],
@@ -179,9 +179,9 @@ def get_meta():
         "national": {
             "total_works": len(s.spine),
             "total_findings": len(s.findings),
-            "flagged_works": len(s.work_risk),
+            "flagged_works": int(s.work_risk["is_substantive"].sum()),
             "total_states": int(in_scope_spine["STATE_NAME"].nunique()),
-            "breach_rate_all_scope": round(len(s.work_risk) / len(s.spine) * 100, 1),
+            "breach_rate_all_scope": round(int(s.work_risk["is_substantive"].sum()) / len(s.spine) * 100, 1),
             "breach_rate_in_scope": round(len(in_scope_flagged) / len(in_scope_spine) * 100, 1),
             "queue_size": int(s.work_risk["in_queue"].sum()) if "in_queue" in s.work_risk else None,
             "materiality_floor": s.cfg["queue"]["materiality_floor"],
@@ -205,7 +205,12 @@ def get_funnel(scope: str = Query("all"), date_from: str | None = None, date_to:
     # recommendation date - never narrowed by the date filter.
     alloc = s.allocated if scope == "all" else s.allocated[s.allocated["SCOPE_TENURE"] == scope]
     completion_rate = float(sp["has_completed"].sum() / sp["has_sanctioned"].sum() * 100) if sp["has_sanctioned"].sum() else None
-    works_flagged = len(wr)
+    # "flagged" = materially flagged (is_substantive) - a work whose only
+    # finding is a missing scanned file (documentation) or a date-entry
+    # mismatch (data_integrity) isn't counted as needing review, though it's
+    # still visible on its own case file. See rollup.py's NON_SUBSTANTIVE_FAMILIES.
+    works_flagged = int(wr["is_substantive"].sum())
+    documentation_only_count = int((~wr["is_substantive"]).sum())
     # distinct works whose worst finding is high-severity (not a raw finding
     # count, which would multi-count a work with more than one high finding).
     high_risk = wr[wr["max_severity"] == "high"]
@@ -215,6 +220,7 @@ def get_funnel(scope: str = Query("all"), date_from: str | None = None, date_to:
         "total_amount": float(total_amount),
         "allocated": float(alloc["ALLOCATED_AMT"].sum()),
         "works_flagged": works_flagged,
+        "documentation_only_count": documentation_only_count,
         "breach_rate": round(works_flagged / len(sp), 4) if len(sp) else None,
         "recommended": int(sp["has_recommended"].sum()),
         "recommended_amount": float(sp.loc[sp["has_recommended"], "rec_RECOMMENDED_AMOUNT"].sum()),
@@ -591,17 +597,21 @@ class PredictRiskRequest(BaseModel):
     state: str
     activity: str
     month: int = 6
+    district: str | None = None
 
 
 @app.post("/api/predict_risk")
 def post_predict_risk(body: PredictRiskRequest):
     """Standalone, model-only endpoint - the raw predictive signal for any
-    hypothetical (amount, state, activity, month), independent of any one
-    real work. Mirrors the /api/work/{n}/ai_assessment inputs so a state/
-    district authority can ask "what if" before a work is even recommended,
-    not just review one that already exists."""
+    hypothetical (amount, state, activity, month[, district]), independent
+    of any one real work. Mirrors the /api/work/{n}/ai_assessment inputs so a
+    state/district authority can ask "what if" before a work is even
+    recommended, not just review one that already exists. `district` is
+    optional; days_left_in_term isn't collected by this form at all and
+    falls back to the training scope's own median (see
+    engine/predictive.py's build_inference_features)."""
     return clean(predict_work_risk(
-        amount=body.amount, state=body.state, activity=body.activity, month=body.month,
+        amount=body.amount, state=body.state, activity=body.activity, month=body.month, district=body.district,
     ))
 
 
@@ -627,11 +637,14 @@ def get_work_ai_assessment(
         return v if v is not None and not (isinstance(v, float) and math.isnan(v)) and v is not pd.NaT else None
 
     rec_date = work.get("rec_RECOMMENDATION_DATE")
+    tenure_end = present(work.get("rec_TENURE_END_DATE"))
+    days_left = (pd.Timestamp(tenure_end) - rec_date).days if tenure_end is not None and pd.notna(rec_date) else None
     amount = present(work.get("rec_RECOMMENDED_AMOUNT")) or present(work.get("SANCTION_AMOUNT"))
     prediction = predict_work_risk(
         amount=amount, state=present(work.get("STATE_NAME")),
         activity=present(work.get("rec_ACTIVITY_NAME_CLEAN")) or present(work.get("san_ACTIVITY_NAME_CLEAN")),
         month=rec_date.month if pd.notna(rec_date) else None,
+        district=present(work.get("DISTRICT")), days_left_in_term=days_left,
     )
     rule_agreement = predict_risk_model(work)
 
@@ -930,12 +943,15 @@ def get_mp(
     } for r in sp.itertuples()]
 
     works_total = len(sp)
-    works_flagged = mp_findings["work_number"].nunique()
+    wr = s.work_risk_for_scope(scope)
+    wr = wr[wr["work_number"].isin(work_numbers)]
+    # substantive only - see rollup.py's NON_SUBSTANTIVE_FAMILIES; a work
+    # flagged only for a missing scan or a date-entry mismatch doesn't count
+    # toward this MP's "works flagged" headline number.
+    works_flagged = int(wr["is_substantive"].sum())
     sanctioned_n = int(sp["has_sanctioned"].sum())
     completed_n = int(sp["has_completed"].sum())
     completion_rate = float(completed_n / sanctioned_n * 100) if sanctioned_n else None
-    wr = s.work_risk_for_scope(scope)
-    wr = wr[wr["work_number"].isin(work_numbers)]
 
     return clean({
         "mp_name": row["MP_NAME"], "scope_tenure": scope, "status": row["status"],

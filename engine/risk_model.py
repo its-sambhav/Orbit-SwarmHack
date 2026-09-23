@@ -24,10 +24,10 @@ import joblib
 from sklearn.ensemble import HistGradientBoostingClassifier, IsolationForest
 from sklearn.model_selection import GroupKFold
 from sklearn.metrics import roc_auc_score
-from sklearn.inspection import permutation_importance
 
 from engine.paths import DATA_PROCESSED, DATA_FINDINGS, ROOT
 from engine.detectors import load_config as load_detector_config
+from engine.explain import compute_importance_ranking, compute_feature_stats, explain_drivers
 
 MODEL_DIR = ROOT / "data" / "models"
 MODEL_PATH = MODEL_DIR / "risk_model.joblib"
@@ -207,14 +207,10 @@ def train_model() -> dict:
     importance_ranking = []
     if last is not None:
         model, test = last
-        sample = test[:20000]
-        perm = permutation_importance(model, X.iloc[sample], y.iloc[sample], n_repeats=5, random_state=42,
-                                      scoring="roc_auc", n_jobs=-1)
-        importance_ranking = sorted(zip(FEATURE_COLS, perm.importances_mean.tolist()), key=lambda kv: kv[1], reverse=True)
+        importance_ranking = compute_importance_ranking(model, X.iloc[test], y.iloc[test], FEATURE_COLS)
     clf.fit(X, y)
 
-    feature_stats = {c: {"p10": float(X[c].quantile(0.1)), "p90": float(X[c].quantile(0.9)),
-                         "median": float(X[c].median())} for c in FEATURE_COLS}
+    feature_stats = compute_feature_stats(X, FEATURE_COLS)
     medians = {c: s["median"] for c, s in feature_stats.items()}
     forests = fit_tier_forests(X, _amount(df), medians)
 
@@ -246,23 +242,6 @@ def get_model():
     return _model_bundle
 
 
-def explain_drivers(features_row: dict, importance_ranking: list, feature_stats: dict, top_n: int = 3) -> list[str]:
-    drivers = []
-    for rank, (feat, _imp) in enumerate(importance_ranking, start=1):
-        if len(drivers) >= top_n:
-            break
-        v = features_row.get(feat)
-        if v is None or pd.isna(v):
-            continue
-        s = feature_stats[feat]
-        label = HUMAN_LABEL.get(feat, feat)
-        if v >= s["p90"]:
-            drivers.append(f"{label} is in the top 10% of all works (the model's #{rank} factor)")
-        elif v <= s["p10"]:
-            drivers.append(f"{label} is in the bottom 10% of all works (the model's #{rank} factor)")
-    return drivers
-
-
 def predict(work: dict) -> dict:
     """work: the raw spine row for one work. Returns the rule-agreement
     score (how closely this work resembles works the rules graded high) and
@@ -278,7 +257,7 @@ def predict(work: dict) -> dict:
         return {
             "rule_agreement_score": round(score, 3),
             "anomaly_score": None if np.isnan(anomaly) else round(float(anomaly), 3),
-            "top_drivers": explain_drivers(X.iloc[0].to_dict(), bundle["importance_ranking"], bundle["feature_stats"]),
+            "top_drivers": explain_drivers(X.iloc[0].to_dict(), bundle["importance_ranking"], bundle["feature_stats"], HUMAN_LABEL),
             "model_auc": bundle["metrics"].get("rule_agreement_auc"),
             "evaluation": bundle["metrics"].get("evaluation"),
         }
