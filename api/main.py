@@ -596,7 +596,7 @@ class PredictRiskRequest(BaseModel):
     amount: float
     state: str
     activity: str
-    month: int = 6
+    month: int | None = None      # unknown month stays unknown (NaN to the model), never a guessed one
     district: str | None = None
 
 
@@ -606,10 +606,8 @@ def post_predict_risk(body: PredictRiskRequest):
     hypothetical (amount, state, activity, month[, district]), independent
     of any one real work. Mirrors the /api/work/{n}/ai_assessment inputs so a
     state/district authority can ask "what if" before a work is even
-    recommended, not just review one that already exists. `district` is
-    optional; days_left_in_term isn't collected by this form at all and
-    falls back to the training scope's own median (see
-    engine/predictive.py's build_inference_features)."""
+    recommended, not just review one that already exists. `district` and
+    `month` are optional; a missing one is unknown to the model, not guessed."""
     return clean(predict_work_risk(
         amount=body.amount, state=body.state, activity=body.activity, month=body.month, district=body.district,
     ))
@@ -637,14 +635,12 @@ def get_work_ai_assessment(
         return v if v is not None and not (isinstance(v, float) and math.isnan(v)) and v is not pd.NaT else None
 
     rec_date = work.get("rec_RECOMMENDATION_DATE")
-    tenure_end = present(work.get("rec_TENURE_END_DATE"))
-    days_left = (pd.Timestamp(tenure_end) - rec_date).days if tenure_end is not None and pd.notna(rec_date) else None
     amount = present(work.get("rec_RECOMMENDED_AMOUNT")) or present(work.get("SANCTION_AMOUNT"))
     prediction = predict_work_risk(
         amount=amount, state=present(work.get("STATE_NAME")),
         activity=present(work.get("rec_ACTIVITY_NAME_CLEAN")) or present(work.get("san_ACTIVITY_NAME_CLEAN")),
         month=rec_date.month if pd.notna(rec_date) else None,
-        district=present(work.get("DISTRICT")), days_left_in_term=days_left,
+        district=present(work.get("DISTRICT")),
     )
     rule_agreement = predict_risk_model(work)
 
@@ -726,6 +722,7 @@ def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha"),
             "high_risk_amount": float(wr.loc[wr["max_severity"] == "high", "total_exposure"].sum()),
             "works_total": int(row["works_total"]), "works_flagged": int(row["works_flagged"]),
             "breach_rate": round(float(row["breach_rate"]), 4),
+            "risk_score": round(float(row["risk_score"]), 2),
             **stage_counts(sp),
             "completion_rate": completion_rate,
             "national_median_completion_rate": national_completion,
@@ -953,6 +950,12 @@ def get_mp(
     completed_n = int(sp["has_completed"].sum())
     completion_rate = float(completed_n / sanctioned_n * 100) if sanctioned_n else None
 
+    # the seat's own engine risk_score (the constituency rollup), so the map
+    # never has to derive one on the client - None if the seat has no row
+    cr = s.constituency_risk_for_scope(scope)
+    seat = cr[cr["CONSTITUENCY_ID"].astype("Int64").astype(str) == constituency_id] if constituency_id else cr.iloc[0:0]
+    seat_risk_score = round(float(seat.iloc[0]["risk_score"]), 2) if len(seat) else None
+
     return clean({
         "mp_name": row["MP_NAME"], "scope_tenure": scope, "status": row["status"],
         "state": row["state"], "constituency": row["constituency"],
@@ -971,6 +974,7 @@ def get_mp(
             "paid_count": int(sp["has_expenditure"].sum()),
             "works_total": works_total, "works_flagged": int(works_flagged),
             "breach_rate": round(works_flagged / works_total, 4) if works_total else None,
+            "risk_score": seat_risk_score,
             "delayed": delayed_count(mp_findings),
             **stage_counts(sp),
             "completion_rate": completion_rate,
@@ -1102,9 +1106,23 @@ def get_district(
             expenditure=("exp_total_disbursed", "sum"),
             avg_completion_days=("_completion_days", "mean"),
         ).reset_index().sort_values("works_total", ascending=False).head(50)
+        # the engine's own agency rollup (engine/rollup.build_agency_risk),
+        # run over just this district's works: substantive flagged count,
+        # breach rate and risk_score per agency. Shrinkage uses the national
+        # agency table's estimated prior strength - a handful of agencies in
+        # one district is too few to estimate it from.
+        scopes = SCOPES if scope == "all" else [scope]
+        national_ar = s.agency_risk_for_scope(scope)
+        m = float(national_ar["shrinkage_m"].iloc[0]) if "shrinkage_m" in national_ar and len(national_ar) else 50.0
+        district_ar = rollup.build_agency_risk(wr.assign(in_demo_scope=True), sp, scopes,
+                                               {**s.cfg, "rollup": {**s.cfg.get("rollup", {}), "shrinkage_m": m}})
+        agency_risk = district_ar.set_index("agency")
         agency_performance = [{
             "agency": r["exp_top_ia"], "works_total": int(r["works_total"]), "completed": int(r["completed"]),
             "ongoing": int(r["ongoing"]), "delayed": int(delayed_by_agency.get(r["exp_top_ia"], 0)),
+            "works_flagged": int(agency_risk.at[r["exp_top_ia"], "works_flagged"]) if r["exp_top_ia"] in agency_risk.index else 0,
+            "breach_rate": round(float(agency_risk.at[r["exp_top_ia"], "breach_rate"]), 4) if r["exp_top_ia"] in agency_risk.index else None,
+            "risk_score": round(float(agency_risk.at[r["exp_top_ia"], "risk_score"]), 2) if r["exp_top_ia"] in agency_risk.index else None,
             "expenditure": float(r["expenditure"]),
             "avg_completion_days": round(float(r["avg_completion_days"]), 1) if pd.notna(r["avg_completion_days"]) else None,
         } for _, r in agency_perf.iterrows()]

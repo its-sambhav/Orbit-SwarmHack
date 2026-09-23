@@ -91,7 +91,7 @@ export function DistrictView() {
     },
     {
       label: 'Avg. cost / completed work',
-      value: formatRupees(data.scorecard.completed_count ? data.scorecard.completed / data.scorecard.completed_count : 0),
+      value: data.scorecard.completed_count ? formatRupees(data.scorecard.completed / data.scorecard.completed_count) : '—',
       sub: t('Across {n} completed works', { n: data.scorecard.completed_count.toLocaleString('en-IN') }),
     },
   ]
@@ -107,16 +107,15 @@ export function DistrictView() {
 
   // EntityRiskPanel's generic {name, works_total, works_flagged, breach_rate,
   // risk_score} shape - a district has no further sub-jurisdiction of its
-  // own, so its own agency_performance list (already computed server-side)
-  // fills that slot instead, with each agency's own delayed-work count/rate
-  // standing in for works_flagged/breach_rate (agency_performance has no
-  // true risk_score - there's nothing else on it that plays that role).
+  // own, so its implementing agencies fill that slot. Every field is the
+  // engine's own agency rollup run over this district's works (server-side,
+  // api/main.py get_district) - nothing derived or stood in for here.
   const agencyEntities = data.agency_performance.map((a) => ({
     name: a.agency,
     works_total: a.works_total,
-    works_flagged: a.delayed,
-    breach_rate: a.works_total ? a.delayed / a.works_total : 0,
-    risk_score: a.delayed,
+    works_flagged: a.works_flagged,
+    breach_rate: a.breach_rate,
+    risk_score: a.risk_score,
   }))
 
   const mapUrl = `${isRoleView ? `/district-authority/${encodeURIComponent(stateName)}/${encodeURIComponent(districtName)}` : `/district/${encodeURIComponent(stateName)}/${encodeURIComponent(districtName)}`}/map?${params.toString()}`

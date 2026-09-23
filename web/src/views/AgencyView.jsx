@@ -88,7 +88,7 @@ export function AgencyView() {
   const cards = [
     {
       label: 'Avg. cost / completed work',
-      value: formatRupees(data.scorecard.completed_count ? data.scorecard.completed / data.scorecard.completed_count : 0),
+      value: data.scorecard.completed_count ? formatRupees(data.scorecard.completed / data.scorecard.completed_count) : '—',
       sub: t('Across {n} completed works', { n: data.scorecard.completed_count.toLocaleString('en-IN') }),
     },
     {

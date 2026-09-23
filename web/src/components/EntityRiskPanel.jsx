@@ -23,7 +23,8 @@ function singular(plural) {
 }
 
 const SORTS = {
-  risk: { label: 'Highest risk', fn: (a, b) => b.risk_score - a.risk_score },
+  // an entity with no score yet (null) sorts last rather than as a fake 0
+  risk: { label: 'Highest risk', fn: (a, b) => (b.risk_score ?? -Infinity) - (a.risk_score ?? -Infinity) },
   volume: { label: 'Highest volume', fn: (a, b) => b.works_total - a.works_total },
   alpha: { label: 'Alphabetical', fn: (a, b) => a.name.localeCompare(b.name) },
 }
@@ -96,8 +97,8 @@ export function EntityRiskPanel({ entities, entityType, entityLabel, title, onSe
                 <span className="state-row-name">{td(e.name)}</span>
                 <span className="state-row-stat">{e.works_total.toLocaleString('en-IN')}</span>
                 <span className="state-row-stat">{e.works_flagged.toLocaleString('en-IN')}</span>
-                <span className="state-row-pct">{(e.breach_rate * 100).toFixed(0)}%</span>
-                <span className="state-row-bar"><span style={{ width: `${Math.max(e.breach_rate * 100, 2)}%` }} /></span>
+                <span className="state-row-pct">{e.breach_rate != null ? `${(e.breach_rate * 100).toFixed(0)}%` : '—'}</span>
+                <span className="state-row-bar"><span style={{ width: `${e.breach_rate != null ? Math.max(e.breach_rate * 100, 2) : 0}%` }} /></span>
               </button>
             ))}
           </div>

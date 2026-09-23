@@ -19,17 +19,20 @@ from engine.explain import compute_importance_ranking, compute_feature_stats, ex
 MODEL_DIR = ROOT / "data" / "models"
 MODEL_PATH = MODEL_DIR / "delay_predictor.joblib"
 
-# 9 features, all knowable at the moment of recommendation (no leakage of
+# 8 features, all knowable at the moment of recommendation (no leakage of
 # anything decided later). Wider than the original 5 (log_amount, rec_month,
-# rec_quarter, activity_freq, state_freq, kept below) - see
+# rec_quarter, activity_freq, state_freq, kept below). "Days left in the
+# term" was tried and removed: today's 18th Lok Sabha works sit 1,000-1,800
+# days before their term ends, a range the post-2023 training works never
+# cover, so the model extrapolated and called 56% of current works >= 99%
+# likely to be delayed. See
 # engine/risk_model.py for the broader, ~19-raw-feature risk + anomaly model
 # trained against every detector's output, not just a delay guideline. This
 # model stays a distinct, narrower question ("will THIS work be late") on
 # purpose; the addition here is depth of evidence for that one question, not
 # scope creep into risk_model.py's job.
 FEATURE_COLS = [
-    "log_amount", "rec_month", "rec_quarter", "is_fy_end_quarter",
-    "days_left_in_term", "relative_cost",
+    "log_amount", "rec_month", "rec_quarter", "is_fy_end_quarter", "relative_cost",
     "activity_freq", "state_freq", "district_freq",
 ]
 
@@ -38,7 +41,6 @@ HUMAN_LABEL = {
     "rec_month": "Recommendation month",
     "rec_quarter": "Recommendation quarter",
     "is_fy_end_quarter": "Recommended in the Jan-Mar financial-year-end window",
-    "days_left_in_term": "Days left in the Lok Sabha term at recommendation",
     "relative_cost": "Cost vs. similar works in the same state and activity",
     "activity_freq": "How common this activity type is",
     "state_freq": "How common works from this state are",
@@ -90,9 +92,6 @@ def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     # numerically but not name.
     df["is_fy_end_quarter"] = df["rec_month"].isin([1, 2, 3]).astype(float)
 
-    tenure_end = df["rec_TENURE_END_DATE"] if "rec_TENURE_END_DATE" in df.columns else pd.Series(pd.NaT, index=df.index)
-    df["days_left_in_term"] = (tenure_end - df["rec_RECOMMENDATION_DATE"]).dt.days
-
     activity_col = "rec_ACTIVITY_NAME_CLEAN" if "rec_ACTIVITY_NAME_CLEAN" in df.columns else "ACTIVITY_NAME"
     activity_counts = df[activity_col].value_counts(normalize=True).to_dict()
     df["activity_freq"] = df[activity_col].map(activity_counts)
@@ -113,33 +112,20 @@ def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         for la, st, ac in zip(log_amount, df["STATE_NAME"], df[activity_col])
     ]
 
-    tables = {"activity": activity_counts, "state": state_counts, "district": district_counts, "cost": cost_table,
-             # a single scope-wide default so a live "what if" prediction
-             # that doesn't name a real work (no tenure_end of its own) can
-             # still get a days-left-in-term figure - the current scope's
-             # own median, computed once here rather than guessed at
-             # inference time.
-             "default_days_left_in_term": float(df["days_left_in_term"].median()) if df["days_left_in_term"].notna().any() else None}
+    tables = {"activity": activity_counts, "state": state_counts, "district": district_counts, "cost": cost_table}
     return df[FEATURE_COLS], tables
 
 
-def build_inference_features(amount, state, activity, month, tables: dict,
-                             district=None, days_left_in_term=None) -> pd.DataFrame:
+def build_inference_features(amount, state, activity, month, tables: dict, district=None) -> pd.DataFrame:
     """Single-row feature frame for a live prediction - same columns as
-    build_features(). Unknown inputs are NaN, not a guessed default, except
-    days_left_in_term, which falls back to the training scope's own median
-    when the caller (a "what if this were recommended today" query with no
-    real work behind it) doesn't supply one."""
+    build_features(). Unknown inputs are NaN, never a guessed default."""
     amount = float(amount) if amount is not None and not pd.isna(amount) and float(amount) > 0 else np.nan
     log_amount = np.log10(amount) if not np.isnan(amount) else np.nan
-    if days_left_in_term is None:
-        days_left_in_term = tables.get("default_days_left_in_term")
     return pd.DataFrame([{
         "log_amount": log_amount,
         "rec_month": month if month is not None else np.nan,
         "rec_quarter": (month - 1) // 3 + 1 if month is not None else np.nan,
         "is_fy_end_quarter": float(month in (1, 2, 3)) if month is not None else np.nan,
-        "days_left_in_term": days_left_in_term if days_left_in_term is not None else np.nan,
         "relative_cost": _relative_cost(log_amount, state, activity, tables["cost"]),
         "activity_freq": tables["activity"].get(activity, np.nan),
         "state_freq": tables["state"].get(state, np.nan),
@@ -155,8 +141,22 @@ def train_model() -> dict:
 
     spine = pd.read_parquet(spine_path)
 
-    # Focus training on 17th Lok Sabha completed / concluded works
+    cfg = load_detector_config()
+    mcfg = cfg.get("models", {})
+    dcfg = mcfg.get("delay", {})
+
+    # Train on 17th Lok Sabha works recommended on or after `train_from`
+    # (2023-04-01, when MPLADS moved to the eSAKSHI portal). Before that date
+    # the data holds only ~900 17th LS works - the ones still unfinished when
+    # records were carried over - and every one of them is "delayed" (100%,
+    # against 36% after). Left in, they taught the model "an early
+    # recommendation means a delay", an artefact of how the records were
+    # migrated, not of how works run. From train_from on, the population is
+    # complete.
     df = spine[spine["SCOPE_TENURE"] == "17th Lok Sabha"].copy()
+    train_from = dcfg.get("train_from")
+    if train_from:
+        df = df[df["rec_RECOMMENDATION_DATE"] >= pd.Timestamp(train_from)]
     if len(df) < 1000:
         df = spine.copy()
 
@@ -182,9 +182,6 @@ def train_model() -> dict:
     # trained to say "on time" about works that had been stuck for years.
     # The fix scores those against the work's age as of the snapshot date
     # instead of a completion date that doesn't exist.
-    cfg = load_detector_config()
-    mcfg = cfg.get("models", {})
-    dcfg = mcfg.get("delay", {})
     as_of = pd.Timestamp(cfg["as_of_date"])
     san_delay = (df["san_SANCTION_DATE"] - df["rec_RECOMMENDATION_DATE"]).dt.days
     exec_delay = (df["comp_ACTUAL_END_DATE"] - df["san_SANCTION_DATE"]).dt.days
@@ -240,6 +237,20 @@ def train_model() -> dict:
     precision_at_10pct = float(y.iloc[top_k].mean())
     brier = float(brier_score_loss(y, oof_p))
 
+    # forward-in-time check: train on the earliest 70% of works by
+    # recommendation date, score the latest 30%. This is the situation the
+    # model is used in (predicting works that come after its training data)
+    # and reads lower than the constituency split above; both are reported.
+    forward_auc = forward_p10 = None
+    cut = df["rec_RECOMMENDATION_DATE"].quantile(0.7)
+    early = (df["rec_RECOMMENDATION_DATE"] < cut).to_numpy()
+    late = (df["rec_RECOMMENDATION_DATE"] >= cut).to_numpy()
+    if early.sum() and late.sum() and y[early].nunique() == 2 and y[late].nunique() == 2:
+        fwd = HistGradientBoostingClassifier(**params).fit(X[early], y[early]).predict_proba(X[late])[:, 1]
+        forward_auc = float(roc_auc_score(y[late], fwd))
+        kf = max(1, int(late.sum()) // 10)
+        forward_p10 = float(y[late].to_numpy()[np.argsort(-fwd)[:kf]].mean())
+
     importance_ranking = []
     if last is not None:
         fold, test = last
@@ -266,12 +277,19 @@ def train_model() -> dict:
             "n": len(X),
             "positive_rate": round(float(y.mean()), 4),
             "evaluation": "GroupKFold(5) by constituency, out-of-fold",
+            "trained_on": f"17th Lok Sabha works recommended from {train_from}" if train_from else "17th Lok Sabha works",
+            "forward_auc": round(forward_auc, 3) if forward_auc is not None else None,
+            "forward_precision_at_10pct": round(forward_p10, 3) if forward_p10 is not None else None,
+            "forward_evaluation": f"trained on works recommended before {cut.date()}, tested on later ones",
         },
     }
 
     joblib.dump(artifacts, MODEL_PATH)
     print(f"  delay model: out-of-fold AUC={artifacts['metrics']['auc']}, precision={precision:.3f}, "
           f"recall={recall:.3f}, precision@10%={precision_at_10pct:.3f}, Brier={brier:.4f}, positive rate={y.mean():.3f}")
+    if forward_auc is not None:
+        print(f"  delay model, forward in time (train before {cut.date()}, test after): "
+              f"AUC={forward_auc:.3f}, precision@10%={forward_p10:.3f}")
     print(f"Saved to {MODEL_PATH}")
     return artifacts["metrics"]
 
@@ -292,18 +310,15 @@ def get_model():
 
 
 def predict_work_risk(amount: float | None, state: str | None, activity: str | None, month: int | None = None,
-                      district: str | None = None, days_left_in_term: float | None = None) -> dict:
+                      district: str | None = None) -> dict:
     """Computes predicted delay risk probability and contributing factors.
-    `district` and `days_left_in_term` are optional - the standalone
-    /api/predict_risk "what if" form doesn't have a real work's tenure dates
-    to draw on, so both fall back sensibly (district frequency to NaN, days
-    left in term to the training scope's own median)."""
+    Anything not supplied (e.g. `district` from the standalone "what if"
+    form) is NaN to the model, never a guessed value."""
     try:
         bundle = get_model()
         clf = bundle["model"]
         tables = bundle["tables"]
-        features = build_inference_features(amount, state, activity, month, tables,
-                                            district=district, days_left_in_term=days_left_in_term)
+        features = build_inference_features(amount, state, activity, month, tables, district=district)
 
         proba = float(clf.predict_proba(features)[0, 1])
         if bundle.get("calibrator") is not None:
@@ -320,6 +335,7 @@ def predict_work_risk(amount: float | None, state: str | None, activity: str | N
             "risk_tier": tier,
             "drivers": drivers,
             "model_auc": bundle["metrics"].get("auc"),
+            "model_forward_auc": bundle["metrics"].get("forward_auc"),
         }
     except Exception as e:
         return {
@@ -327,6 +343,7 @@ def predict_work_risk(amount: float | None, state: str | None, activity: str | N
             "risk_tier": None,
             "drivers": [f"Model unavailable ({e})"],
             "model_auc": None,
+            "model_forward_auc": None,
         }
 
 

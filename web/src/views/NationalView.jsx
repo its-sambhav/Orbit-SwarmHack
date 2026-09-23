@@ -92,7 +92,7 @@ export function NationalView() {
     },
     {
       label: 'Avg. cost / completed work',
-      value: formatRupees(funnel.completed ? funnel.completed_amount / funnel.completed : 0),
+      value: funnel.completed ? formatRupees(funnel.completed_amount / funnel.completed) : '—',
       sub: t('Across {n} completed works', { n: funnel.completed.toLocaleString('en-IN') }),
     },
   ] : []

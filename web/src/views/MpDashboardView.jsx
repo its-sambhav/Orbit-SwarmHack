@@ -92,7 +92,7 @@ export function MpDashboardView() {
     },
     {
       label: 'Avg. cost / completed work',
-      value: formatRupees(scorecard.completed_count ? scorecard.completed / scorecard.completed_count : 0),
+      value: scorecard.completed_count ? formatRupees(scorecard.completed / scorecard.completed_count) : '—',
       sub: t('Across {n} completed works', { n: scorecard.completed_count.toLocaleString('en-IN') }),
     },
   ]

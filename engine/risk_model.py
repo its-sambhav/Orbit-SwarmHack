@@ -1,9 +1,13 @@
 """Machine learning - ranking only (spec section 6). Nothing here adds,
 removes or re-grades a flag.
 
-1. Isolation Forest, one per amount tier: an "unusual shape" score used only
-   to reorder works that already sit in the same priority band of the queue
-   (engine/rollup.py build_queue).
+1. Isolation Forest, one per lifecycle stage x amount tier: an "unusual
+   shape" score used only to reorder works that already sit in the same
+   priority band of the queue (engine/rollup.py build_queue). Stage matters:
+   with one forest per amount tier only, an open work scored about twice as
+   "anomalous" as a completed one (mean 0.35 vs 0.18) purely for being open,
+   and 63% of the top 5% were open works (32% of all works). Each work is now
+   compared with works at the same point in their life.
 
 2. Rule-agreement score: a gradient-boosting classifier trained on
    max_severity == "high" from the rules, using largely the same raw inputs
@@ -122,35 +126,56 @@ def _model_cfg() -> dict:
     return load_detector_config().get("models", {})
 
 
+STAGES = ("recommended", "sanctioned_open", "completed")
+
+
+def _stage(X: pd.DataFrame) -> np.ndarray:
+    """0 recommended only, 1 sanctioned and open, 2 completed - read off the
+    model's own has_sanctioned/has_completed features."""
+    sanctioned = X["has_sanctioned"].fillna(0).astype(int).to_numpy() == 1
+    completed = X["has_completed"].fillna(0).astype(int).to_numpy() == 1
+    return np.where(~sanctioned, 0, np.where(completed, 2, 1))
+
+
+def _strata(X: pd.DataFrame, amount: pd.Series, edges: list, n_tiers: int) -> np.ndarray:
+    tier = np.digitize(np.log10(amount.where(amount > 0)).fillna(-1), edges)
+    return _stage(X) * n_tiers + tier
+
+
 def fit_tier_forests(X: pd.DataFrame, amount: pd.Series, medians: dict) -> dict:
     mcfg = _model_cfg()
     icfg = mcfg.get("isolation_forest", {})
     n_tiers = icfg.get("n_tiers", N_TIERS)
     edges = list(np.nanquantile(np.log10(amount.where(amount > 0)), np.linspace(0, 1, n_tiers + 1))[1:-1])
-    tier = np.digitize(np.log10(amount.where(amount > 0)).fillna(-1), edges)
+    stratum = _strata(X, amount, edges, n_tiers)
     Xf = X.fillna(medians)
     forests = {}
-    for t in range(n_tiers):
-        part = Xf[tier == t]
+    for t in range(len(STAGES) * n_tiers):
+        part = Xf[stratum == t]
         if len(part) < icfg.get("min_tier_rows", 200):
             continue
         iso = IsolationForest(n_estimators=icfg.get("n_estimators", 200), contamination="auto",
                               random_state=mcfg.get("random_state", 42)).fit(part)
         s = iso.score_samples(part)
-        forests[t] = {"iso": iso, "range": (float(s.min()), float(s.max()))}
-    return {"edges": edges, "forests": forests}
+        # 1,001 quantiles of this stratum's own scores: a work's anomaly score
+        # is the share of its peers that look more normal than it does, so
+        # 0.95 means "more unusual than 95% of works at the same stage and
+        # cost tier" in every stratum alike (a min-max rescale made strata
+        # with a wide score range look more anomalous across the board)
+        forests[t] = {"iso": iso, "quantiles": np.quantile(s, np.linspace(0, 1, 1001))}
+    return {"edges": edges, "forests": forests, "n_tiers": n_tiers, "stratified_by_stage": True}
 
 
 def tier_anomaly(X: pd.DataFrame, amount: pd.Series, bundle: dict, medians: dict) -> np.ndarray:
-    tier = np.digitize(np.log10(amount.where(amount > 0)).fillna(-1), bundle["edges"])
+    stratum = _strata(X, amount, bundle["edges"], bundle.get("n_tiers", N_TIERS))
     Xf = X.fillna(medians)
     out = np.full(len(X), np.nan)
     for t, fm in bundle["forests"].items():
-        mask = tier == t
+        mask = stratum == t
         if mask.any():
-            lo, hi = fm["range"]
             raw = fm["iso"].score_samples(Xf[mask])
-            out[mask] = np.clip((hi - raw) / (hi - lo), 0, 1) if hi > lo else np.nan
+            # lower raw score = more anomalous; share of peers scoring higher
+            out[mask] = 1.0 - np.searchsorted(fm["quantiles"], raw, side="right") / len(fm["quantiles"])
     return out
 
 
@@ -248,7 +273,7 @@ def get_model():
         if not MODEL_PATH.exists():
             train_model()
         _model_bundle = joblib.load(MODEL_PATH)
-        if "forests" not in _model_bundle:          # bundle from before this change
+        if not _model_bundle.get("forests", {}).get("stratified_by_stage"):   # bundle from before this change
             train_model()
             _model_bundle = joblib.load(MODEL_PATH)
     return _model_bundle

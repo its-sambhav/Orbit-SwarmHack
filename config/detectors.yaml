@@ -385,6 +385,9 @@ rollup:
 # never adds, removes or re-grades a flag - see the header of this file.
 models:
   delay:
+    # eSAKSHI go-live: before it the data only holds 17th LS works that were
+    # still unfinished at migration (all "delayed") - see engine/predictive.py
+    train_from: "2023-04-01"
     params: {max_iter: 100, learning_rate: 0.08, max_depth: 5}
     calibrate: isotonic          # so "0.7" means about a 70% observed delay rate
     tiers: {high: 0.70, medium: 0.40}

@@ -85,15 +85,15 @@ export function ConstituencyView() {
         if (c.pc_id != null) map[c.pc_id] = c
       }
     }
-    if (data?.pc_id != null) {
-      const worksTotal = data.scorecard?.works_total || 1
-      const worksFlagged = data.scorecard?.works_flagged || 0
-      const breachRate = data.scorecard?.breach_rate ?? (worksTotal ? worksFlagged / worksTotal : 0)
+    // this page's own seat, if the scope-wide list didn't carry it - built
+    // only from the real scorecard the API returned for it (risk_score is the
+    // engine's own constituency rollup value), never a client-side estimate.
+    // Without a real risk_score the seat is left off the map (no-data grey).
+    if (data?.pc_id != null && !map[data.pc_id] && data.scorecard?.risk_score != null) {
       map[data.pc_id] = {
         constituency: data.constituency, state: data.state,
-        works_total: worksTotal, works_flagged: worksFlagged,
-        breach_rate: breachRate, risk_score: breachRate * 100,
-        ...map[data.pc_id],
+        works_total: data.scorecard.works_total, works_flagged: data.scorecard.works_flagged,
+        breach_rate: data.scorecard.breach_rate, risk_score: data.scorecard.risk_score,
       }
     }
     return map
