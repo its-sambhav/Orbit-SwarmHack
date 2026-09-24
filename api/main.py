@@ -111,6 +111,61 @@ def stage_counts(sp: pd.DataFrame) -> dict:
     }
 
 
+TAG_FAMILY = {t["name"]: t["family"] for t in TAG_REGISTRY.values()}
+_SEV_RANK = {"low": 0, "medium": 1, "high": 2}
+_WORK_KEY = ["work_number", "scope_house", "scope_tenure"]
+
+
+def tag_summary(findings_slice: pd.DataFrame) -> dict:
+    """Findings by tag, counted in WORKS, not findings - one work can carry
+    several tags, so the per-tag counts add up to more than the number of
+    flagged works (which is why this is a ranked bar list, not a donut).
+    Each tag's works are split by the worst severity that tag has on the
+    work. `flagged_works` is the distinct works with any finding here - the
+    denominator for each tag's share."""
+    f = findings_slice
+    if f.empty:
+        return {"flagged_works": 0, "items": []}
+    per_work = (f.assign(_r=f["severity"].map(_SEV_RANK))
+                .groupby(["tag", *_WORK_KEY])["_r"].max().reset_index())
+    items = []
+    for tag, g in per_work.groupby("tag"):
+        c = g["_r"].value_counts()
+        items.append({"tag": tag, "family": TAG_FAMILY.get(tag), "works": int(len(g)),
+                      "high": int(c.get(2, 0)), "medium": int(c.get(1, 0)), "low": int(c.get(0, 0))})
+    items.sort(key=lambda i: (-i["works"], i["tag"]))
+    return {"flagged_works": int(f[_WORK_KEY].drop_duplicates().shape[0]), "items": items}
+
+
+def pipeline_summary(sp: pd.DataFrame, wr: pd.DataFrame) -> dict:
+    """Where works are NOW - each work in exactly one stage, so the stages
+    add up to the total: awaiting sanction (recommended, not sanctioned),
+    in progress (sanctioned, not completed), completed. For each stage, how
+    many of its works are flagged (substantive findings only, same rule as
+    every "works flagged" figure), plus the two conversion rates between
+    stages."""
+    sanctioned = sp["has_sanctioned"].astype(bool)
+    completed = sp["has_completed"].astype(bool)
+    stage = pd.Series(np.select([completed, sanctioned], ["completed", "in_progress"], "awaiting_sanction"),
+                      index=sp.index)
+    flagged_keys = wr.loc[wr["is_substantive"].astype(bool), _WORK_KEY] if "is_substantive" in wr else wr[_WORK_KEY]
+    keys = sp[["work_number", "SCOPE_HOUSE", "SCOPE_TENURE"]].rename(
+        columns={"SCOPE_HOUSE": "scope_house", "SCOPE_TENURE": "scope_tenure"})
+    is_flagged = keys.merge(flagged_keys.drop_duplicates().assign(_f=True), on=_WORK_KEY, how="left")["_f"] \
+        .fillna(False).astype(bool).to_numpy()
+    stages = []
+    for key in ("awaiting_sanction", "in_progress", "completed"):
+        m = (stage == key).to_numpy()
+        stages.append({"key": key, "works": int(m.sum()), "flagged": int((m & is_flagged).sum())})
+    recommended, n_sanctioned = int(sp["has_recommended"].sum()), int(sanctioned.sum())
+    return {
+        "total": int(len(sp)),
+        "stages": stages,
+        "sanction_rate": round(n_sanctioned / recommended, 4) if recommended else None,
+        "completion_rate": round(int(completed.sum()) / n_sanctioned, 4) if n_sanctioned else None,
+    }
+
+
 def delayed_count(findings_slice: pd.DataFrame) -> int:
     """Distinct works carrying any timing-family tag (Delay in Sanction,
     Delay in Completion, ... - config/tags.yaml) within an already-scoped
@@ -236,6 +291,7 @@ def get_funnel(scope: str = Query("all"), date_from: str | None = None, date_to:
         "never_sanctioned": int((sp["has_recommended"] & ~sp["has_sanctioned"]).sum()),
         "sanctioned_never_completed": int((sp["has_sanctioned"] & ~sp["has_completed"]).sum()),
         "category_breakdown": category_breakdown(sp, wr),
+        "pipeline": pipeline_summary(sp, wr),
     })
 
 
@@ -257,6 +313,7 @@ def get_analytics(scope: str = Query("18th Lok Sabha"), date_from: str | None = 
         "scope": scope, "date_from": date_from, "date_to": date_to,
         "severity_counts": {k: int(v) for k, v in f["severity"].value_counts().items()},
         "tag_counts": {k: int(v) for k, v in f["tag"].value_counts().items()},
+        "tag_summary": tag_summary(f),
         "stage_counts": {k: int(v) for k, v in f["stage"].value_counts().items()},
         "top_states": [{
             "state": r["state"], "works_flagged": int(r["works_flagged"]),
@@ -722,6 +779,7 @@ def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha"),
             "state_median_completion_rate": state_completion,
         },
         "category_breakdown": category_breakdown(sp, wr),
+        "tag_summary": tag_summary(findings), "pipeline": pipeline_summary(sp, wr),
         "tag_breakdown": tag_breakdown,
         "findings": ranked,
     })
@@ -830,6 +888,7 @@ def get_state(
             "national_median_completion_rate": national_completion,
         },
         "category_breakdown": category_breakdown(sp, wr),
+        "tag_summary": tag_summary(f), "pipeline": pipeline_summary(sp, wr),
         "districts": district_items, "tag_breakdown": tag_breakdown, "queue": queue,
     })
 
@@ -973,6 +1032,7 @@ def get_mp(
             "completion_rate": completion_rate,
         },
         "category_breakdown": category_breakdown(sp, wr),
+        "tag_summary": tag_summary(mp_findings), "pipeline": pipeline_summary(sp, wr),
         "tag_breakdown": mp_findings["tag"].value_counts().to_dict(),
         "activity_breakdown": activity_breakdown,
         "recommended_works": recommended_works,
@@ -1152,6 +1212,7 @@ def get_district(
             "completion_rate": completion_rate,
         },
         "category_breakdown": category_breakdown(sp, wr),
+        "tag_summary": tag_summary(f), "pipeline": pipeline_summary(sp, wr),
         "tag_breakdown": tag_breakdown, "queue": queue,
     })
 
@@ -1255,6 +1316,7 @@ def get_agency(
             **stage_counts(sp),
         },
         "category_breakdown": category_breakdown(sp, wr),
+        "tag_summary": tag_summary(f), "pipeline": pipeline_summary(sp, wr),
         "tag_breakdown": tag_breakdown, "queue": queue,
         "data_caveat": (
             "Agency identity is matched by name only (spelling/case-normalised, "

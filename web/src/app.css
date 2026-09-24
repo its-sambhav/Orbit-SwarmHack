@@ -421,6 +421,28 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
   filter: brightness(1.08);
 }
 
+/* Project lifecycle by sector (ProjectLifecycleBarChart): one nested bar per
+   sector, same linear scale for every row */
+.lc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+.lc-sub { display: block; margin-top: 3px; font-size: 11.5px; color: var(--ink-faint); }
+.lc-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px; font-size: 11.5px; color: var(--ink-muted); }
+.lc-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.lc-legend-item strong { color: var(--ink); font-weight: 600; }
+.lc-swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; display: inline-block; }
+.lc-swatch-risk { background: var(--sev-high); border-radius: 50%; width: 8px; height: 8px; }
+.lc-chart { position: relative; flex: 1 0 auto; display: flex; align-items: flex-end; }
+.lc-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.lc-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 3; }
+.lc-axis { stroke: var(--border-strong); stroke-width: 1; }
+.lc-tick { font-size: 10px; fill: var(--ink-faint); font-family: inherit; }
+.lc-value { font-size: 10.5px; font-weight: 600; fill: var(--ink); font-family: inherit; }
+.lc-xlabel { font-size: 10.5px; font-weight: 500; fill: var(--ink-muted); font-family: inherit; }
+.lc-scale-note { font-size: 9.5px; font-weight: 600; fill: var(--ink-faint); font-family: inherit; }
+.lc-hit { fill: transparent; }
+.lc-group { cursor: default; }
+/* hover: the faintest wash behind the group, nothing more */
+.lc-group.active .lc-hit { fill: var(--surface-sunken); opacity: 0.45; }
+
 .lifecycle-tooltip {
   position: absolute;
   transform: translate(-50%, -100%);
@@ -485,24 +507,104 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
    state name and numbers are always the actual information - see the
    header comment on stateColor in NationalView.jsx for why a badge colour
    doesn't need the same CVD gate a data-encoding chart colour does). */
-.states-panel-head {
-  display: grid; grid-template-columns: 9px 1fr auto auto auto; gap: 10px; align-items: center;
-  padding: 0 4px 6px; font-size: 10.5px; font-weight: 600; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.03em;
+/* ranked entity list (EntityRiskPanel): rank · name · works · flagged ·
+   flagged % · risk score, with the risk-score bar under each row */
+.entity-head, .entity-row {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr) 58px 62px 78px 80px; column-gap: 8px; align-items: center;
 }
-.states-panel-head span { text-align: right; }
-.states-panel-head span:first-of-type { text-align: left; }
-.state-row {
-  display: grid; grid-template-columns: 9px 1fr auto auto auto; gap: 10px; align-items: center;
-  width: 100%; text-align: left; padding: 7px 4px; border: none; border-bottom: 1px solid var(--border);
-  background: none; cursor: pointer; font-family: inherit;
+.entity-head {
+  padding: 0 6px 6px; font-size: 10.5px; font-weight: 600; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.03em;
 }
-.state-row:hover { background: var(--surface-sunken); }
-.state-row-swatch { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-.state-row-name { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.state-row-stat { font-size: 12px; color: var(--ink-muted); text-align: right; min-width: 40px; }
-.state-row-pct { font-size: 12.5px; font-weight: 600; text-align: right; min-width: 38px; }
-.state-row-bar { grid-column: 1 / -1; height: 4px; background: var(--surface-sunken); border-radius: 2px; overflow: hidden; margin-top: 4px; }
-.state-row-bar span { display: block; height: 100%; background: var(--accent); }
+.entity-head span { text-align: right; white-space: nowrap; }
+.entity-head span:nth-child(-n+2) { text-align: left; }
+.entity-list { max-height: 360px; overflow-y: auto; }
+.entity-row {
+  width: 100%; text-align: left; padding: 6px 6px;
+  border: none; border-bottom: 1px solid var(--border); background: none; cursor: pointer; font-family: inherit; color: var(--ink);
+}
+.entity-row:hover, .entity-row:focus-visible { background: var(--surface-sunken); outline: none; }
+.entity-rank { font-size: 11.5px; color: var(--ink-faint); }
+/* long names (agencies, 'Andaman And Nicobar Islands') wrap onto a second
+   line rather than being cut off with an ellipsis */
+.entity-name { font-size: 13.5px; font-weight: 500; line-height: 1.3; overflow-wrap: anywhere; }
+.entity-stat { font-size: 12px; color: var(--ink-muted); text-align: right; }
+.entity-score { font-size: 13px; font-weight: 600; text-align: right; }
+.heat-chip { display: inline-block; min-width: 44px; padding: 3px 8px; border-radius: 4px; text-align: center; color: var(--ink); font-weight: 600; }
+.heat-chip-dark { color: #fff; }
+.heat-legend { display: flex; align-items: center; gap: 4px; margin-top: 10px; font-size: 11px; color: var(--ink-faint); }
+.heat-legend > span:first-child { margin-right: 4px; color: var(--ink-muted); }
+.heat-legend-step { width: 18px; height: 10px; border-radius: 2px; }
+
+/* one-line takeaway under a chart's title, worked out from the live data */
+.chart-insight {
+  margin: -6px 0 12px; padding: 7px 10px; font-size: 12px; line-height: 1.45; color: var(--ink);
+  background: var(--accent-wash); border-left: 3px solid var(--accent); border-radius: var(--radius-sm);
+}
+.lc-head + .chart-insight { margin-top: 0; }
+.chart-footnote { margin: 10px 0 0; font-size: 11px; color: var(--ink-faint); line-height: 1.45; }
+
+/* findings by tag (TagBreakdownCard) */
+.tag-chart-sub { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: -6px 0 12px; font-size: 11.5px; color: var(--ink-faint); }
+.tag-legend { display: inline-flex; gap: 12px; }
+.tag-legend-item { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-muted); font-size: 11.5px; }
+.tag-legend-swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.tag-list { display: flex; flex-direction: column; position: relative; }
+.lifecycle-tooltip.tip-below { transform: translate(-50%, 0); animation: tooltipFadeInBelow 0.12s ease-out; }
+@keyframes tooltipFadeInBelow { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.tag-row {
+  display: grid; grid-template-columns: minmax(0, 42%) minmax(0, 1fr) 52px 38px; column-gap: 10px; align-items: center;
+  padding: 7px 2px; border: none; border-bottom: 1px solid var(--border);
+  width: 100%; background: none; font: inherit; text-align: left; cursor: pointer;
+}
+.tag-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tag-row:last-child { border-bottom: none; }
+.tag-row:hover { background: var(--surface-sunken); }
+.tag-row-name { font-size: 12.5px; color: var(--ink); line-height: 1.3; overflow-wrap: anywhere; }
+.tag-row-track { display: block; min-width: 0; }
+.tag-row-bar { display: flex; gap: 2px; height: 10px; }
+.tag-row-bar span { min-width: 2px; height: 100%; }
+.tag-row-bar span:first-child { border-radius: 4px 0 0 4px; }
+.tag-row-bar span:last-child { border-radius: 0 4px 4px 0; }
+.tag-row-bar span:only-child { border-radius: 4px; }
+.tag-row-value { font-size: 12.5px; font-weight: 600; color: var(--ink); text-align: right; }
+.tag-row-share { font-size: 11.5px; color: var(--ink-faint); text-align: right; }
+.tag-more {
+  align-self: flex-start; margin-top: 8px; padding: 4px 10px; font: inherit; font-size: 12px; font-weight: 500;
+  color: var(--accent); background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer;
+}
+.tag-more:hover { background: var(--accent-wash); }
+
+/* where works are in the pipeline (PipelineCard): a single-column funnel.
+   Classes are pf-* (pipeline funnel): the unused Funnel.jsx still ships
+   global .funnel-row / .funnel-bar rules further down that overrode these.
+   Each level = centred caption, centred bar, one wrapping detail line. No
+   side-by-side columns and no nowrap text, so nothing can overlap or clip. */
+/* flex 1 0 auto, not flex 1: a zero flex-basis let the grid size the card as
+   if the funnel had no height, so a funnel taller than its neighbour card
+   spilled over its own bars and out of the card. It may grow, never shrink. */
+.pf { display: flex; flex-direction: column; flex: 1 0 auto; justify-content: center; gap: 2px; }
+.pf-level { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.pf-caption { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 2px 8px; margin-bottom: 4px; text-align: center; }
+.pf-caption-label { font-size: 12px; color: var(--ink-muted); }
+.pf-caption-value { font-size: 15px; font-weight: 700; color: var(--ink); }
+.pf-caption-share { font-size: 11px; color: var(--ink-faint); }
+.pf-bar { height: 22px; border-radius: 5px; flex: none; }
+.pf-stage-line {
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 3px 12px;
+  width: 100%; margin-top: 6px; padding: 5px 8px; border-radius: var(--radius-sm); background: var(--surface-sunken);
+  font-size: 11.5px; color: var(--ink-muted); text-align: center;
+}
+.pf-stage-name { color: var(--ink); font-weight: 600; }
+.pf-stage-hint { font-weight: 400; color: var(--ink-faint); }
+.pf-stage-count { color: var(--ink); font-weight: 600; }
+.pf-stage-share { font-weight: 400; color: var(--ink-faint); }
+.pf-stage-flag { display: inline-flex; align-items: center; gap: 6px; }
+.pf-flag-track { display: inline-block; width: 48px; height: 6px; background: var(--pipeline-rest); border-radius: 3px; overflow: hidden; flex: none; }
+.pf-flag-track span { display: block; height: 100%; background: var(--accent); }
+.pf-arrow { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 4px 4px; font-size: 11.5px; color: var(--ink-muted); text-align: center; }
+.pf-arrow strong { color: var(--accent); font-size: 13px; }
+.pf-arrow-icon { color: var(--ink-faint); font-size: 13px; }
+
 .states-panel-empty { padding: 16px 4px; font-size: 12.5px; color: var(--ink-muted); }
 
 /* review queue laid out as a card grid instead of a narrow rail list -

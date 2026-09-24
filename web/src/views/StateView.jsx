@@ -3,11 +3,10 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, formatRupees, mapCategoryBreakdown } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart'
-import { RankChart } from '../components/RankChart'
-import { DonutCard } from '../components/DonutCard'
+import { PipelineCard } from '../components/PipelineCard'
+import { TagBreakdownCard } from '../components/TagBreakdownCard'
 import { EntityRiskPanel } from '../components/EntityRiskPanel'
 import { StatCard } from '../components/StatCard'
-import { TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView } from '../components/StateViews'
@@ -15,7 +14,6 @@ import { useLanguage } from '../i18n'
 
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
-const STAGE_LABEL = { recommendation: 'Recommendation', sanction: 'Sanction', execution: 'Execution', payment: 'Payment' }
 
 function scrollToId(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -89,16 +87,6 @@ export function StateView() {
     },
   ] : []
 
-  const tagItems = data
-    ? Object.entries(data.tag_breakdown).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }))
-    : []
-  const tagColor = (item) => (TAG_COLOR_KEY[item.label] ? `var(--tag-${TAG_COLOR_KEY[item.label]})` : 'var(--ink-faint)')
-  const stageItems = data?.funnel ? [
-    { label: STAGE_LABEL.recommendation, value: data.funnel.recommended || 0 },
-    { label: STAGE_LABEL.sanction, value: data.funnel.sanctioned || 0 },
-    { label: STAGE_LABEL.execution, value: Math.max(0, (data.funnel.sanctioned || 0) - (data.funnel.completed || 0)) },
-    { label: STAGE_LABEL.payment, value: data.funnel.completed || 0 },
-  ] : []
 
   // EntityRiskPanel's generic {name, works_total, works_flagged,
   // breach_rate, risk_score} shape - data.districts already has every one
@@ -162,13 +150,13 @@ export function StateView() {
 
         <div className="mospi-charts-grid">
           <ProjectLifecycleBarChart title={t('Project Lifecycle & Risk Breakdown — {name}', { name: td(data.state) })} sectors={lifecycleSectors} />
-          <DonutCard title="Findings by tag" items={tagItems} colorFor={tagColor} />
+          <TagBreakdownCard summary={data.tag_summary} linkQuery={{ scope, state: data.state }} />
           <EntityRiskPanel
             entities={districtEntities}
             entityType="Districts"
             onSelect={(d) => navigate(`/district/${encodeURIComponent(data.state)}/${encodeURIComponent(d.name)}?scope=${encodeURIComponent(scope)}&role=state&role_name=${encodeURIComponent(data.state)}`)}
           />
-          <RankChart title="Works by pipeline stage" items={stageItems} />
+          <PipelineCard pipeline={data.pipeline} />
         </div>
       </div>
     </div>

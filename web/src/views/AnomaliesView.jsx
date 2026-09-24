@@ -32,7 +32,8 @@ export function AnomaliesView() {
   const stateFilter = searchParams.get('state') || ''
   const [scope, setScope] = useState(searchParams.get('scope') || 'all')
   const [severity, setSeverity] = useState('')
-  const [tag, setTag] = useState('')
+  // a dashboard's "Findings by tag" chart links here with ?tag=<engine tag>
+  const [tag, setTag] = useState(searchParams.get('tag') || '')
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [offset, setOffset] = useState(0)

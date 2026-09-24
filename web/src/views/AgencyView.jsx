@@ -3,11 +3,11 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, formatRupees, mapCategoryBreakdown } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart'
-import { RankChart } from '../components/RankChart'
-import { DonutCard } from '../components/DonutCard'
+import { PipelineCard } from '../components/PipelineCard'
+import { TagBreakdownCard } from '../components/TagBreakdownCard'
 import { StatCard } from '../components/StatCard'
 import { Breadcrumb } from '../components/Breadcrumb'
-import { SeverityChip, TagChip, TAG_COLOR_KEY } from '../components/Chips'
+import { SeverityChip, TagChip } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
@@ -107,17 +107,10 @@ export function AgencyView() {
     { label: 'Pending works', value: data.scorecard.ongoing.toLocaleString('en-IN'), sub: t('Sanctioned, not yet completed') },
   ]
 
-  const tagItems = Object.entries(data.tag_breakdown).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }))
-  const tagColor = (item) => (TAG_COLOR_KEY[item.label] ? `var(--tag-${TAG_COLOR_KEY[item.label]})` : 'var(--ink-faint)')
   // an agency's own work starts at Sanction, not Recommendation - the same
   // 4-stage Recommendation/Sanction/Execution/Payment breakdown the other
   // roles use doesn't apply here, so this uses the 3 stages this role's own
   // scorecard actually tracks instead of forcing a stage it has no data for.
-  const stageItems = [
-    { label: 'Sanctioned', value: data.scorecard.sanctioned_count },
-    { label: 'Ongoing', value: data.scorecard.ongoing },
-    { label: 'Completed', value: data.scorecard.completed_count },
-  ]
 
   return (
     <div className="mospi-page">
@@ -164,8 +157,8 @@ export function AgencyView() {
 
           <div className="mospi-charts-grid">
             <ProjectLifecycleBarChart title={t('Project Lifecycle & Risk Breakdown — {name}', { name: td(data.agency) })} sectors={lifecycleSectors} />
-            <DonutCard title="Findings by tag" items={tagItems} colorFor={tagColor} />
-            <RankChart title="Works by stage" items={stageItems} />
+            <TagBreakdownCard summary={data.tag_summary} linkQuery={{ scope }} />
+            <PipelineCard pipeline={data.pipeline} />
           </div>
 
           <div className="map-drill-row map-drill-row-2col">

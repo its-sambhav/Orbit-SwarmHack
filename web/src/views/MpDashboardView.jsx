@@ -3,10 +3,9 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, formatRupees, mapCategoryBreakdown } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart'
-import { RankChart } from '../components/RankChart'
-import { DonutCard } from '../components/DonutCard'
+import { PipelineCard } from '../components/PipelineCard'
+import { TagBreakdownCard } from '../components/TagBreakdownCard'
 import { StatCard } from '../components/StatCard'
-import { TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView } from '../components/StateViews'
@@ -14,7 +13,6 @@ import { useLanguage } from '../i18n'
 
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
-const PIPELINE_STAGE_LABEL = { recommendation: 'Recommendation', sanction: 'Sanction', execution: 'Execution', payment: 'Payment' }
 
 function scrollToId(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -97,14 +95,6 @@ export function MpDashboardView() {
     },
   ]
 
-  const tagItems = Object.entries(data.tag_breakdown).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }))
-  const tagColor = (item) => (TAG_COLOR_KEY[item.label] ? `var(--tag-${TAG_COLOR_KEY[item.label]})` : 'var(--ink-faint)')
-  const stageItems = [
-    { label: PIPELINE_STAGE_LABEL.recommendation, value: scorecard.recommended_count },
-    { label: PIPELINE_STAGE_LABEL.sanction, value: scorecard.sanctioned_count },
-    { label: PIPELINE_STAGE_LABEL.execution, value: Math.max(0, scorecard.sanctioned_count - scorecard.completed_count) },
-    { label: PIPELINE_STAGE_LABEL.payment, value: scorecard.completed_count },
-  ]
 
   const mapUrl = `/mp/${encodeURIComponent(mpName)}/map?${params.toString()}`
 
@@ -161,8 +151,8 @@ export function MpDashboardView() {
 
         <div className="mospi-charts-grid">
           <ProjectLifecycleBarChart title={t('Project Lifecycle & Risk Breakdown — {name}', { name: td(data.constituency) })} sectors={lifecycleSectors} />
-          <DonutCard title="Findings by tag" items={tagItems} colorFor={tagColor} />
-          <RankChart title="Works by pipeline stage" items={stageItems} />
+          <TagBreakdownCard summary={data.tag_summary} linkQuery={{ scope, state: data.state }} />
+          <PipelineCard pipeline={data.pipeline} />
         </div>
       </div>
     </div>

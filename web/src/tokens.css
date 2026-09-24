@@ -33,6 +33,19 @@
   --accent: #1F3D5C;
   --accent-hover: #16304A;
   --accent-wash: #E7EDF1;
+  /* the not-flagged part of a pipeline bar: the accent navy, lighter step */
+  --pipeline-rest: #A8BCD0;
+  /* project lifecycle: one navy hue, lighter = earlier stage (recommended ->
+     sanctioned -> completed); completed is the accent itself */
+  --lc-recommended: #C5D4E3;
+  --lc-sanctioned: #7E9BB9;
+  --lc-completed: var(--accent);
+  /* heat-table steps for risk-score chips: one navy hue, light -> dark */
+  --heat-1: #E6ECF2;
+  --heat-2: #C5D4E3;
+  --heat-3: #92ABC5;
+  --heat-4: #56799D;
+  --heat-5: #1F3D5C;
 
   /* institutional gold - the navy's complement, reserved for official/
      authority markers (the profile badge, a verified indicator) - never

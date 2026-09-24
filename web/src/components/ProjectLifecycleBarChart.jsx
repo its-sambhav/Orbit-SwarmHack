@@ -1,270 +1,175 @@
-import { useState, useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useLanguage } from '../i18n'
+import { ScopeToggle } from './ScopeToggle'
+
+// One column per lifecycle stage, grouped by sector. The three stages are
+// one navy hue in three steps (lighter = earlier), so the eye reads each
+// group left to right as "how far the works got"; high-risk works are a
+// flag rather than a stage, so they're a fourth column in the site's
+// severity "High" colour. Square-root scale, as the chart has always used:
+// it compresses the biggest sector and lifts the small ones, so every bar is
+// visible while taller still means more; gridlines are evenly spaced on
+// screen and labelled with the real values. The chart says "√ scale", and
+// each group's real total is printed on it. (The old stacked view, which
+// added nested counts together, is gone.)
+const METRICS = [
+  { key: 'recommended', label: 'Recommended', color: 'var(--lc-recommended)' },
+  { key: 'sanctioned', label: 'Sanctioned', color: 'var(--lc-sanctioned)' },
+  { key: 'completed', label: 'Completed', color: 'var(--lc-completed)' },
+  { key: 'highRisk', label: 'High risk', color: 'var(--sev-high)' },
+]
+const MODES = [{ value: 'count', label: 'Projects' }, { value: 'amount', label: 'Amount' }]
+
+const fmtCr = (v) => `₹${(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 1, minimumFractionDigits: 1 })} Cr`
+
+// square-root axis: the top sits 15% above the largest value, and the four
+// gridlines are evenly spaced in sqrt space - so evenly spaced on screen -
+// with each labelled by the real value it stands for
+function sqrtScale(values) {
+  const top = Math.sqrt(Math.max(10, ...values) * 1.15)
+  return { top, ticks: Array.from({ length: 5 }, (_, i) => ((top / 4) * i) ** 2) }
+}
+
+// split a sector name over two lines at the space nearest its middle
+function twoLines(name) {
+  if (name.length <= 14 || !name.includes(' ')) return [name]
+  const mid = name.length / 2
+  let best = -1
+  for (let i = 0; i < name.length; i++) if (name[i] === ' ' && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i
+  return [name.slice(0, best), name.slice(best + 1)]
+}
 
 /**
- * Metric color definitions adhering to the GovTech high-contrast palette:
- * - Recommended: #3B82F6 (Blue)
- * - Sanctioned: #F59E0B (Amber)
- * - High Risk Flagged: #EF4444 (Crimson Danger)
- * - Completed: #10B981 (Emerald Success)
+ * Project lifecycle & risk by sector: a grouped column chart on a
+ * square-root scale (labelled "√ scale" on the chart). Projects /
+ * Amount switches every column between work counts and rupees (₹ Cr).
+ * Hovering a column shows that sector's four figures in the shared
+ * floating box; only each group's total (recommended) is labelled on the
+ * chart itself.
+ *
+ * sectors: [{ sector, recommended, recommended_cr, sanctioned, sanctioned_cr,
+ *             completed, completed_cr, highRisk, highRisk_cr }]  (api.js mapCategoryBreakdown)
  */
-const METRICS = [
-  { key: 'recommended', label: 'Recommended', color: '#3B82F6', crKey: 'recommended_cr' },
-  { key: 'sanctioned', label: 'Sanctioned', color: '#F59E0B', crKey: 'sanctioned_cr' },
-  { key: 'highRisk', label: 'High Risk Flagged', color: '#EF4444', crKey: 'highRisk_cr' },
-  { key: 'completed', label: 'Completed', color: '#10B981', crKey: 'completed_cr' },
-]
-
-export function ProjectLifecycleBarChart({
-  sectors = [],
-  title = 'Project Lifecycle & Risk Breakdown',
-}) {
+export function ProjectLifecycleBarChart({ sectors = [], title = 'Project Lifecycle & Risk Breakdown' }) {
   const { t } = useLanguage()
-  const [chartMode, setChartMode] = useState('grouped') // 'grouped' | 'stacked'
-  const [hoveredBar, setHoveredBar] = useState(null) // { sector, metric, value, valueCr, x, y }
+  const [mode, setMode] = useState('count')
+  const [hover, setHover] = useState(null) // { sector, x, y }
 
-  // Compute maximum values for scaling
-  const { maxGrouped, maxStacked } = useMemo(() => {
-    let mg = 0
-    let ms = 0
-    sectors.forEach((s) => {
-      METRICS.forEach((m) => {
-        if ((s[m.key] || 0) > mg) mg = s[m.key] || 0
-      })
-      const stackedSum = (s.recommended || 0) + (s.sanctioned || 0) + (s.highRisk || 0) + (s.completed || 0)
-      if (stackedSum > ms) ms = stackedSum
-    })
-    return {
-      maxGrouped: Math.max(mg * 1.15, 10),
-      maxStacked: Math.max(ms * 1.15, 10),
-    }
-  }, [sectors])
-
-  // SVG dimensions
-  const svgWidth = 560
-  const svgHeight = 240
-  const padding = { top: 20, right: 20, bottom: 45, left: 55 }
-  const chartWidth = svgWidth - padding.left - padding.right
-  const chartHeight = svgHeight - padding.top - padding.bottom
-
-  const maxVal = chartMode === 'stacked' ? maxStacked : maxGrouped
-  const groupWidth = chartWidth / (sectors.length || 1)
-  const barWidth = chartMode === 'grouped' ? Math.min((groupWidth - 16) / 4, 22) : Math.min(groupWidth - 30, 48)
-
-  // Grouped bars are independent, so a sqrt scale is safe here: it compresses
-  // the dominant category (e.g. Infrastructure & Roads) and lifts the small
-  // ones (e.g. Irrigation & Rural Dev) enough to stay visible next to it,
-  // while sqrt(0) = 0 needs no special-casing the way a log scale would.
-  // Stacked mode keeps a plain linear scale - a stack's whole point is that
-  // segment heights add up to the total, which only holds under a linear
-  // scale (sqrt(a) + sqrt(b) != sqrt(a + b), so a "sqrt-stacked" bar would
-  // have no honest reading for its combined height).
-  const toPixelSpace = chartMode === 'grouped' ? (v) => Math.sqrt(Math.max(v, 0)) : (v) => Math.max(v, 0)
-  const maxPixelSpace = toPixelSpace(maxVal) || 1
-
-  // Y-axis ticks - evenly spaced in the same (possibly sqrt) space the bars
-  // use, then mapped back to a real value for the label, so gridlines stay
-  // evenly spaced on screen even though the labelled values are not.
-  const yTicks = useMemo(() => {
-    const ticks = []
-    const count = 4
-    for (let i = 0; i <= count; i++) {
-      const pixelSpaceVal = (maxPixelSpace / count) * i
-      const val = Math.round(chartMode === 'grouped' ? pixelSpaceVal * pixelSpaceVal : pixelSpaceVal)
-      const y = padding.top + chartHeight - (pixelSpaceVal / maxPixelSpace) * chartHeight
-      ticks.push({ val, y })
-    }
-    return ticks
-  }, [maxPixelSpace, chartMode, chartHeight, padding.top])
-
-  function formatCount(n) {
-    if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`
-    return n.toLocaleString('en-IN')
+  const val = (s, key) => (mode === 'count' ? s[key] || 0 : s[`${key}_cr`] || 0)
+  const show = (v) => (mode === 'count' ? Math.round(v).toLocaleString('en-IN') : fmtCr(v))
+  const short = (v) => {
+    if (v >= 10000) return `${Math.round(v / 1000).toLocaleString('en-IN')}k`
+    if (v >= 1000) return `${(v / 1000).toLocaleString('en-IN', { maximumFractionDigits: 1 })}k`
+    return Math.round(v).toLocaleString('en-IN')
   }
+  const axisLabel = (v) => (mode === 'amount' ? `₹${short(v)} Cr` : short(v))
+
+  // a sector's size: its recommended works, or its sanctioned ones where a
+  // view has no recommendation stage (an agency's works start at sanction)
+  const size = (s) => Math.max(s.recommended || 0, s.sanctioned || 0)
+  const rows = useMemo(() => [...sectors].sort((a, b) => size(b) - size(a)), [sectors])
+  const { top, ticks } = sqrtScale(rows.flatMap((s) => METRICS.map((m) => val(s, m.key))))
+  const totals = Object.fromEntries(METRICS.map((m) => [m.key, rows.reduce((acc, s) => acc + val(s, m.key), 0)]))
+
+  // one-line takeaway from the data: the biggest sector, and which sectors
+  // finish the most / least of what they sanction (counts, whatever the mode)
+  // at least 5 sanctioned works, so one or two works can't read as "100%" / "0%"
+  const done = rows.filter((s) => s.sanctioned >= 5).map((s) => ({ s, rate: s.completed / s.sanctioned }))
+  const best = done.reduce((a, b) => (b.rate > a.rate ? b : a), done[0])
+  const worst = done.reduce((a, b) => (b.rate < a.rate ? b : a), done[0])
+
+  // geometry (viewBox units; the SVG scales to the card's width)
+  const W = 600, H = 250
+  const pad = { top: 22, right: 8, bottom: 44, left: 52 }
+  const plotW = W - pad.left - pad.right, plotH = H - pad.top - pad.bottom
+  const groupW = plotW / Math.max(rows.length, 1)
+  const barW = Math.min(18, (groupW - 22) / METRICS.length)
+  const gap = 2
+  // share of the plot height on the sqrt scale; 0 draws nothing
+  const frac = (v) => (v > 0 ? Math.sqrt(v) / top : 0)
+  const y = (v) => pad.top + plotH - frac(v) * plotH
 
   return (
     <div className="chart-card project-lifecycle-card">
-      <div className="lifecycle-card-header">
+      <div className="lc-head">
         <div>
-          {/* the default title is plain English; the per-entity ones callers
+          {/* the default title is plain English; per-entity titles callers
               build are already translated and fall through t() unchanged */}
           <h3 style={{ margin: 0 }}>{t(title)}</h3>
-          <span className="lifecycle-card-sub">
-            {t('Project volume & financial exposure across lifecycle phases')}
-          </span>
+          <span className="lc-sub">{t('Works at each stage in every sector, and how many are high risk')}</span>
         </div>
-        <div className="lifecycle-mode-toggle">
-          <button
-            type="button"
-            className={`mode-btn ${chartMode === 'grouped' ? 'active' : ''}`}
-            onClick={() => setChartMode('grouped')}
-          >
-            {t('Grouped')}
-          </button>
-          <button
-            type="button"
-            className={`mode-btn ${chartMode === 'stacked' ? 'active' : ''}`}
-            onClick={() => setChartMode('stacked')}
-          >
-            {t('Stacked')}
-          </button>
-        </div>
+        <ScopeToggle scopes={MODES} value={mode} onChange={setMode} includeAll={false} size="sm" />
       </div>
 
-      {/* Interactive Legend */}
-      <div className="lifecycle-legend">
-        {METRICS.map((m) => {
-          const totalVal = sectors.reduce((acc, s) => acc + (s[m.key] || 0), 0)
-          const totalCr = sectors.reduce((acc, s) => acc + (s[m.crKey] || 0), 0)
-          return (
-            <div key={m.key} className="lifecycle-legend-item">
-              <span className="legend-dot" style={{ background: m.color }} />
-              <span className="legend-label">{t(m.label)}</span>
-              <span className="legend-val num">{totalVal.toLocaleString('en-IN')}</span>
-              <span className="legend-cr num">(₹{totalCr.toFixed(1)} Cr)</span>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Responsive SVG Chart Container */}
-      <div className="lifecycle-svg-wrap">
-        <svg
-          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-          className="lifecycle-svg"
-          preserveAspectRatio="xMidYMid meet"
-          onMouseLeave={() => setHoveredBar(null)}
-        >
-          {/* Names the non-linear axis where the reader actually reads heights,
-              rather than in the card subtitle - which wraps to several lines in
-              the narrow sidebar the state/district/agency pages render this in. */}
-          {chartMode === 'grouped' && (
-            <text x={2} y={12} fontSize="9" fill="#94a3b8" fontWeight="600">
-              {t('√ scale')}
-            </text>
-          )}
-
-          {/* Y-Axis Grid Lines & Labels */}
-          {yTicks.map((t, idx) => (
-            <g key={idx}>
-              <line
-                x1={padding.left}
-                y1={t.y}
-                x2={svgWidth - padding.right}
-                y2={t.y}
-                stroke="#e2e8f0"
-                strokeDasharray={idx === 0 ? 'none' : '3 3'}
-                strokeWidth={idx === 0 ? '1.5' : '1'}
-              />
-              <text
-                x={padding.left - 8}
-                y={t.y + 4}
-                textAnchor="end"
-                fontSize="10"
-                fill="#64748b"
-                fontWeight="500"
-              >
-                {formatCount(t.val)}
-              </text>
-            </g>
-          ))}
-
-          {/* Sector Bars */}
-          {sectors.map((s, sIdx) => {
-            const groupX = padding.left + sIdx * groupWidth + (groupWidth - (chartMode === 'grouped' ? barWidth * 4 : barWidth)) / 2
-            let currentStackY = padding.top + chartHeight
-
-            return (
-              <g key={s.sector}>
-                {METRICS.map((m, mIdx) => {
-                  const val = s[m.key] || 0
-                  const valCr = s[m.crKey] || 0
-                  const barH = (toPixelSpace(val) / maxPixelSpace) * chartHeight
-
-                  let barX = 0
-                  let barY = 0
-
-                  if (chartMode === 'grouped') {
-                    barX = groupX + mIdx * barWidth
-                    barY = padding.top + chartHeight - barH
-                  } else {
-                    barX = groupX
-                    currentStackY -= barH
-                    barY = currentStackY
-                  }
-
-                  const isHovered =
-                    hoveredBar?.sector === s.sector && hoveredBar?.metric === m.key
-
-                  return (
-                    <rect
-                      key={m.key}
-                      x={barX}
-                      y={barY}
-                      width={Math.max(barWidth - (chartMode === 'grouped' ? 3 : 0), 2)}
-                      height={Math.max(barH, 0)}
-                      rx={chartMode === 'grouped' || mIdx === METRICS.length - 1 ? 3 : 0}
-                      fill={m.color}
-                      opacity={isHovered ? 1 : 0.88}
-                      className="lifecycle-bar"
-                      style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
-                      onMouseEnter={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        setHoveredBar({
-                          sector: s.sector,
-                          metricLabel: m.label,
-                          metric: m.key,
-                          color: m.color,
-                          value: val,
-                          valueCr: valCr,
-                          x: barX + barWidth / 2,
-                          y: barY,
-                        })
-                      }}
-                    />
-                  )
-                })}
-
-                {/* X-Axis Sector Label */}
-                <text
-                  x={padding.left + (sIdx + 0.5) * groupWidth}
-                  y={svgHeight - 12}
-                  textAnchor="middle"
-                  fontSize="10"
-                  fill="#475569"
-                  fontWeight="600"
-                  className="sector-label"
-                >
-                  {/* sector names are the 5 fixed categories - translated, then
-                      truncated on the translated text so the ellipsis still fits */}
-                  {(() => { const n = t(s.sector); return n.length > 16 ? `${n.substring(0, 14)}…` : n })()}
-                </text>
-              </g>
-            )
+      {rows.length > 0 && size(rows[0]) > 0 && (
+        <p className="chart-insight">
+          {t('{big} has the most works ({n}).', { big: t(rows[0].sector), n: size(rows[0]).toLocaleString('en-IN') })}
+          {best && best !== worst && ' ' + t('{best} completes {bp} of what it sanctions; {worst} only {wp}.', {
+            best: t(best.s.sector), bp: `${Math.round(best.rate * 100)}%`,
+            worst: t(worst.s.sector), wp: `${Math.round(worst.rate * 100)}%`,
           })}
-        </svg>
-
-        {/* Floating Tooltip */}
-        {hoveredBar && (
-          <div
-            className="lifecycle-tooltip"
-            style={{
-              left: `${(hoveredBar.x / svgWidth) * 100}%`,
-              top: `${Math.max((hoveredBar.y / svgHeight) * 100 - 18, 5)}%`,
-            }}
-          >
-            <div className="tooltip-sector">{t(hoveredBar.sector)}</div>
-            <div className="tooltip-row">
-              <span className="tooltip-swatch" style={{ background: hoveredBar.color }} />
-              <span className="tooltip-metric">{t(hoveredBar.metricLabel)}:</span>
-              <strong className="tooltip-num">{hoveredBar.value.toLocaleString('en-IN')} {t('works')}</strong>
-            </div>
-            <div className="tooltip-financial">
-              {t('Financial exposure:')} <strong>₹{hoveredBar.valueCr.toFixed(1)} Cr</strong>
-            </div>
-          </div>
-        )}
+        </p>
+      )}
+      <div className="lc-legend">
+        {METRICS.map((m) => (
+          <span key={m.key} className="lc-legend-item">
+            <span className="lc-swatch" style={{ background: m.color }} />
+            {t(m.label)} <strong className="num">{show(totals[m.key])}</strong>
+          </span>
+        ))}
       </div>
+
+      {rows.length ? (
+        <div className="lc-chart" onMouseLeave={() => setHover(null)}>
+          <svg viewBox={`0 0 ${W} ${H}`} className="lc-svg" role="img" aria-label={t(title)}>
+            <text x={2} y={11} className="lc-scale-note">{t('√ scale')}</text>
+            {ticks.map((v) => (
+              <g key={v}>
+                <line x1={pad.left} x2={W - pad.right} y1={y(v)} y2={y(v)} className={v === 0 ? 'lc-axis' : 'lc-grid'} />
+                <text x={pad.left - 8} y={y(v) + 3.5} textAnchor="end" className="lc-tick">{axisLabel(v)}</text>
+              </g>
+            ))}
+            {rows.map((s, i) => {
+              const gx = pad.left + i * groupW + (groupW - (barW * METRICS.length + gap * (METRICS.length - 1))) / 2
+              const cx = pad.left + (i + 0.5) * groupW
+              return (
+                <g
+                  key={s.sector} className={`lc-group${hover?.sector === s ? ' active' : ''}`}
+                  onMouseEnter={() => setHover({ sector: s, x: cx, y: y(Math.max(...METRICS.map((m) => val(s, m.key)))) })}
+                >
+                  {/* whole-group hit area, bigger than the bars */}
+                  <rect x={pad.left + i * groupW} y={pad.top} width={groupW} height={plotH} className="lc-hit" />
+                  {METRICS.map((m, j) => {
+                    const v = val(s, m.key)
+                    const h = Math.max(frac(v) * plotH, v > 0 ? 2 : 0) // 2px floor: a real non-zero value never vanishes
+                    return <rect key={m.key} x={gx + j * (barW + gap)} y={pad.top + plotH - h} width={barW} height={h} rx={3} fill={m.color} />
+                  })}
+                  <text x={cx} y={y(Math.max(...METRICS.map((m) => val(s, m.key)))) - 6} textAnchor="middle" className="lc-value">{axisLabel(Math.max(val(s, 'recommended'), val(s, 'sanctioned')))}</text>
+                  <text x={cx} y={H - pad.bottom + 16} textAnchor="middle" className="lc-xlabel">
+                    {twoLines(t(s.sector)).map((line, k) => <tspan key={k} x={cx} dy={k ? 14 : 0}>{line}</tspan>)}
+                  </text>
+                </g>
+              )
+            })}
+          </svg>
+
+          {hover && (
+            <div className="lifecycle-tooltip" style={{ left: `${(hover.x / W) * 100}%`, top: `${Math.max((hover.y / H) * 100 - 4, 4)}%` }}>
+              <div className="tooltip-sector">{t(hover.sector.sector)}</div>
+              {METRICS.map((m) => (
+                <div key={m.key} className="tooltip-row">
+                  <span className="tooltip-swatch" style={{ background: m.color }} />
+                  <span className="tooltip-metric">{t(m.label)}:</span>
+                  <strong className="tooltip-num">{(hover.sector[m.key] || 0).toLocaleString('en-IN')} {t('works')}</strong>
+                  <span className="tooltip-metric">· {fmtCr(hover.sector[`${m.key}_cr`])}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="states-panel-empty">{t('No works in this view.')}</div>
+      )}
     </div>
   )
 }

@@ -159,7 +159,8 @@
    the half above scrollTop 0 can't be scrolled to - so the highest-ranked
    rows (the ones the panel exists to show) were cut off, e.g. 14 of 36 states
    and 34 of 76 districts. Start-align it so the whole list is reachable. */
-.chart-card .rank-list.states-panel-list { justify-content: flex-start; }
+.chart-card .rank-list.states-panel-list,
+.chart-card .rank-list.entity-list { justify-content: flex-start; }
 
 .panel-note { font-size: 12px; color: var(--ink-muted); margin: -6px 0 12px; line-height: 1.5; }
 /* a factual value that can run long (an authority name, an address) - unlike

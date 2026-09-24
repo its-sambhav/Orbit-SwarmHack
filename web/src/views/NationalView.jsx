@@ -3,11 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, formatRupees, buildSearchIndex, mapCategoryBreakdown } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart'
-import { RankChart } from '../components/RankChart'
-import { DonutCard } from '../components/DonutCard'
+import { PipelineCard } from '../components/PipelineCard'
+import { TagBreakdownCard } from '../components/TagBreakdownCard'
 import { EntityRiskPanel } from '../components/EntityRiskPanel'
 import { StatCard } from '../components/StatCard'
-import { TAG_COLOR_KEY } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView } from '../components/StateViews'
@@ -17,7 +16,6 @@ const DEFAULT_SCOPE = '18th Lok Sabha'
 const SCOPES = [{ value: '18th Lok Sabha', label: '18th Lok Sabha' }, { value: '17th Lok Sabha', label: '17th Lok Sabha' }]
 const scopeLabel = (s) => (s === 'all' ? 'All scopes' : s)
 
-const STAGE_LABEL = { recommendation: 'Recommendation', sanction: 'Sanction', execution: 'Execution', payment: 'Payment' }
 
 function scrollToId(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -97,13 +95,6 @@ export function NationalView() {
     },
   ] : []
 
-  const tagItems = analytics
-    ? Object.entries(analytics.tag_counts).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }))
-    : []
-  const tagColor = (item) => (TAG_COLOR_KEY[item.label] ? `var(--tag-${TAG_COLOR_KEY[item.label]})` : 'var(--ink-faint)')
-  const stageItems = analytics
-    ? Object.entries(STAGE_LABEL).map(([k, label]) => ({ label, value: analytics.stage_counts[k] || 0 }))
-    : []
 
   // real per-sector-category counts + financial exposure, from the same
   // /api/funnel response the KPI cards above already use - see
@@ -170,7 +161,7 @@ export function NationalView() {
           {analytics && funnel && states ? (
             <>
               <ProjectLifecycleBarChart title="Project Lifecycle & Risk Breakdown" sectors={lifecycleSectors} />
-              <DonutCard title="Findings by tag" items={tagItems} colorFor={tagColor} />
+              <TagBreakdownCard summary={analytics.tag_summary} linkQuery={{ scope }} />
               <EntityRiskPanel
                 entities={stateEntities}
                 entityType="States & UTs"
@@ -178,7 +169,7 @@ export function NationalView() {
                 title="Top states by risk"
                 onSelect={(s) => navigate(`/mospi/map?state=${encodeURIComponent(s.name)}`)}
               />
-              <RankChart title="Works by pipeline stage" items={stageItems} />
+              <PipelineCard pipeline={funnel.pipeline} />
             </>
           ) : Array.from({ length: 4 }).map((_, i) => <div className="chart-card" key={i}><Loading label="Loading analytics" /></div>)}
         </div>
