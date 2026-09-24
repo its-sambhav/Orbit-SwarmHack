@@ -575,8 +575,7 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 .tag-more:hover { background: var(--accent-wash); }
 
 /* where works are in the pipeline (PipelineCard): a single-column funnel.
-   Classes are pf-* (pipeline funnel): the unused Funnel.jsx still ships
-   global .funnel-row / .funnel-bar rules further down that overrode these.
+   Classes are pf-* (pipeline funnel).
    Each level = centred caption, centred bar, one wrapping detail line. No
    side-by-side columns and no nowrap text, so nothing can overlap or clip. */
 /* flex 1 0 auto, not flex 1: a zero flex-basis let the grid size the card as
@@ -645,14 +644,6 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
   filter: drop-shadow(0 3px 6px rgba(15, 23, 42, 0.45));
   cursor: pointer;
 }
-
-/* ---------- funnel ---------- */
-.funnel-row { display: grid; grid-template-columns: 76px 1fr 48px; align-items: center; gap: 8px; margin-bottom: 8px; }
-.funnel-label { font-size: 11.5px; color: var(--ink-muted); }
-.funnel-track { height: 10px; background: var(--surface-sunken); border-radius: 5px; overflow: hidden; }
-.funnel-bar { height: 100%; background: var(--accent); border-radius: 5px; }
-.funnel-value { text-align: right; font-size: 12px; font-weight: 500; }
-.funnel-dropoffs { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; font-size: 11.5px; color: var(--ink-muted); }
 
 /* ---------- filters ---------- */
 .filters { display: flex; flex-wrap: wrap; gap: 6px; }

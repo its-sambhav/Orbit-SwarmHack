@@ -636,7 +636,6 @@ const UI_STRINGS = {
   'Search {type}…': { en: 'Search {type}…', hi: '{type} खोजें…', bn: '{type} খুঁজুন…', ta: '{type} தேடுங்கள்…', te: '{type} వెతకండి…', mr: '{type} शोधा…', gu: '{type} શોધો…', kn: '{type} ಹುಡುಕಿ…', ml: '{type} തിരയുക…' },
   'No {type} match "{query}".': { en: 'No {type} match "{query}".', hi: 'कोई {type} "{query}" से मेल नहीं खाता।', bn: 'কোনো {type} "{query}"-এর সাথে মেলে না।', ta: 'எந்த {type}-ம் "{query}" உடன் பொருந்தவில்லை.', te: 'ఏ {type} కూడా "{query}"తో సరిపోలలేదు.', mr: 'कोणतेही {type} "{query}" शी जुळत नाही.', gu: 'કોઈ {type} "{query}" સાથે મેળ ખાતું નથી.', kn: 'ಯಾವುದೇ {type} "{query}" ಗೆ ಹೊಂದಿಕೆಯಾಗಿಲ್ಲ.', ml: 'ഒരു {type}-ഉം "{query}" യുമായി പൊരുത്തപ്പെടുന്നില്ല.' },
   Total: { en: 'Total', hi: 'कुल', bn: 'মোট', ta: 'மொத்தம்', te: 'మొత్తం', mr: 'एकूण', gu: 'કુલ', kn: 'ಒಟ್ಟು', ml: 'ആകെ' },
-  Flagged: { en: 'Flagged', hi: 'चिह्नित', bn: 'চিহ্নিত', ta: 'குறிக்கப்பட்டது', te: 'గుర్తించినవి', mr: 'चिन्हांकित', gu: 'ચિહ્નિત', kn: 'ಗುರುತಿಸಲಾಗಿದೆ', ml: 'അടയാളപ്പെടുത്തി' },
   'Risk %': { en: 'Risk %', hi: 'जोखिम %', bn: 'ঝুঁকি %', ta: 'ஆபத்து %', te: 'రిస్క్ %', mr: 'जोखीम %', gu: 'જોખમ %', kn: 'ಅಪಾಯ %', ml: 'റിസ്ക് %' },
 
   // ---- filters, pagination, generic controls ----

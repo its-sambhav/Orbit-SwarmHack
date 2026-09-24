@@ -236,12 +236,19 @@ There are 53 tests:
 - the severity policy, strength curve, Risk, Priority and region shrinkage
 - the delay model's labels and inputs, including checks that no feature reads information from after the recommendation date
 
+The frontend has one test, which checks that every string exists in all 9 languages with its `{placeholders}` intact:
+
+```bash
+cd web
+npm test
+```
+
 ## Project structure
 
 ```
 api/                 FastAPI app: endpoints, auth, comments, finding status, reports, translation
 config/              detectors.yaml, tags.yaml, routing.yaml, auth.yaml
-docs/SCHEMA.md       Pipeline schema and data notes
+docs/                SCHEMA.md (pipeline schema and data notes), risk scoring formulas and simple guide (PDF)
 engine/
   ingest.py … link.py      Load, clean and join the six tables into one spine
   detectors.py             The 25 detectors and the delay-lane merge
@@ -253,11 +260,14 @@ engine/
   explain.py               Model-derived reasons shared by both models
   validation.py            Reviewer feedback, regression check, hand-check sheet
   export.py, alerts.py     Parquet/DuckDB export, alert digest
+  report.py                Before/after detector report and the list of unverified config values
+  geo_*.py                 Map boundaries: constituency crosswalk, state and district shapes, state-name matching
   run_pipeline.py          Runs everything in order
 tests/               pytest suite
 web/                 React + Vite frontend (views/, components/, strings.js for the 9 languages)
-reports/             Hand-check sheet for measuring flag precision
+reports/             Hand-check sheet, detector before/after report, config values still to verify
 mplads_fetch.py      Fetches the source tables from the MPLADS dashboard API
+console_works_sanctioned.js   Browser-console fallback that fetches Works Sanctioned for both Lok Sabhas
 ```
 
 ---

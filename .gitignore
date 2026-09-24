@@ -2,6 +2,12 @@ data/
 __pycache__/
 *.pyc
 .env
+.venv/
+.pytest_cache/
+
+# scratch output from local before/after runs
+reports/_*
+reports/baseline_before.json
 
 # frontend
 web/node_modules/

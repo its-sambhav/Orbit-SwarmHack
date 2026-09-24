@@ -24,7 +24,7 @@ for (const [key, row] of Object.entries(STRINGS)) {
 //    string. A key that is neither is a typo that would render as itself.
 for (const key of Object.keys(STRINGS)) {
   assert.ok(key.length > 0, 'empty key in STRINGS')
-  if (/^[a-zA-Z]+\.[a-zA-Z0-9]+$/.test(key)) continue          // dotted chrome key
+  if (/^[a-zA-Z]+(\.[a-zA-Z0-9]+)+$/.test(key)) continue       // dotted chrome key
   assert.equal(key, STRINGS[key].en, `key must equal its own English text: ${key}`)
 }
 
