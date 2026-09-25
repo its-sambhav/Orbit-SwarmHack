@@ -574,35 +574,25 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 }
 .tag-more:hover { background: var(--accent-wash); }
 
-/* where works are in the pipeline (PipelineCard): a single-column funnel.
-   Classes are pf-* (pipeline funnel).
-   Each level = centred caption, centred bar, one wrapping detail line. No
-   side-by-side columns and no nowrap text, so nothing can overlap or clip. */
-/* flex 1 0 auto, not flex 1: a zero flex-basis let the grid size the card as
-   if the funnel had no height, so a funnel taller than its neighbour card
-   spilled over its own bars and out of the card. It may grow, never shrink. */
-.pf { display: flex; flex-direction: column; flex: 1 0 auto; justify-content: center; gap: 2px; }
-.pf-level { display: flex; flex-direction: column; align-items: center; min-width: 0; }
-.pf-caption { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 2px 8px; margin-bottom: 4px; text-align: center; }
-.pf-caption-label { font-size: 12px; color: var(--ink-muted); }
-.pf-caption-value { font-size: 15px; font-weight: 700; color: var(--ink); }
-.pf-caption-share { font-size: 11px; color: var(--ink-faint); }
-.pf-bar { height: 22px; border-radius: 5px; flex: none; }
-.pf-stage-line {
-  display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 3px 12px;
-  width: 100%; margin-top: 6px; padding: 5px 8px; border-radius: var(--radius-sm); background: var(--surface-sunken);
-  font-size: 11.5px; color: var(--ink-muted); text-align: center;
+/* where works are in the pipeline (PipelineCard): columns for works at each
+   stage, a line for the flagged share. Classes are pc-* (pipeline chart); the
+   axes, gridlines and tooltip reuse the lifecycle chart's lc-* rules.
+   flex 1 0 auto, not flex 1: a zero flex-basis let the grid size the card as
+   if the chart had no height. It may grow, never shrink, and sits centred in
+   whatever height its row gives it. */
+.pc-chart { position: relative; flex: 1 0 auto; display: flex; align-items: center; }
+.pc-axis-title { font-size: 10.5px; font-weight: 500; fill: var(--ink-muted); font-family: inherit; }
+.pc-on-dark { fill: #FFFFFF; }
+/* a surface halo keeps each % readable where the line crosses a bar */
+.pc-pct { paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.pc-line-swatch { width: 18px; height: 10px; flex: none; }
+.pc-tip-hint { font-weight: 400; opacity: 0.75; }
+
+/* visually hidden, still read by screen readers (e.g. a chart's data table) */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
-.pf-stage-name { color: var(--ink); font-weight: 600; }
-.pf-stage-hint { font-weight: 400; color: var(--ink-faint); }
-.pf-stage-count { color: var(--ink); font-weight: 600; }
-.pf-stage-share { font-weight: 400; color: var(--ink-faint); }
-.pf-stage-flag { display: inline-flex; align-items: center; gap: 6px; }
-.pf-flag-track { display: inline-block; width: 48px; height: 6px; background: var(--pipeline-rest); border-radius: 3px; overflow: hidden; flex: none; }
-.pf-flag-track span { display: block; height: 100%; background: var(--accent); }
-.pf-arrow { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 4px 4px; font-size: 11.5px; color: var(--ink-muted); text-align: center; }
-.pf-arrow strong { color: var(--accent); font-size: 13px; }
-.pf-arrow-icon { color: var(--ink-faint); font-size: 13px; }
 
 .states-panel-empty { padding: 16px 4px; font-size: 12.5px; color: var(--ink-muted); }
 

@@ -33,8 +33,6 @@
   --accent: #1F3D5C;
   --accent-hover: #16304A;
   --accent-wash: #E7EDF1;
-  /* the not-flagged part of a pipeline bar: the accent navy, lighter step */
-  --pipeline-rest: #A8BCD0;
   /* project lifecycle: one navy hue, lighter = earlier stage (recommended ->
      sanctioned -> completed); completed is the accent itself */
   --lc-recommended: #C5D4E3;
