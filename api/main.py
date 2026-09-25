@@ -1413,6 +1413,52 @@ def get_latest_alert_digest():
     return clean(digest)
 
 
+# Comment mentions as alerts. A comment mentioning a desk alerts the office of
+# that desk responsible for the work - the same check that decides who may
+# open the case file - so "District Authority" on a Patna work reaches the
+# Patna district desk and no other district.
+_ROLE_NAME_FIELD = {"state": "STATE_NAME", "district": "DISTRICT", "mp": "MP_NAME", "agency": "exp_top_ia"}
+
+
+@app.get("/api/mentions")
+def get_mentions(limit: int = Query(20, ge=1, le=100), claims: dict = Depends(auth.get_current_claims)):
+    store = get_store()
+    seen_at = comments_store.mentions_seen_at(claims)
+    name_field = _ROLE_NAME_FIELD.get(claims["role"])
+    items = []
+    for row in comments_store.mentions_for(claims):
+        work = store.work(row["work_number"], row["scope_house"], row["scope_tenure"])
+        if work is None:
+            continue
+        try:
+            auth.check_work_access(claims, work)
+        except HTTPException:
+            continue
+        items.append({
+            "comment_id": row["id"],
+            "work_number": row["work_number"],
+            "scope_house": row["scope_house"],
+            "scope_tenure": row["scope_tenure"],
+            "author_role": comments_store.MENTIONABLE_ROLES.get(row["author_role"], row["author_role"]),
+            "author_entity": (str(row["author_entity"]).split("|")[-1] if row.get("author_entity") else None),
+            "body": row["body"][:200],
+            "created_at": row["created_at"],
+            "unread": seen_at is None or row["created_at"] > seen_at,
+            "constituency": work.get("CONSTITUENCY"),
+            "district": work.get("DISTRICT"),
+            "state": work.get("STATE_NAME"),
+            # what the desk's own case-file links carry as role_name
+            "role_name": work.get(name_field) if name_field else None,
+        })
+    return clean({"items": items[:limit], "total": len(items),
+                  "unread": sum(1 for i in items if i["unread"])})
+
+
+@app.post("/api/mentions/seen")
+def post_mentions_seen(claims: dict = Depends(auth.get_current_claims)):
+    return {"seen_at": comments_store.mark_mentions_seen(claims)}
+
+
 @app.get("/")
 def root():
     return {"service": "MPLADS Anomaly Review API", "docs": "/docs"}

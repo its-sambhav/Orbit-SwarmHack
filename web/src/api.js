@@ -260,6 +260,10 @@ export const api = {
   // alerts" cached from an earlier page must never survive a later run's
   // fresh digest landing on disk mid-session.
   alertsLatest: () => getFresh('/alerts/latest'),
+  // comments that mention the signed-in desk, on works that desk is
+  // responsible for (api/main.py get_mentions)
+  mentions: () => getFresh('/mentions'),
+  markMentionsSeen: () => postJson('/mentions/seen', {}),
 }
 
 export function formatRupees(amount) {

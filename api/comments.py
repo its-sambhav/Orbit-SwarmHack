@@ -286,6 +286,54 @@ def remove(comment_id: str, claims: dict) -> dict:
     return row
 
 
+# ---------- mentions as alerts ----------
+# A mention names a desk (a role). Which *office* of that desk it reaches is
+# decided by the work: "District Authority" on a Patna work is the Patna
+# district desk. That work-to-entity check lives with the other access rules
+# (api/auth.check_work_access), so the API layer filters what this returns.
+
+# when each desk (role|entity) last opened its alerts - only newer mentions
+# count as unread
+MENTION_READS_PATH = ROOT / "data" / "mention_reads.json"
+
+
+def _desk(claims: dict) -> str:
+    return f"{claims.get('role')}|{claims.get('entity') or ''}"
+
+
+def mentions_for(claims: dict) -> list[dict]:
+    """Live comments that mention the caller's role, newest first - excluding
+    the caller's own comments and internal notes the caller may not read."""
+    role = claims.get("role")
+    rows = [r for r in _load()
+            if role in (r.get("mentions") or []) and not r.get("deleted")
+            and not _is_author(r, claims) and _can_see(r, claims)]
+    return sorted(rows, key=lambda r: r["created_at"], reverse=True)
+
+
+def _load_reads() -> dict:
+    if not MENTION_READS_PATH.exists():
+        return {}
+    try:
+        return json.loads(MENTION_READS_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def mentions_seen_at(claims: dict) -> str | None:
+    return _load_reads().get(_desk(claims))
+
+
+def mark_mentions_seen(claims: dict) -> str:
+    reads = _load_reads()
+    reads[_desk(claims)] = _now()
+    MENTION_READS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = MENTION_READS_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(reads, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(MENTION_READS_PATH)
+    return reads[_desk(claims)]
+
+
 def demo():
     """Offline self-check for the threading, permission, visibility and
     attachment rules - the parts with real branching. Writes to a temp

@@ -144,6 +144,35 @@ export function MospiNav({
     return () => { cancelled = true }
   }, [])
 
+  // comments that mention this desk - only for a signed-in desk, since the
+  // server picks the office from the caller's own token
+  const [mentions, setMentions] = useState(null)
+  useEffect(() => {
+    if (!auth?.token) return undefined
+    let cancelled = false
+    api.mentions().then((d) => { if (!cancelled) setMentions(d) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [auth?.token])
+
+  function toggleAlerts() {
+    const opening = !alertsOpen
+    setAlertsOpen(opening)
+    setProfileOpen(false)
+    // opening the bell reads the mentions: the badge clears, while the items
+    // keep their "new" mark until the popover closes
+    if (opening && mentions?.unread) {
+      api.markMentionsSeen().then(() => setMentions((m) => m && { ...m, unread: 0 })).catch(() => {})
+    }
+  }
+
+  function openMention(m) {
+    setAlertsOpen(false)
+    setMentions((cur) => cur && { ...cur, items: cur.items.map((i) => ({ ...i, unread: false })) })
+    const roleQuery = auth?.role && auth.role !== 'mospi' && m.role_name
+      ? `&role=${auth.role}&role_name=${encodeURIComponent(m.role_name)}` : ''
+    navigate(`/work/${m.work_number}?scope_house=${encodeURIComponent(m.scope_house)}&scope_tenure=${encodeURIComponent(m.scope_tenure)}${roleQuery}`)
+  }
+
   // one listener closes whichever popover/rail is open on an outside click
   // or Escape - the same interaction all three already share.
   useEffect(() => {
@@ -178,6 +207,7 @@ export function MospiNav({
   }
 
   const alerts = scopedAlerts(digest, auth)
+  const badgeCount = alerts.count + (mentions?.unread || 0)
   const expiresAt = auth?.token ? decodeTokenExp(auth.token) : null
 
   return (
@@ -214,13 +244,35 @@ export function MospiNav({
           <div className="mospi-popover-anchor" ref={alertsRef}>
             <button
               type="button" className="mospi-icon-btn" aria-label={t('nav.alertsAria')} aria-haspopup="true"
-              aria-expanded={alertsOpen} onClick={() => { setAlertsOpen((v) => !v); setProfileOpen(false) }}
+              aria-expanded={alertsOpen} onClick={toggleAlerts}
             >
               <BellIcon />
-              {alerts.count > 0 && <span className="mospi-badge">{alerts.count > 99 ? '99+' : alerts.count}</span>}
+              {badgeCount > 0 && <span className="mospi-badge">{badgeCount > 99 ? '99+' : badgeCount}</span>}
             </button>
             {alertsOpen && (
               <div className="mospi-popover mospi-alerts-popover" role="menu">
+                {mentions?.items?.length > 0 && (
+                  <>
+                    <div className="mospi-popover-header">{t('Mentions')}</div>
+                    <ul className="mospi-alert-list mospi-mention-list">
+                      {mentions.items.slice(0, 5).map((m) => (
+                        <li key={m.comment_id}>
+                          <button type="button" className="mospi-alert-item mospi-mention-item" onClick={() => openMention(m)}>
+                            <span className="mospi-mention-who">
+                              {m.unread && <span className="mospi-mention-dot" aria-label={t('New')} />}
+                              {[t(m.author_role), m.author_entity && td(m.author_entity)].filter(Boolean).join(' · ')}
+                              <span className="mospi-mention-work">{t('Work #{n}', { n: m.work_number })}</span>
+                            </span>
+                            <span className="mospi-mention-body">{m.body}</span>
+                            <span className="mospi-alert-meta">
+                              {[m.constituency, m.district, m.state].filter(Boolean).map(td).join(' · ')}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
                 <div className="mospi-popover-header">
                   {t('nav.alertsTitle')}
                   {alerts.kind !== 'national' && alerts.kind !== 'none' && alerts.kind !== 'unsupported' && (

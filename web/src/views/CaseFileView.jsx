@@ -438,6 +438,7 @@ export function CaseFileView() {
              are not an argument about it, so they carry no headings and lead
              straight into the two sections that do: why it was flagged, and
              what was detected. ---- */}
+        <div className="casefile-columns">
         <article className="casefile-report">
           <div className="casefile-report-label">{t('Report')}</div>
 
@@ -488,13 +489,15 @@ export function CaseFileView() {
           </section>
         </article>
 
-        {/* ---- the discussion: same case, the other half of it. Sits on the
-             page background rather than on the report sheet, so the break
-             between "what the system found" and "what people are doing about
-             it" needs no divider to be read. ---- */}
-        <CaseDiscussion
-          workNumber={work.work_number} scopeHouse={scopeHouse} scopeTenure={scopeTenure}
-        />
+        {/* ---- the discussion: same case, the other half of it. A narrow
+             column pinned to the right of the report, so the thread stays in
+             view while the reviewer reads down the findings. ---- */}
+        <aside className="casefile-aside">
+          <CaseDiscussion
+            workNumber={work.work_number} scopeHouse={scopeHouse} scopeTenure={scopeTenure}
+          />
+        </aside>
+        </div>
       </div>
       </div>
     </div>
