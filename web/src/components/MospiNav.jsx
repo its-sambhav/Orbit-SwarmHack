@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { api, clearAuthToken, formatRupees, getAuthInfo } from '../api'
+import { Link, useNavigate } from 'react-router-dom'
+import { api, clearAuthToken, formatRupees, getAuthInfo, homePath } from '../api'
 import { useLanguage } from '../i18n'
 
 const iconProps = {
@@ -220,7 +220,10 @@ export function MospiNav({
           <MenuIcon />
         </button>
 
-        <img className="mospi-nav-emblem" src="/emblem.svg" alt={t('Government of India')} />
+        {/* the emblem is the home button: back to this desk's own dashboard */}
+        <Link to={homePath(auth)} className="mospi-nav-home" aria-label={t('Home')} title={t('Home')}>
+          <img className="mospi-nav-emblem" src="/emblem.svg" alt="" />
+        </Link>
 
         <div className="mospi-nav-brand">
           <div className="mospi-nav-title">MPLADS Review</div>

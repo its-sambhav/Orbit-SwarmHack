@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
-import { getSession } from './api'
+import { getSession, homePath } from './api'
 import './app.css'
 import './roles.css'
 import { RoleSelector } from './views/RoleSelector'
@@ -21,21 +21,6 @@ import { ReportsView } from './views/ReportsView'
 import { AnomaliesView } from './views/AnomaliesView'
 
 const same = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase()
-
-// where a signed-in desk lands - and where it is sent back to if it opens a
-// page outside its own jurisdiction
-function homePath(auth) {
-  const entity = auth.entity || ''
-  if (auth.role === 'mospi') return '/mospi'
-  if (auth.role === 'state') return `/state/${encodeURIComponent(entity)}`
-  if (auth.role === 'district') {
-    const [state, district] = entity.split('|')
-    return `/district-authority/${encodeURIComponent(state)}/${encodeURIComponent(district)}`
-  }
-  if (auth.role === 'mp') return `/mp/${encodeURIComponent(entity)}`
-  if (auth.role === 'agency') return `/agency/${encodeURIComponent(entity)}`
-  return '/'
-}
 
 // per kind of page, each role's check that the page is its own (MoSPI may
 // open every page); a role missing under a kind needs only the role itself -

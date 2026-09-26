@@ -54,6 +54,10 @@
    turns any image into a solid white silhouette regardless of its original
    colors, rather than trying to recolor individual paths inside the SVG. */
 .mospi-nav-emblem { flex: none; height: 36px; width: auto; filter: brightness(0) invert(1); }
+/* the emblem doubles as the home link (MospiNav.jsx) */
+.mospi-nav-home { flex: none; display: flex; padding: 3px 5px; margin: 0 -5px; border-radius: var(--radius-sm); transition: background 0.12s; }
+.mospi-nav-home:hover { background: rgba(255,255,255,0.14); }
+.mospi-nav-home:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .mospi-nav-brand { flex: none; min-width: 0; }
 .mospi-nav-title { font-weight: 600; font-size: 21.5px; letter-spacing: -0.01em; color: #fff; }
 .mospi-nav-subtitle {

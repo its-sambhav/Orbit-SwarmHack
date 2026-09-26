@@ -44,6 +44,21 @@ function tokenExpired(token) {
   }
 }
 
+// where a signed-in desk lands: the route guard sends a desk back here from
+// a page outside its jurisdiction, and the nav bar's emblem links here
+export function homePath(auth) {
+  const entity = auth?.entity || ''
+  if (auth?.role === 'mospi') return '/mospi'
+  if (auth?.role === 'state') return `/state/${encodeURIComponent(entity)}`
+  if (auth?.role === 'district') {
+    const [state, district] = entity.split('|')
+    return `/district-authority/${encodeURIComponent(state)}/${encodeURIComponent(district)}`
+  }
+  if (auth?.role === 'mp') return `/mp/${encodeURIComponent(entity)}`
+  if (auth?.role === 'agency') return `/agency/${encodeURIComponent(entity)}`
+  return '/'
+}
+
 // the signed-in session, or null when signed out or expired
 export function getSession() {
   const auth = getAuthInfo()
