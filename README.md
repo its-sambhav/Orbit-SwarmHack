@@ -200,6 +200,8 @@ Demo passwords are in `config/auth.yaml`: `mospi-2026`, `state-2026`, `district-
    npm run dev                      # http://localhost:5173
    ```
 
+To put it online, see [deploy/oracle/README.md](deploy/oracle/README.md) (Oracle Cloud Always Free, one server with HTTPS).
+
 ## Configuration
 
 | File | Holds |
@@ -207,12 +209,13 @@ Demo passwords are in `config/auth.yaml`: `mospi-2026`, `state-2026`, `district-
 | `config/detectors.yaml` | Every detector threshold, the scoring curve and weights, reviewer-feedback rules, queue size and materiality floor, region shrinkage, and model settings (`models:`) |
 | `config/tags.yaml` | Tag names, families and guideline sources |
 | `config/routing.yaml` | Which desk each lifecycle stage's findings go to |
-| `config/auth.yaml` | Role passwords |
-| `.env` | `AUTH_SECRET`, `OPENROUTER_API_KEY` (gitignored) |
+| `config/auth.yaml` | Role passwords (demo); `AUTH_PASSWORD_<ROLE>` in `.env` overrides one |
+| `.env` | `AUTH_SECRET`, `OPENROUTER_API_KEY`, optional `AUTH_PASSWORD_<ROLE>` and `CORS_ORIGINS` (comma-separated; defaults to the Vite dev server) (gitignored) |
+| `web/.env.production` | Optional `VITE_HIDE_DEMO_CREDENTIALS=true` to build without the sign-in page's demo-password table |
 
 ## API
 
-All data endpoints need a bearer token from `POST /api/auth/login`.
+All data endpoints need a bearer token from `POST /api/auth/login`. The national endpoints (funnel, analytics, queue, states, MPs, agencies) are MoSPI-only; every other role gets only its own state, district, seat or agency. Signing in to a role other than MoSPI first returns a 10-minute picker token that reads only that role's pick list. Five wrong passwords for a role lock it for 5 minutes from that address.
 
 | Area | Endpoints |
 |---|---|

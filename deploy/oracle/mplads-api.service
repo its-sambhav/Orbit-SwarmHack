@@ -1,0 +1,21 @@
+# systemd unit for the API - deploy/oracle/setup.sh fills in __APP__ and
+# __USER__ and installs it as /etc/systemd/system/mplads-api.service.
+# One worker on purpose: each worker loads its own ~4 GB copy of the data,
+# and the sign-in lockout counts failures per process.
+[Unit]
+Description=MPLADS Review API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=__APP__
+# --proxy-headers: behind Caddy every request comes from 127.0.0.1, so the
+# real client address (for the sign-in lockout) is read from X-Forwarded-For
+ExecStart=__APP__/.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+# Caddy site for the app - deploy/oracle/setup.sh fills in __HOST__ and
+# __WEB_ROOT__ and installs it as /etc/caddy/Caddyfile. Caddy gets and
+# renews the HTTPS certificate for __HOST__ on its own.
+__HOST__ {
+	encode zstd gzip
+
+	# only the API and its map files reach uvicorn - /docs stays private
+	@backend path /api/* /static/*
+	handle @backend {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# the built frontend; any other path is a page route, so index.html
+	handle {
+		root * __WEB_ROOT__
+		try_files {path} /index.html
+		file_server
+	}
+}
