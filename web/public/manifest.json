@@ -1,0 +1,12 @@
+{
+  "name": "MPLADS Ecosystem",
+  "short_name": "MPLADS",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#1F3D5C",
+  "background_color": "#F5F7F5"
+}
