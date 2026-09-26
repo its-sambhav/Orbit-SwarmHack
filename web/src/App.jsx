@@ -19,6 +19,7 @@ import { MpAuditsView } from './views/MpAuditsView'
 import { MpProfileView } from './views/MpProfileView'
 import { ReportsView } from './views/ReportsView'
 import { AnomaliesView } from './views/AnomaliesView'
+import { NotFoundView } from './views/NotFoundView'
 
 const same = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase()
 
@@ -88,7 +89,7 @@ export default function App() {
       {/* a district desk opens the agencies working in it (DistrictView's agency panel) */}
       <Route path="/agency/:agencyName" element={guard(<AgencyView />, ['agency', 'district'], 'agency')} />
       <Route path="/work/:workNumber" element={guard(<CaseFileView />, ['state', 'district', 'mp', 'agency'])} />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFoundView />} />
     </Routes>
   )
 }

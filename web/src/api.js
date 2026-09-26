@@ -108,6 +108,37 @@ function checkSession(res) {
   }
 }
 
+// messages the app writes itself; each is also a key in strings.js, so the
+// error view shows it in the reader's language (the API's own messages
+// pass through unchanged)
+const SERVER_BUSY = 'The server is restarting or busy. Try again in a minute.'
+const OFFLINE = "Can't reach the server. Check your internet connection and try again."
+const INVALID_REQUEST = 'The request was not valid.'
+
+// fetch, with a network failure (offline, DNS, dropped connection) turned
+// into a readable error instead of the browser's "Failed to fetch"
+async function send(url, options) {
+  try {
+    return await fetch(url, options)
+  } catch {
+    throw Object.assign(new Error(OFFLINE), { status: 0 })
+  }
+}
+
+// a readable Error for a failed response, with its status attached (the
+// sign-in page tells a wrong password from a lockout by it): the API's own
+// message when it sent one, a plain sentence for a gateway failure (the API
+// restarting behind Caddy) or a malformed request, never "[object Object]"
+async function responseError(res) {
+  const body = await res.json().catch(() => ({}))
+  let message
+  if (typeof body.detail === 'string') message = body.detail
+  else if (res.status >= 502 && res.status <= 504) message = SERVER_BUSY
+  else if (res.status === 422) message = INVALID_REQUEST
+  else message = `${res.status} ${res.statusText}`.trim()
+  return Object.assign(new Error(message), { status: res.status })
+}
+
 async function get(path, params = {}) {
   const qs = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
@@ -115,11 +146,10 @@ async function get(path, params = {}) {
   const url = `${BASE}${path}${qs ? `?${qs}` : ''}`
   if (getCache.has(url)) return getCache.get(url)
   const promise = (async () => {
-    const res = await fetch(url, { headers: authHeaders() })
+    const res = await send(url, { headers: authHeaders() })
     if (!res.ok) {
       checkSession(res)
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.detail || `${res.status} ${res.statusText}`)
+      throw await responseError(res)
     }
     return res.json()
   })().catch((err) => {
@@ -166,28 +196,26 @@ async function getFresh(path, params = {}) {
   const qs = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
   ).toString()
-  const res = await fetch(`${BASE}${path}${qs ? `?${qs}` : ''}`, { headers: authHeaders() })
+  const res = await send(`${BASE}${path}${qs ? `?${qs}` : ''}`, { headers: authHeaders() })
   if (!res.ok) {
     checkSession(res)
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || `${res.status} ${res.statusText}`)
+    throw await responseError(res)
   }
   return res.json()
 }
 
 async function post(path, params = {}) {
   const qs = new URLSearchParams(params).toString()
-  const res = await fetch(`${BASE}${path}?${qs}`, { method: 'POST', headers: authHeaders() })
+  const res = await send(`${BASE}${path}?${qs}`, { method: 'POST', headers: authHeaders() })
   if (!res.ok) {
     checkSession(res)
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || `${res.status} ${res.statusText}`)
+    throw await responseError(res)
   }
   return res.json()
 }
 
 async function postJson(path, body) {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await send(`${BASE}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
@@ -195,24 +223,20 @@ async function postJson(path, body) {
   if (!res.ok) {
     // a wrong password at the sign-in form is not a lost session
     if (path !== '/auth/login') checkSession(res)
-    const errBody = await res.json().catch(() => ({}))
-    // status rides along so a caller can tell failures apart (the login page
-    // needs 400 "entity required" vs 401 "wrong password").
-    throw Object.assign(new Error(errBody.detail || `${res.status} ${res.statusText}`), { status: res.status })
+    throw await responseError(res)
   }
   return res.json()
 }
 
 async function patchJson(path, body) {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await send(`${BASE}${path}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
     checkSession(res)
-    const errBody = await res.json().catch(() => ({}))
-    throw Object.assign(new Error(errBody.detail || `${res.status} ${res.statusText}`), { status: res.status })
+    throw await responseError(res)
   }
   return res.json()
 }
@@ -222,21 +246,19 @@ async function patchJson(path, body) {
 async function postFile(path, file) {
   const form = new FormData()
   form.append('file', file)
-  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: authHeaders(), body: form })
+  const res = await send(`${BASE}${path}`, { method: 'POST', headers: authHeaders(), body: form })
   if (!res.ok) {
     checkSession(res)
-    const errBody = await res.json().catch(() => ({}))
-    throw Object.assign(new Error(errBody.detail || `${res.status} ${res.statusText}`), { status: res.status })
+    throw await responseError(res)
   }
   return res.json()
 }
 
 async function fetchBlob(path, filename) {
-  const res = await fetch(`${BASE}${path}`, { headers: authHeaders() })
+  const res = await send(`${BASE}${path}`, { headers: authHeaders() })
   if (!res.ok) {
     checkSession(res)
-    const errBody = await res.json().catch(() => ({}))
-    throw new Error(errBody.detail || `${res.status} ${res.statusText}`)
+    throw await responseError(res)
   }
   const url = URL.createObjectURL(await res.blob())
   const a = document.createElement('a')
@@ -249,11 +271,10 @@ async function fetchBlob(path, filename) {
 }
 
 async function del(path) {
-  const res = await fetch(`${BASE}${path}`, { method: 'DELETE', headers: authHeaders() })
+  const res = await send(`${BASE}${path}`, { method: 'DELETE', headers: authHeaders() })
   if (!res.ok) {
     checkSession(res)
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || `${res.status} ${res.statusText}`)
+    throw await responseError(res)
   }
   return res.json()
 }
