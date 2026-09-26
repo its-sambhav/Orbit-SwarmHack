@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, setAuthToken, setPickerToken } from '../api'
 import { Loading } from '../components/StateViews'
@@ -67,6 +67,7 @@ export function RoleSelector() {
   const [showPassword, setShowPassword] = useState(false)
   // the demo-credentials table under the button starts collapsed
   const [showCreds, setShowCreds] = useState(false)
+  const submitRef = useRef(null)
   // set once the username + password check out for a role that still has to
   // pick its own state/district/MP/agency - null while on the login form
   const [role, setRole] = useState(null)
@@ -127,6 +128,15 @@ export function RoleSelector() {
       api.districts(selectedState, DEFAULT_SCOPE).then((d) => setDistricts(d.items)).catch(pickerFailed)
     }
   }, [role, selectedState, pickerFailed])
+
+  // a demo-credentials row fills the form and hands focus to Login, so
+  // Enter signs straight in
+  function fillDemo(id) {
+    setUsername(id)
+    setPassword(DEMO_PASSWORDS[id])
+    setAuthError(null)
+    submitRef.current?.focus()
+  }
 
   function loginError(err) {
     if (err.status === 401) return t(BAD_CREDENTIALS)
@@ -231,7 +241,7 @@ export function RoleSelector() {
               </div>
 
               {authError && <p className="login-error" role="alert">{authError}</p>}
-              <button type="submit" className="login-submit" disabled={authLoading}>
+              <button type="submit" className="login-submit" disabled={authLoading} ref={submitRef}>
                 {authLoading ? t('Signing in…') : t('Login')}
               </button>
 
@@ -249,17 +259,26 @@ export function RoleSelector() {
                 </button>
                 <div className="login-creds-wrap" id="login-creds-table" hidden={!showCreds}>
                   <table className="login-creds-table">
+                    <caption>{t('Click a row to fill in the sign-in form.')}</caption>
                     <thead>
                       <tr><th scope="col">{t('Dashboard')}</th><th scope="col">{t('Username')}</th><th scope="col">{t('Password')}</th></tr>
                     </thead>
                     <tbody>
-                      {ROLES.map((r) => (
-                        <tr key={r.id}>
-                          <th scope="row">{t(r.label)}</th>
-                          <td><code>{r.id}</code></td>
-                          <td><code>{DEMO_PASSWORDS[r.id]}</code></td>
-                        </tr>
-                      ))}
+                      {ROLES.map((r) => {
+                        const filled = username === r.id && password === DEMO_PASSWORDS[r.id]
+                        // a click anywhere on the row fills the form; the role
+                        // name is the row's button, so the keyboard reaches it
+                        // too (its click bubbles up to the row)
+                        return (
+                          <tr key={r.id} className={`login-creds-row${filled ? ' filled' : ''}`} onClick={() => fillDemo(r.id)}>
+                            <th scope="row">
+                              <button type="button" className="login-creds-use" aria-pressed={filled}>{t(r.label)}</button>
+                            </th>
+                            <td><code>{r.id}</code></td>
+                            <td><code>{DEMO_PASSWORDS[r.id]}</code></td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
