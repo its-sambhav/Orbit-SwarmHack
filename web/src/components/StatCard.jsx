@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react'
 import { useLanguage } from '../i18n'
 
 // maps a plain English card label onto its i18n keys, so translation happens
@@ -26,12 +27,22 @@ export function StatCard({ label, value, sub, onClick, description }) {
   const displayLabel = LABEL_KEY[label] ? t(LABEL_KEY[label]) : label
   const desc = description ?? (DESC_KEY[label] ? t(DESC_KEY[label]) : undefined)
   const Tag = onClick ? 'button' : 'div'
+  // the explainer opens above the tile, or below it when the fixed nav bar
+  // (or the window's top edge) would cover it - measured as it opens
+  const tipRef = useRef(null)
+  const [below, setBelow] = useState(false)
+  const place = (e) => {
+    if (!tipRef.current) return
+    const navBottom = document.querySelector('.mospi-nav')?.getBoundingClientRect().bottom ?? 0
+    setBelow(e.currentTarget.getBoundingClientRect().top - tipRef.current.offsetHeight - 16 < navBottom)
+  }
   return (
-    <Tag type={onClick ? 'button' : undefined} className="mospi-stat-card" onClick={onClick}>
+    <Tag type={onClick ? 'button' : undefined} className="mospi-stat-card" onClick={onClick}
+      onMouseEnter={place} onFocus={place}>
       <div className="mospi-stat-label">{displayLabel}</div>
       <div className="mospi-stat-value num">{value}</div>
       <div className="mospi-stat-amount num">{sub}</div>
-      {desc && <div className="mospi-stat-tooltip" role="tooltip">{desc}</div>}
+      {desc && <div ref={tipRef} className={`mospi-stat-tooltip${below ? ' below' : ''}`} role="tooltip">{desc}</div>}
     </Tag>
   )
 }

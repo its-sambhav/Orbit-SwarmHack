@@ -227,6 +227,9 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 .mospi-stat-card:hover .mospi-stat-tooltip, .mospi-stat-card:focus-visible .mospi-stat-tooltip {
   opacity: 1; visibility: visible; transform: translateY(0);
 }
+/* flipped under the tile when there is no room above it (StatCard.jsx) */
+.mospi-stat-tooltip.below { bottom: auto; top: calc(100% + 10px); transform: translateY(-4px); }
+.mospi-stat-tooltip.below::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: rgba(31, 61, 92, 0.55); }
 
 /* Overview -> Map hand-off card. The map itself lives on its own page
    (/mospi/map) now, not here - this is just a prominent link to it. */

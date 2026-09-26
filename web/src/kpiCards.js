@@ -36,8 +36,7 @@ const CARDS = {
     label: i.t('kpi.costOverruns'),
     value: num(x.works),
     sub: i.t('kpiSub.abovePeer', { amount: formatRupees(x.above_peer) }),
-    description: join(i.t('kpiDesc.costOverruns'),
-      x.typical_ratio != null && i.t('kpiDesc.typicalRatio', { x: x.typical_ratio }), top(x.top, i)),
+    description: join(i.t('kpiDesc.costOverruns'), top(x.top, i)),
   }),
   duplicates: ({ duplicates: x }, i) => ({
     label: i.t('kpi.duplicates'),
@@ -55,9 +54,7 @@ const CARDS = {
     label: i.t('kpi.delayed'),
     value: num(x.works),
     sub: i.t('kpiSub.delayedSplit', { a: num(x.awaiting_sanction), b: num(x.unfinished) }),
-    description: join(i.t('kpiDesc.delayed', { days: g.sanction_days }),
-      x.on_time_sanction_rate != null && i.t('kpiDesc.onTimeSanction', { pct: pct(x.on_time_sanction_rate), days: g.sanction_days }),
-      top(x.top, i)),
+    description: join(i.t('kpiDesc.delayed', { days: g.sanction_days }), top(x.top, i)),
   }),
   evidenceMissing: ({ evidence_missing: x }, i) => ({
     label: i.t('kpi.evidenceMissing'),
