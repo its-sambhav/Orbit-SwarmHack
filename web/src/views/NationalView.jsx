@@ -7,6 +7,7 @@ import { PipelineCard } from '../components/PipelineCard'
 import { TagBreakdownCard } from '../components/TagBreakdownCard'
 import { EntityRiskPanel } from '../components/EntityRiskPanel'
 import { StatCard } from '../components/StatCard'
+import { kpiCards } from '../kpiCards'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView } from '../components/StateViews'
@@ -23,7 +24,7 @@ function scrollToId(id) {
 
 export function NationalView() {
   const navigate = useNavigate()
-  const { t } = useLanguage()
+  const { t, td } = useLanguage()
   const [searchParams, setSearchParams] = useSearchParams()
   const dateFrom = searchParams.get('date_from') || null
   const dateTo = searchParams.get('date_to') || null
@@ -66,32 +67,24 @@ export function NationalView() {
 
   const searchIndex = useMemo(() => buildSearchIndex(constituencies), [constituencies])
 
-  // financial-health cards lead, the original volume cards follow - a 2-column
-  // x 4-row matrix rather than 8 cards jammed into one row.
+  // the SIH26102 cards (api/kpis.py, built by ../kpiCards.js): money at risk
+  // and the alerts behind it, early warning, delays against the guideline
+  // limits, missing completion evidence and fund use - a 2-column x 4-row
+  // matrix. Money at risk opens the anomalies queue; a card whose works the
+  // queue can list exactly opens it filtered to them.
+  const openQueue = (filter) => () => navigate(`/anomalies?${new URLSearchParams({ scope, ...filter })}`)
   const cards = funnel ? [
-    { label: 'Recommended', value: funnel.recommended.toLocaleString('en-IN'), sub: formatRupees(funnel.recommended_amount) },
-    { label: 'Sanctioned', value: funnel.sanctioned.toLocaleString('en-IN'), sub: formatRupees(funnel.sanctioned_amount) },
-    { label: 'Completed', value: funnel.completed.toLocaleString('en-IN'), sub: formatRupees(funnel.completed_amount) },
-    { label: 'Works flagged', value: funnel.works_flagged.toLocaleString('en-IN'), sub: t('of {n} total works', { n: funnel.total_works.toLocaleString('en-IN') }) },
+    ...kpiCards(['moneyAtRisk', 'highSeverity', 'costOverruns', 'duplicates', 'earlyWarning', 'delayed', 'evidenceMissing'], funnel.kpis, { t, td }, {
+      moneyAtRisk: { onClick: openQueue({}), hint: 'queue' },
+      highSeverity: { onClick: openQueue({ severity: 'high' }), hint: 'works' },
+      costOverruns: { onClick: openQueue({ tag: 'Unusual Cost' }), hint: 'works' },
+      evidenceMissing: { onClick: openQueue({ tag: 'Completion Evidence Not Attached' }), hint: 'works' },
+    }),
     {
+      kind: 'fundUtilisation',
       label: 'Fund utilisation',
       value: funnel.allocated ? `${((funnel.paid / funnel.allocated) * 100).toFixed(0)}%` : '—',
       sub: t('{paid} of {allocated} allocated', { paid: formatRupees(funnel.paid), allocated: formatRupees(funnel.allocated) }),
-    },
-    {
-      label: 'Completion rate',
-      value: funnel.completion_rate != null ? `${funnel.completion_rate.toFixed(0)}%` : '—',
-      sub: t('{completed} of {sanctioned} sanctioned works', { completed: funnel.completed.toLocaleString('en-IN'), sanctioned: funnel.sanctioned.toLocaleString('en-IN') }),
-    },
-    {
-      label: 'Pending works',
-      value: funnel.sanctioned_never_completed.toLocaleString('en-IN'),
-      sub: t('Sanctioned, not yet completed'),
-    },
-    {
-      label: 'Avg. cost / completed work',
-      value: funnel.completed ? formatRupees(funnel.completed_amount / funnel.completed) : '—',
-      sub: t('Across {n} completed works', { n: funnel.completed.toLocaleString('en-IN') }),
     },
   ] : []
 
@@ -141,8 +134,8 @@ export function NationalView() {
         <div className="mospi-stats" id="mospi-overview">
           {cards.length ? cards.map((c) => (
             <StatCard
-              key={c.label} label={c.label} value={c.value} sub={c.sub}
-              onClick={c.label === 'Works flagged' ? () => navigate('/anomalies') : undefined}
+              key={c.kind} label={c.label} value={c.value} sub={c.sub}
+              description={c.description} onClick={c.onClick}
             />
           )) : Array.from({ length: 8 }).map((_, i) => (
             <div className="mospi-stat-card" key={i}><Loading label="" /></div>

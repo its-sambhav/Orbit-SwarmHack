@@ -1,9 +1,9 @@
 import { useLanguage } from '../i18n'
 
-// maps this one fixed vocabulary of English card labels (every mospi-stats
-// grid across the 5 role dashboards already uses exactly these strings) onto
-// the matching i18n keys - callers keep passing plain English labels
-// unchanged, translation happens once, here.
+// maps a plain English card label onto its i18n keys, so translation happens
+// once, here - of the dashboards' cards only Fund utilisation still arrives
+// that way; the KPI cards come from ../kpiCards.js already translated, each
+// with its own description.
 const LABEL_KEY = {
   Recommended: 'stat.recommended', Sanctioned: 'stat.sanctioned', Completed: 'stat.completed', Paid: 'stat.paid',
   'Works flagged': 'stat.worksFlagged', 'Fund utilisation': 'stat.fundUtilisation', 'Completion rate': 'stat.completionRate',
@@ -19,7 +19,7 @@ const DESC_KEY = {
  * translucent explainer of what the metric means, in whichever language the
  * nav's own language picker is set to - `description` overrides the shared
  * default for a page whose card means something slightly different. Passing
- * `onClick` renders the tile as a real button (Works flagged → anomalies
+ * `onClick` renders the tile as a real button (Money at risk → anomalies
  * queue) instead of a plain div, everything else stays identical. */
 export function StatCard({ label, value, sub, onClick, description }) {
   const { t } = useLanguage()

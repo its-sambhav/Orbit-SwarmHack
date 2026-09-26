@@ -6,6 +6,7 @@ import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart
 import { PipelineCard } from '../components/PipelineCard'
 import { TagBreakdownCard } from '../components/TagBreakdownCard'
 import { StatCard } from '../components/StatCard'
+import { kpiCards } from '../kpiCards'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip } from '../components/Chips'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
@@ -77,35 +78,14 @@ export function AgencyView() {
   const lifecycleSectors = mapCategoryBreakdown(data.category_breakdown)
     .map((c) => ({ ...c, recommended: 0, recommended_cr: 0 }))
 
-  // an implementing agency has no allocated/recommended figure of its own
-  // (see the comment above and data.scorecard's own shape) - the 8-KPI row
-  // substitutes Works flagged and Completion rate for MoSPI's own Fund
-  // Utilisation/Recommended cards rather than showing a field this role
-  // doesn't have.
-  const completionRate = data.scorecard.sanctioned_count
-    ? (data.scorecard.completed_count / data.scorecard.sanctioned_count) * 100
-    : null
-  const cards = [
-    {
-      label: 'Avg. cost / completed work',
-      value: data.scorecard.completed_count ? formatRupees(data.scorecard.completed / data.scorecard.completed_count) : '—',
-      sub: t('Across {n} completed works', { n: data.scorecard.completed_count.toLocaleString('en-IN') }),
-    },
-    {
-      label: 'Completion rate',
-      value: completionRate != null ? `${completionRate.toFixed(0)}%` : '—',
-      sub: t('{n} delayed', { n: data.scorecard.delayed.toLocaleString('en-IN') }),
-    },
-    { label: 'Sanctioned', value: data.scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.sanctioned) },
-    {
-      label: 'Works flagged',
-      value: data.scorecard.works_flagged.toLocaleString('en-IN'),
-      sub: t('of {n} total works', { n: data.scorecard.works_total.toLocaleString('en-IN') }),
-    },
-    { label: 'Completed', value: data.scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.completed) },
-    { label: 'Paid', value: data.scorecard.paid_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.paid) },
-    { label: 'Pending works', value: data.scorecard.ongoing.toLocaleString('en-IN'), sub: t('Sanctioned, not yet completed') },
-  ]
+  // an implementing agency executes sanctioned works, so its cards track the
+  // execution (api/kpis.py) - timeliness, completion evidence, payments against
+  // progress, early warning, cost - not the recommendation or fund figures this
+  // role doesn't have (see the comment above).
+  const cards = kpiCards(['overdue', 'onTimeCompletion', 'evidenceMissing', 'paymentWithoutCompletion', 'earlyWarning',
+    'costOverruns', 'highSeverity'], data.kpis, { t, td }, {
+    highSeverity: { onClick: () => scrollToId('agency-assigned-works'), hint: 'list' },
+  })
 
   // an agency's own work starts at Sanction, not Recommendation - the same
   // 4-stage Recommendation/Sanction/Execution/Payment breakdown the other
@@ -149,8 +129,8 @@ export function AgencyView() {
           <div className="mospi-stats">
             {cards.map((c) => (
               <StatCard
-                key={c.label} label={c.label} value={c.value} sub={c.sub}
-                onClick={c.label === 'Works flagged' ? () => scrollToId('agency-assigned-works') : undefined}
+                key={c.kind} label={c.label} value={c.value} sub={c.sub}
+                description={c.description} onClick={c.onClick}
               />
             ))}
           </div>

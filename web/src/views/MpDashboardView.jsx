@@ -6,6 +6,7 @@ import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart
 import { PipelineCard } from '../components/PipelineCard'
 import { TagBreakdownCard } from '../components/TagBreakdownCard'
 import { StatCard } from '../components/StatCard'
+import { kpiCards } from '../kpiCards'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView } from '../components/StateViews'
@@ -66,37 +67,23 @@ export function MpDashboardView() {
   const { scorecard } = data
   const lifecycleSectors = mapCategoryBreakdown(data.category_breakdown)
 
-  // same 8 KPI fields MoSPI's own overview leads with (NationalView.jsx),
-  // scoped to this MP's own scorecard.
+  const mapUrl = `/mp/${encodeURIComponent(mpName)}/map?${params.toString()}`
+
+  // an MP's own cards (api/kpis.py): fund use and assets delivered, how their
+  // recommendations move against the guideline limits, and how many of their
+  // works carry risk - the flagged share read against their state's.
   const cards = [
-    { label: 'Recommended', value: scorecard.recommended_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.recommended) },
-    { label: 'Sanctioned', value: scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.sanctioned) },
-    { label: 'Completed', value: scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(scorecard.completed) },
-    { label: 'Works flagged', value: scorecard.works_flagged.toLocaleString('en-IN'), sub: t('of {n} total works', { n: scorecard.works_total.toLocaleString('en-IN') }) },
     {
+      kind: 'fundUtilisation',
       label: 'Fund utilisation',
       value: scorecard.allocated ? `${((scorecard.paid / scorecard.allocated) * 100).toFixed(0)}%` : '—',
       sub: t('{paid} of {allocated} allocated', { paid: formatRupees(scorecard.paid), allocated: formatRupees(scorecard.allocated) }),
     },
-    {
-      label: 'Completion rate',
-      value: scorecard.completion_rate != null ? `${scorecard.completion_rate.toFixed(0)}%` : '—',
-      sub: t('{completed} of {sanctioned} sanctioned works', { completed: scorecard.completed_count.toLocaleString('en-IN'), sanctioned: scorecard.sanctioned_count.toLocaleString('en-IN') }),
-    },
-    {
-      label: 'Pending works',
-      value: scorecard.ongoing.toLocaleString('en-IN'),
-      sub: t('Sanctioned, not yet completed'),
-    },
-    {
-      label: 'Avg. cost / completed work',
-      value: scorecard.completed_count ? formatRupees(scorecard.completed / scorecard.completed_count) : '—',
-      sub: t('Across {n} completed works', { n: scorecard.completed_count.toLocaleString('en-IN') }),
-    },
+    ...kpiCards(['assetsDelivered', 'sanctionBacklog', 'overdue', 'daysToSanction', 'earlyWarning', 'flaggedShare',
+      'costAndDuplicates'], data.kpis, { t, td }, {
+      flaggedShare: { onClick: () => navigate(mapUrl), hint: 'map' },
+    }),
   ]
-
-
-  const mapUrl = `/mp/${encodeURIComponent(mpName)}/map?${params.toString()}`
 
   return (
     <div className="mospi-page">
@@ -135,8 +122,8 @@ export function MpDashboardView() {
         <div className="mospi-stats" id="mospi-overview">
           {cards.map((c) => (
             <StatCard
-              key={c.label} label={c.label} value={c.value} sub={c.sub}
-              onClick={c.label === 'Works flagged' ? () => navigate(mapUrl) : undefined}
+              key={c.kind} label={c.label} value={c.value} sub={c.sub}
+              description={c.description} onClick={c.onClick}
             />
           ))}
         </div>

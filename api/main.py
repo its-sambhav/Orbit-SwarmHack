@@ -40,6 +40,7 @@ from api import comments as comments_store
 from api import alerts as alerts_store
 from api import auth
 from api.sector_categories import CATEGORIES
+from api.kpis import early_warning_works, kpi_cards
 from engine import rollup
 from engine.detectors import load_tags
 
@@ -65,6 +66,8 @@ async def lifespan(app: FastAPI):
     # two joblib artifacts back-to-back on one request thread.
     get_delay_model()
     get_risk_model()
+    # the dashboards' early-warning card: every open work scored once (~1 s)
+    early_warning_works()
     # fail fast at boot, not on the first login attempt, if the secret that
     # signs every auth token was never configured.
     auth._secret()
@@ -340,6 +343,7 @@ def get_funnel(scope: str = Query("all"), date_from: str | None = None, date_to:
         "sanctioned_never_completed": int((sp["has_sanctioned"] & ~sp["has_completed"]).sum()),
         "category_breakdown": category_breakdown(sp, wr),
         "pipeline": pipeline_summary(sp, wr),
+        "kpis": kpi_cards(sp, wr, group=("STATE_NAME", "state")),
     })
 
 
@@ -955,6 +959,7 @@ def get_state(
         },
         "category_breakdown": category_breakdown(sp, wr),
         "tag_summary": tag_summary(f), "pipeline": pipeline_summary(sp, wr),
+        "kpis": kpi_cards(sp, wr, group=("DISTRICT", "district")),
         "districts": district_items, "tag_breakdown": tag_breakdown, "queue": queue,
     })
 
@@ -1076,6 +1081,14 @@ def get_mp(
     seat = cr[cr["CONSTITUENCY_ID"].astype("Int64").astype(str) == constituency_id] if constituency_id else cr.iloc[0:0]
     seat_risk_score = round(float(seat.iloc[0]["risk_score"]), 2) if len(seat) else None
 
+    mp_kpis = kpi_cards(sp, wr)
+    state_sp, state_wr, *_ = s.risk_tables(scope, date_from, date_to)
+    in_state = state_sp["STATE_NAME"].str.casefold() == str(row["state"]).casefold()
+    state_flagged = (state_wr["STATE_NAME"].str.casefold() == str(row["state"]).casefold()) \
+        & state_wr["is_substantive"].astype(bool)
+    mp_kpis["flagged_share"]["state_average"] = round(int(state_flagged.sum()) / int(in_state.sum()), 4) \
+        if in_state.any() else None
+
     return clean({
         "mp_name": row["MP_NAME"], "scope_tenure": scope, "status": row["status"],
         "state": row["state"], "constituency": row["constituency"],
@@ -1101,6 +1114,7 @@ def get_mp(
         },
         "category_breakdown": category_breakdown(sp, wr),
         "tag_summary": tag_summary(mp_findings), "pipeline": pipeline_summary(sp, wr),
+        "kpis": mp_kpis,
         "tag_breakdown": mp_findings["tag"].value_counts().to_dict(),
         "activity_breakdown": activity_breakdown,
         "recommended_works": recommended_works,
@@ -1287,6 +1301,7 @@ def get_district(
         },
         "category_breakdown": category_breakdown(sp, wr),
         "tag_summary": tag_summary(f), "pipeline": pipeline_summary(sp, wr),
+        "kpis": kpi_cards(sp, wr),
         "tag_breakdown": tag_breakdown, "queue": queue,
     })
 
@@ -1394,6 +1409,7 @@ def get_agency(
         },
         "category_breakdown": category_breakdown(sp, wr),
         "tag_summary": tag_summary(f), "pipeline": pipeline_summary(sp, wr),
+        "kpis": kpi_cards(sp, wr),
         "tag_breakdown": tag_breakdown, "queue": queue,
         "data_caveat": (
             "Agency identity is matched by name only (spelling/case-normalised, "

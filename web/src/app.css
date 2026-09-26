@@ -197,7 +197,12 @@
 /* the one clickable tile (Works flagged → anomalies) renders as a real
    <button> instead of a <div> - stripped back to read identically to its
    plain-div siblings, with just a hover/focus affordance added. */
-button.mospi-stat-card { cursor: pointer; transition: border-color 0.15s ease; }
+/* a button centres its content vertically - stack it from the top like the
+   div cards, so a clickable card lines up in a row stretched by a taller one */
+button.mospi-stat-card {
+  cursor: pointer; transition: border-color 0.15s ease;
+  display: flex; flex-direction: column; justify-content: flex-start; line-height: inherit;
+}
 button.mospi-stat-card:hover { border-color: var(--accent); }
 button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .mospi-stat-label { font-size: 15px; color: var(--ink-muted); margin-bottom: 8px; }

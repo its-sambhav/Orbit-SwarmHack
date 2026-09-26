@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, formatRupees, mapCategoryBreakdown } from '../api'
+import { api, mapCategoryBreakdown } from '../api'
 import { MospiNav } from '../components/MospiNav'
 import { ProjectLifecycleBarChart } from '../components/ProjectLifecycleBarChart'
 import { PipelineCard } from '../components/PipelineCard'
 import { TagBreakdownCard } from '../components/TagBreakdownCard'
 import { EntityRiskPanel } from '../components/EntityRiskPanel'
 import { StatCard } from '../components/StatCard'
+import { kpiCards } from '../kpiCards'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
@@ -65,36 +66,6 @@ export function DistrictView() {
 
   const lifecycleSectors = mapCategoryBreakdown(data.category_breakdown)
 
-  // same 8 KPI fields MoSPI's own overview leads with (NationalView.jsx),
-  // scoped to this district's own scorecard.
-  const cards = [
-    { label: 'Recommended', value: data.scorecard.recommended_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.recommended) },
-    { label: 'Sanctioned', value: data.scorecard.sanctioned_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.sanctioned) },
-    { label: 'Completed', value: data.scorecard.completed_count.toLocaleString('en-IN'), sub: formatRupees(data.scorecard.completed) },
-    { label: 'Works flagged', value: data.scorecard.works_flagged.toLocaleString('en-IN'), sub: t('of {n} total works', { n: data.scorecard.works_total.toLocaleString('en-IN') }) },
-    {
-      label: 'Fund utilisation',
-      value: data.scorecard.allocated ? `${((data.scorecard.paid / data.scorecard.allocated) * 100).toFixed(0)}%` : '—',
-      sub: t('{paid} of {allocated} allocated', { paid: formatRupees(data.scorecard.paid), allocated: formatRupees(data.scorecard.allocated) }),
-    },
-    {
-      label: 'Completion rate',
-      value: data.scorecard.completion_rate != null ? `${data.scorecard.completion_rate.toFixed(0)}%` : '—',
-      sub: t('{completed} of {sanctioned} sanctioned works', { completed: data.scorecard.completed_count.toLocaleString('en-IN'), sanctioned: data.scorecard.sanctioned_count.toLocaleString('en-IN') }),
-    },
-    {
-      label: 'Pending works',
-      value: data.scorecard.ongoing.toLocaleString('en-IN'),
-      sub: t('Sanctioned, not yet completed'),
-    },
-    {
-      label: 'Avg. cost / completed work',
-      value: data.scorecard.completed_count ? formatRupees(data.scorecard.completed / data.scorecard.completed_count) : '—',
-      sub: t('Across {n} completed works', { n: data.scorecard.completed_count.toLocaleString('en-IN') }),
-    },
-  ]
-
-
   // EntityRiskPanel's generic {name, works_total, works_flagged, breach_rate,
   // risk_score} shape - a district has no further sub-jurisdiction of its
   // own, so its implementing agencies fill that slot. Every field is the
@@ -109,6 +80,15 @@ export function DistrictView() {
   }))
 
   const mapUrl = `${isRoleView ? `/district-authority/${encodeURIComponent(stateName)}/${encodeURIComponent(districtName)}` : `/district/${encodeURIComponent(stateName)}/${encodeURIComponent(districtName)}`}/map?${params.toString()}`
+
+  // a district authority sanctions works, chases them with the agencies and
+  // releases payments, so its cards track exactly that (api/kpis.py): sanctions
+  // against the guideline limit, overdue works, completion evidence, payments
+  // ahead of completion, early warning, high-severity cases, agency concentration.
+  const cards = kpiCards(['sanctionBacklog', 'sanctionDueSoon', 'overdue', 'evidenceMissing',
+    'paymentWithoutCompletion', 'earlyWarning', 'highSeverity', 'agencyConcentration'], data.kpis, { t, td }, {
+    highSeverity: { onClick: () => navigate(mapUrl), hint: 'map' },
+  })
 
   return (
     <div className="mospi-page">
@@ -161,8 +141,8 @@ export function DistrictView() {
         <div className="mospi-stats">
           {cards.map((c) => (
             <StatCard
-              key={c.label} label={c.label} value={c.value} sub={c.sub}
-              onClick={c.label === 'Works flagged' ? () => navigate(mapUrl) : undefined}
+              key={c.kind} label={c.label} value={c.value} sub={c.sub}
+              description={c.description} onClick={c.onClick}
             />
           ))}
         </div>
