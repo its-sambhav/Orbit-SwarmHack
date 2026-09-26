@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="MPLADS Anomaly Review API", lifespan=lifespan)
+app = FastAPI(title="MPLADS Ecosystem API", lifespan=lifespan)
 
 # the Vite dev server by default; a deployment serving the frontend from
 # another origin lists it in CORS_ORIGINS (comma-separated)
@@ -238,9 +238,14 @@ class LoginRequest(BaseModel):
     entity: str | None = Field(default=None, max_length=300)  # e.g. a state name, "State|District", an MP name, an agency name - None for mospi
 
 
+def _client(request: Request) -> str:
+    """The caller's address - the real one behind Caddy, via --proxy-headers."""
+    return request.client.host if request.client else "unknown"
+
+
 @app.post("/api/auth/login")
 def login(body: LoginRequest, request: Request):
-    client = request.client.host if request.client else "unknown"
+    client = _client(request)
     auth.check_login_allowed(client, body.role)
     if not auth.verify_password(body.role, body.password):
         auth.record_login_failure(client, body.role)
@@ -549,9 +554,10 @@ def get_work(
 
 @app.post("/api/narrative")
 def post_narrative(
-    work_number: str, scope_house: str, scope_tenure: str, finding_id: str,
+    work_number: str, scope_house: str, scope_tenure: str, finding_id: str, request: Request,
     claims: dict = Depends(auth.get_current_claims),
 ):
+    auth.check_rate("narrative", _client(request), limit=30, window=600)
     s = get_store()
     work = s.work(work_number, scope_house, scope_tenure)
     if work is None:
@@ -683,7 +689,7 @@ class TranslateRequest(BaseModel):
 
 
 @app.post("/api/translate")
-def post_translate(req: TranslateRequest, claims: dict = Depends(auth.get_current_claims)):
+def post_translate(req: TranslateRequest, request: Request, claims: dict = Depends(auth.get_current_claims)):
     """English -> `lang` for the DATA strings on whatever page the caller is
     showing (work descriptions, place/person/agency names) - the text that
     comes out of the source CSVs in English only, so the frontend's own
@@ -694,6 +700,7 @@ def post_translate(req: TranslateRequest, claims: dict = Depends(auth.get_curren
     reveals nothing new. Returns only what it could translate - anything
     missing from the map stays English on screen (see api/translate.py).
     """
+    auth.check_rate("translate", _client(request), limit=120, window=600)
     return translate_service.translate(req.texts, req.lang)
 
 
@@ -720,7 +727,7 @@ def post_predict_risk(body: PredictRiskRequest, claims: dict = Depends(auth.get_
 
 @app.get("/api/work/{work_number}/ai_assessment")
 def get_work_ai_assessment(
-    work_number: str, scope_house: str, scope_tenure: str,
+    work_number: str, scope_house: str, scope_tenure: str, request: Request,
     claims: dict = Depends(auth.get_current_claims),
 ):
     """Composite read on one work: the rule-based findings already on file,
@@ -729,6 +736,7 @@ def get_work_ai_assessment(
     that restate the rules, not an independent risk signal), and the
     constrained LLM narrative for the most severe finding. A value the models
     could not compute comes back as null, never a stand-in number."""
+    auth.check_rate("ai_assessment", _client(request), limit=60, window=600)
     s = get_store()
     work = s.work(work_number, scope_house, scope_tenure)
     if work is None:
@@ -1589,4 +1597,4 @@ def post_mentions_seen(claims: dict = Depends(auth.get_current_claims)):
 
 @app.get("/")
 def root():
-    return {"service": "MPLADS Anomaly Review API", "docs": "/docs"}
+    return {"service": "MPLADS Ecosystem API", "docs": "/docs"}

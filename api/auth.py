@@ -40,6 +40,10 @@ PICKER_LISTS = {"state": {"states"}, "district": {"states", "districts"}, "mp": 
 LOGIN_MAX_FAILURES = 5
 LOGIN_WINDOW_SECONDS = 5 * 60
 
+# the same sentence is a key in web/src/strings.js, so the frontend shows it
+# in the reader's language
+TOO_MANY_REQUESTS = "Too many requests. Wait a few minutes and try again."
+
 
 def _secret() -> bytes:
     secret = os.environ.get("AUTH_SECRET")
@@ -107,6 +111,28 @@ def record_login_failure(client: str, role: str) -> None:
 def clear_login_failures(client: str, role: str) -> None:
     with _failures_lock:
         _failures.pop((client, role), None)
+
+
+_hits: dict[tuple[str, str], deque] = {}
+_hits_lock = threading.Lock()
+
+
+def check_rate(bucket: str, client: str, limit: int, window: int) -> None:
+    """429 once a client has made `limit` calls to `bucket` within `window`
+    seconds. Guards the endpoints that call the paid LLM API: the sign-in page
+    lists the demo passwords, so anyone could otherwise run up the bill."""
+    now = time.time()
+    with _hits_lock:
+        if len(_hits) > 10_000:  # forget clients whose window has passed
+            for key in [k for k, q in _hits.items() if not q or q[-1] <= now - window]:
+                del _hits[key]
+        q = _hits.setdefault((bucket, client), deque())
+        while q and q[0] <= now - window:
+            q.popleft()
+        if len(q) >= limit:
+            raise HTTPException(429, TOO_MANY_REQUESTS,
+                                headers={"Retry-After": str(int(q[0] + window - now) + 1)})
+        q.append(now)
 
 
 def issue_token(role: str, entity: str | None, purpose: str = "session") -> str:

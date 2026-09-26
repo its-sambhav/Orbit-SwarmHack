@@ -22,8 +22,10 @@ AGENCY = {"role": "agency", "entity": "PWD"}
 @pytest.fixture(autouse=True)
 def fresh_limiter():
     auth._failures.clear()
+    auth._hits.clear()
     yield
     auth._failures.clear()
+    auth._hits.clear()
 
 
 def bearer(claims: dict, purpose: str = "session") -> dict:
@@ -159,3 +161,23 @@ def test_alert_digest_is_cut_to_the_callers_jurisdiction():
 
 def test_cors_allows_only_configured_origins():
     assert "*" not in main.CORS_ORIGINS
+
+
+def test_rate_limit_is_per_client_and_per_bucket():
+    from fastapi import HTTPException
+    for _ in range(3):
+        auth.check_rate("t", "1.2.3.4", limit=3, window=60)
+    with pytest.raises(HTTPException) as err:
+        auth.check_rate("t", "1.2.3.4", limit=3, window=60)
+    assert err.value.status_code == 429 and int(err.value.headers["Retry-After"]) > 0
+    auth.check_rate("t", "5.6.7.8", limit=3, window=60)       # another client: unaffected
+    auth.check_rate("other", "1.2.3.4", limit=3, window=60)   # another bucket: unaffected
+
+
+def test_translate_endpoint_is_rate_limited():
+    # lang "en" returns at once without calling the LLM, so this is cheap
+    headers = bearer(MOSPI)
+    for _ in range(120):
+        assert client.post("/api/translate", json={"lang": "en", "texts": ["x"]}, headers=headers).status_code == 200
+    res = client.post("/api/translate", json={"lang": "en", "texts": ["x"]}, headers=headers)
+    assert res.status_code == 429 and res.json()["detail"] == auth.TOO_MANY_REQUESTS
