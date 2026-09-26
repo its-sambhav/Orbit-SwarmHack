@@ -79,8 +79,8 @@ export function ProjectLifecycleBarChart({ sectors = [], title = 'Project Lifecy
   const worst = done.reduce((a, b) => (b.rate < a.rate ? b : a), done[0])
 
   // geometry (viewBox units; the SVG scales to the card's width)
-  const W = 600, H = 250
-  const pad = { top: 22, right: 8, bottom: 44, left: 52 }
+  const W = 600, H = 265
+  const pad = { top: 26, right: 10, bottom: 53, left: 62 }
   const plotW = W - pad.left - pad.right, plotH = H - pad.top - pad.bottom
   const groupW = plotW / Math.max(rows.length, 1)
   const barW = Math.min(18, (groupW - 22) / METRICS.length)
@@ -122,11 +122,11 @@ export function ProjectLifecycleBarChart({ sectors = [], title = 'Project Lifecy
       {rows.length ? (
         <div className="lc-chart" onMouseLeave={() => setHover(null)}>
           <svg viewBox={`0 0 ${W} ${H}`} className="lc-svg" role="img" aria-label={t(title)}>
-            <text x={2} y={11} className="lc-scale-note">{t('√ scale')}</text>
+            <text x={2} y={13} className="lc-scale-note">{t('√ scale')}</text>
             {ticks.map((v) => (
               <g key={v}>
                 <line x1={pad.left} x2={W - pad.right} y1={y(v)} y2={y(v)} className={v === 0 ? 'lc-axis' : 'lc-grid'} />
-                <text x={pad.left - 8} y={y(v) + 3.5} textAnchor="end" className="lc-tick">{axisLabel(v)}</text>
+                <text x={pad.left - 8} y={y(v) + 4} textAnchor="end" className="lc-tick">{axisLabel(v)}</text>
               </g>
             ))}
             {rows.map((s, i) => {
@@ -144,9 +144,9 @@ export function ProjectLifecycleBarChart({ sectors = [], title = 'Project Lifecy
                     const h = Math.max(frac(v) * plotH, v > 0 ? 2 : 0) // 2px floor: a real non-zero value never vanishes
                     return <rect key={m.key} x={gx + j * (barW + gap)} y={pad.top + plotH - h} width={barW} height={h} rx={3} fill={m.color} />
                   })}
-                  <text x={cx} y={y(Math.max(...METRICS.map((m) => val(s, m.key)))) - 6} textAnchor="middle" className="lc-value">{axisLabel(Math.max(val(s, 'recommended'), val(s, 'sanctioned')))}</text>
-                  <text x={cx} y={H - pad.bottom + 16} textAnchor="middle" className="lc-xlabel">
-                    {twoLines(t(s.sector)).map((line, k) => <tspan key={k} x={cx} dy={k ? 14 : 0}>{line}</tspan>)}
+                  <text x={cx} y={y(Math.max(...METRICS.map((m) => val(s, m.key)))) - 7} textAnchor="middle" className="lc-value">{axisLabel(Math.max(val(s, 'recommended'), val(s, 'sanctioned')))}</text>
+                  <text x={cx} y={H - pad.bottom + 19} textAnchor="middle" className="lc-xlabel">
+                    {twoLines(t(s.sector)).map((line, k) => <tspan key={k} x={cx} dy={k ? 17 : 0}>{line}</tspan>)}
                   </text>
                 </g>
               )

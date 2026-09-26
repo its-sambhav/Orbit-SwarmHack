@@ -129,7 +129,7 @@ export function AgencyView() {
           <div className="map-drill-header">
             <Breadcrumb items={[{ label: data.agency }]} />
             <h1 style={{ margin: '4px 0 2px' }}>{td(data.agency)}</h1>
-            <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 13 }}>
+            <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 15.5 }}>
               {t('Implementing Agency · {scope}', { scope: t(scopeLabel(scope)) })}
             </div>
             <div className="report-toolbar">

@@ -90,7 +90,7 @@
    size - some pages left this to the browser default before, others used a
    smaller one-off size; both are fixed by this one rule. */
 h1 {
-  font-size: 23px;
+  font-size: 27.5px;
   font-weight: 600;
   letter-spacing: -0.01em;
   margin: 0 0 4px;
@@ -107,7 +107,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: 18px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }

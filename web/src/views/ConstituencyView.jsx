@@ -222,7 +222,7 @@ export function ConstituencyView() {
                 <span className="value num">{scorecard.state_median_completion_rate != null ? `${scorecard.state_median_completion_rate.toFixed(0)}%` : '—'}</span>
               </div>
               {completionDelta != null && (
-                <p style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 6 }}>
+                <p style={{ fontSize: 14.5, color: 'var(--ink-muted)', marginTop: 6 }}>
                   {t('{dir} national median by {points} points.', {
                     dir: t(completionDelta >= 0 ? 'Above' : 'Below'), points: Math.abs(completionDelta).toFixed(0),
                   })}

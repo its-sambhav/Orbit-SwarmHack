@@ -25,6 +25,16 @@ function niceStep(max) {
   return [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw)
 }
 
+// a stage's hint split at the space nearest its middle, so the four hints
+// don't run into each other under their columns
+function twoLines(text) {
+  if (text.length <= 14 || !text.includes(' ')) return [text]
+  const mid = text.length / 2
+  let best = -1
+  for (let i = 0; i < text.length; i++) if (text[i] === ' ' && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i
+  return [text.slice(0, best), text.slice(best + 1)]
+}
+
 // a bar with 4px rounded corners on its data end, square on the baseline
 function barPath(x, y, w, h) {
   const r = Math.min(4, h, w / 2)
@@ -75,8 +85,8 @@ export function PipelineCard({ pipeline, title = 'Where works are in the pipelin
 
   // geometry (viewBox units; the SVG scales to the card's width). Both axes
   // share the same four gridlines: works on the left, flagged % on the right.
-  const W = 600, H = 300
-  const pad = { top: 24, right: 58, bottom: 50, left: 62 }
+  const W = 600, H = 316
+  const pad = { top: 29, right: 58, bottom: 60, left: 62 }
   const plotW = W - pad.left - pad.right, plotH = H - pad.top - pad.bottom
   const base = pad.top + plotH
   const worksStep = Math.max(1, niceStep(Math.max(...rows.map((r) => r.works), 1)))
@@ -93,11 +103,11 @@ export function PipelineCard({ pipeline, title = 'Where works are in the pipelin
     const py = r.share == null ? null : yShare(r.share)
     // the count sits inside the bar's foot when it fits and the line's point
     // isn't there; otherwise just above the bar
-    const inside = h >= 26 && (py == null || py < base - 34)
-    const countY = inside ? base - 9 : base - h - 6
+    const inside = h >= 31 && (py == null || py < base - 41)
+    const countY = inside ? base - 11 : base - h - 7
     // the % label rides above its point, nudged clear of the count
-    let pctY = py == null ? null : py - 10
-    if (pctY != null && Math.abs(pctY - countY) < 13) pctY = Math.min(pctY, countY) - 13
+    let pctY = py == null ? null : py - 12
+    if (pctY != null && Math.abs(pctY - countY) < 16) pctY = Math.min(pctY, countY) - 16
     return { ...r, cx, h, py, inside, countY, pctY }
   })
   const linePts = marks.filter((m) => m.py != null).map((m) => `${m.cx},${m.py}`).join(' ')
@@ -133,8 +143,8 @@ export function PipelineCard({ pipeline, title = 'Where works are in the pipelin
             return (
               <g key={k}>
                 <line x1={pad.left} x2={W - pad.right} y1={y} y2={y} className={k === 0 ? 'lc-axis' : 'lc-grid'} />
-                <text x={pad.left - 8} y={y + 3.5} textAnchor="end" className="lc-tick">{short(worksStep * k)}</text>
-                <text x={W - pad.right + 8} y={y + 3.5} className="lc-tick">{`${+(shareStep * k).toFixed(1)}%`}</text>
+                <text x={pad.left - 8} y={y + 4} textAnchor="end" className="lc-tick">{short(worksStep * k)}</text>
+                <text x={W - pad.right + 8} y={y + 4} className="lc-tick">{`${+(shareStep * k).toFixed(1)}%`}</text>
               </g>
             )
           })}
@@ -149,8 +159,10 @@ export function PipelineCard({ pipeline, title = 'Where works are in the pipelin
               <text x={m.cx} y={m.countY} textAnchor="middle" className={`lc-value${m.inside && m.rollup ? ' pc-on-dark' : ''}`}>
                 {m.works.toLocaleString('en-IN')}
               </text>
-              <text x={m.cx} y={base + 16} textAnchor="middle" className="lc-xlabel">{t(m.label)}</text>
-              <text x={m.cx} y={base + 30} textAnchor="middle" className="lc-tick">{t(m.hint)}</text>
+              <text x={m.cx} y={base + 19} textAnchor="middle" className="lc-xlabel">{t(m.label)}</text>
+              <text x={m.cx} y={base + 36} textAnchor="middle" className="lc-tick">
+                {twoLines(t(m.hint)).map((line, k) => <tspan key={k} x={m.cx} dy={k ? 15 : 0}>{line}</tspan>)}
+              </text>
             </g>
           ))}
 
