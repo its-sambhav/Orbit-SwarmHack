@@ -15,5 +15,7 @@ npm ci --no-audit --no-fund
 npm run build
 sudo rsync -a --delete dist/ /var/www/mplads/
 
+# re-apply the service and Caddy site from the repo, then restart the API
+bash "$APP/deploy/oracle/configure.sh"
 sudo systemctl restart mplads-api
 echo "Redeployed. The API takes 30-60 s to load its data again."

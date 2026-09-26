@@ -1,21 +1,51 @@
-# systemd unit for the API - deploy/oracle/setup.sh fills in __APP__ and
+# systemd unit for the API - deploy/oracle/configure.sh fills in __APP__ and
 # __USER__ and installs it as /etc/systemd/system/mplads-api.service.
 # One worker on purpose: each worker loads its own ~4 GB copy of the data,
 # and the sign-in lockout counts failures per process.
 [Unit]
-Description=MPLADS Review API
+Description=MPLADS Ecosystem API
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 User=__USER__
 WorkingDirectory=__APP__
+Environment=PYTHONDONTWRITEBYTECODE=1
 # --proxy-headers: behind Caddy every request comes from 127.0.0.1, so the
 # real client address (for the sign-in lockout) is read from X-Forwarded-For
-ExecStart=__APP__/.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
+ExecStart=__APP__/.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-server-header
 Restart=on-failure
 RestartSec=5
 TimeoutStartSec=300
+
+# Sandbox: the API reads the app and its Python, writes only under data/
+# (comments, attachments, reports, statuses, caches), and can't gain
+# privileges or reach the kernel, devices, other users' files or processes
+NoNewPrivileges=yes
+UMask=0077
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=__APP__/data
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RemoveIPC=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 [Install]
 WantedBy=multi-user.target

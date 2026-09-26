@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# One-time setup of a fresh Oracle Cloud Ubuntu 24.04 (Ampere A1) server,
-# run on the server from the cloned repo once data/ has been unpacked into it:
+# One-time setup of a fresh Ubuntu 24.04 server (Oracle Ampere A1, Google Cloud
+# e2, AWS EC2 ...), run on the server from the cloned repo once data/ has been
+# unpacked into it:
 #
-#     bash deploy/oracle/setup.sh <host>
+#     bash deploy/oracle/setup.sh "<host>[, <host> ...]"
 #
-# <host> is the public name Caddy gets an HTTPS certificate for - the
-# server's IP with dashes plus .sslip.io (140-238-10-20.sslip.io), or your
-# own domain pointed at the server. Safe to re-run.
+# <host> is a public name Caddy gets an HTTPS certificate for: the server's IP
+# with dashes plus .sslip.io (140-238-10-20.sslip.io), and/or your own domain
+# once its DNS points here. Safe to re-run.
 set -euo pipefail
 
-HOST="${1:?usage: bash deploy/oracle/setup.sh <host, e.g. 140-238-10-20.sslip.io>}"
+HOST="${1:?usage: bash deploy/oracle/setup.sh \"<host>[, <host> ...]\", e.g. 140-238-10-20.sslip.io}"
 APP="$(cd "$(dirname "$0")/../.." && pwd)"
 WEB_ROOT=/var/www/mplads
 export PATH="$HOME/.local/bin:$PATH"
@@ -20,9 +21,12 @@ if [ ! -f "$APP/data/processed/spine.parquet" ]; then
 fi
 
 echo "== system packages"
+# wait out any first-boot apt run instead of failing on the dpkg lock
+echo 'DPkg::Lock::Timeout "600";' | sudo tee /etc/apt/apt.conf.d/99lock-timeout >/dev/null
 sudo apt-get update -q
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq git rsync curl gnupg \
-  debian-keyring debian-archive-keyring apt-transport-https iptables-persistent
+  debian-keyring debian-archive-keyring apt-transport-https iptables-persistent \
+  fail2ban python3-systemd unattended-upgrades
 
 echo "== firewall: open 80 and 443 (Oracle's Ubuntu image rejects all but SSH)"
 for port in 80 443; do
@@ -33,6 +37,21 @@ for port in 80 443; do
   fi
 done
 sudo netfilter-persistent save
+
+echo "== SSH: key-only sign-in, repeated failures banned (fail2ban)"
+# sshd keeps the first value it reads, so this loads before any cloud-init file
+printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\n' \
+  | sudo tee /etc/ssh/sshd_config.d/01-mplads-hardening.conf >/dev/null
+sudo sshd -t
+sudo systemctl reload ssh 2>/dev/null || true
+printf '[sshd]\nenabled = true\nbackend = systemd\nmaxretry = 5\nbantime = 1h\n' \
+  | sudo tee /etc/fail2ban/jail.d/sshd.local >/dev/null
+sudo systemctl enable fail2ban >/dev/null 2>&1
+sudo systemctl restart fail2ban
+
+echo "== automatic security updates"
+printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' \
+  | sudo tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null
 
 echo "== Node 22 (Ubuntu's own nodejs is too old for Vite)"
 if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 22 ]; then
@@ -49,15 +68,8 @@ uv pip install --python .venv -r requirements.txt
 if [ ! -f .env ]; then
   echo "== .env with a fresh AUTH_SECRET"
   printf 'AUTH_SECRET=%s\nOPENROUTER_API_KEY=\n' "$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" > .env
-  chmod 600 .env
 fi
-
-echo "== API service"
-sed "s#__APP__#$APP#g; s#__USER__#$(id -un)#g" deploy/oracle/mplads-api.service \
-  | sudo tee /etc/systemd/system/mplads-api.service >/dev/null
-sudo systemctl daemon-reload
-sudo systemctl enable mplads-api
-sudo systemctl restart mplads-api
+chmod 600 .env
 
 echo "== frontend build"
 cd "$APP/web"
@@ -75,9 +87,12 @@ if ! command -v caddy >/dev/null; then
   sudo apt-get update -q
   sudo apt-get install -yq caddy
 fi
-sed "s#__HOST__#$HOST#g; s#__WEB_ROOT__#$WEB_ROOT#g" "$APP/deploy/oracle/Caddyfile" \
-  | sudo tee /etc/caddy/Caddyfile >/dev/null
-sudo systemctl reload caddy || sudo systemctl restart caddy
+echo "$HOST" | sudo tee /etc/caddy/mplads-hosts >/dev/null
+
+echo "== API service and Caddy site"
+bash "$APP/deploy/oracle/configure.sh"
+sudo systemctl enable mplads-api >/dev/null 2>&1
+sudo systemctl restart mplads-api
 
 echo "== waiting for the API to load its data (30-60 s)"
 code=000
@@ -91,4 +106,4 @@ if [ "$code" = 401 ]; then
 else
   echo "API not answering yet (got $code) - check: journalctl -u mplads-api -n 50" >&2
 fi
-echo "Done: https://$HOST  (first HTTPS request can take a few seconds while Caddy gets the certificate)"
+echo "Done: https://${HOST%%,*}  (first HTTPS request can take a few seconds while Caddy gets the certificate)"

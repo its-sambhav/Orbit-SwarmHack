@@ -1,8 +1,35 @@
-# Caddy site for the app - deploy/oracle/setup.sh fills in __HOST__ and
-# __WEB_ROOT__ and installs it as /etc/caddy/Caddyfile. Caddy gets and
-# renews the HTTPS certificate for __HOST__ on its own.
+# Caddy site for the app - deploy/oracle/configure.sh fills in __HOST__ (the
+# names in /etc/caddy/mplads-hosts) and __WEB_ROOT__ and installs it as
+# /etc/caddy/Caddyfile. Caddy gets and renews the HTTPS certificates itself.
 __HOST__ {
 	encode zstd gzip
+
+	# the largest legitimate upload is a report's PDF (~15 MB as base64);
+	# anything bigger is cut off here, before it reaches the API
+	request_body {
+		max_size 25MB
+	}
+
+	header {
+		# HTTPS only, remembered for a year
+		Strict-Transport-Security "max-age=31536000"
+		# no MIME sniffing (uploaded attachments) and no framing (clickjacking)
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		# scripts only from this site; styles and fonts also from Google Fonts,
+		# and React's style attributes need 'unsafe-inline' (styles only)
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		-Server
+	}
+
+	# hashed build files never change; everything else is revalidated, so a
+	# redeploy reaches every browser straight away
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	@not_assets not path /assets/*
+	header @not_assets Cache-Control "no-cache"
 
 	# only the API and its map files reach uvicorn - /docs stays private
 	@backend path /api/* /static/*
@@ -15,5 +42,12 @@ __HOST__ {
 		root * __WEB_ROOT__
 		try_files {path} /index.html
 		file_server
+	}
+
+	# the API is down or still loading its data after a restart: a JSON error
+	# the frontend shows as "the server is restarting"
+	handle_errors 502 503 504 {
+		header Content-Type application/json
+		respond `{"detail":"The server is restarting or busy. Try again in a minute."}` 503
 	}
 }
