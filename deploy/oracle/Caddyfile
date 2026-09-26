@@ -21,7 +21,9 @@ __HOST__ {
 		# scripts only from this site; styles and fonts also from Google Fonts,
 		# and React's style attributes need 'unsafe-inline' (styles only)
 		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		# don't advertise the server software
 		-Server
+		-Via
 	}
 
 	# hashed build files never change; everything else is revalidated, so a
