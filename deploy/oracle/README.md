@@ -1,9 +1,9 @@
 # Deploying on Oracle Cloud (Always Free)
 
 One Ampere A1 server runs everything: Caddy serves the built frontend over
-HTTPS and forwards `/api` to the API. The pipeline outputs in `data/` are
-built on your own machine and copied up - `data/` is not in git, and the API
-never reads the source CSVs, so the server skips them.
+HTTPS and forwards `/api` to the API. The server gets the whole project: the
+code and source CSVs from git (with Git LFS), and the complete `data/` folder
+- built on your own machine, not in git - copied up as it is.
 
 The API holds about 4 GB of RAM once loaded, which is why this needs the A1
 shape rather than any 1 GB free server.
@@ -45,7 +45,8 @@ If ssh rejects the key as unprotected:
 Connect from PowerShell with `ssh -i C:\path\to\ssh-key.key ubuntu@<PUBLIC_IP>`, then on the server:
 
 ```bash
-GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/its-sambhav/Orbit-SwarmHack.git ~/app
+sudo apt-get update && sudo apt-get install -y git-lfs && git lfs install
+git clone https://github.com/its-sambhav/Orbit-SwarmHack.git ~/app
 tar -xzf ~/mplads-data.tgz -C ~/app && rm ~/mplads-data.tgz
 bash ~/app/deploy/oracle/setup.sh <HOST>
 ```
