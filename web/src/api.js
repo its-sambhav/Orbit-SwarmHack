@@ -22,7 +22,41 @@ export function getAuthInfo() {
   }
 }
 
+// the picker token a correct role password earns before an entity is picked
+// (api/auth.py) - held in memory for that one step, never stored: it reads
+// only that role's pick list and is no session.
+let pickerToken = null
+
+export function setPickerToken(token) {
+  pickerToken = token
+  getCache.clear()
+}
+
+// the token's own expiry, read from its payload (signed, not secret - the
+// API still checks the signature) so an expired session is dropped before
+// a page renders whose every request would fail
+function tokenExpired(token) {
+  try {
+    const { exp } = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')))
+    return !exp || exp * 1000 <= Date.now()
+  } catch {
+    return true
+  }
+}
+
+// the signed-in session, or null when signed out or expired
+export function getSession() {
+  const auth = getAuthInfo()
+  if (!auth?.token) return null
+  if (tokenExpired(auth.token)) {
+    clearAuthToken()
+    return null
+  }
+  return auth
+}
+
 export function setAuthToken(token, role, entity) {
+  pickerToken = null
   try {
     localStorage.setItem(AUTH_KEY, JSON.stringify({ token, role, entity }))
   } catch {
@@ -36,6 +70,7 @@ export function setAuthToken(token, role, entity) {
 }
 
 export function clearAuthToken() {
+  pickerToken = null
   try {
     localStorage.removeItem(AUTH_KEY)
   } catch {
@@ -45,8 +80,17 @@ export function clearAuthToken() {
 }
 
 function authHeaders() {
-  const auth = getAuthInfo()
-  return auth?.token ? { Authorization: `Bearer ${auth.token}` } : {}
+  const token = getAuthInfo()?.token || pickerToken
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+// a 401 on a signed-in request means the session is gone (expired, or the
+// server's AUTH_SECRET rotated) - drop it and start over at the sign-in page
+function checkSession(res) {
+  if (res.status === 401 && getAuthInfo()?.token) {
+    clearAuthToken()
+    window.location.replace('/?expired=1')
+  }
 }
 
 async function get(path, params = {}) {
@@ -58,6 +102,7 @@ async function get(path, params = {}) {
   const promise = (async () => {
     const res = await fetch(url, { headers: authHeaders() })
     if (!res.ok) {
+      checkSession(res)
       const body = await res.json().catch(() => ({}))
       throw new Error(body.detail || `${res.status} ${res.statusText}`)
     }
@@ -108,6 +153,7 @@ async function getFresh(path, params = {}) {
   ).toString()
   const res = await fetch(`${BASE}${path}${qs ? `?${qs}` : ''}`, { headers: authHeaders() })
   if (!res.ok) {
+    checkSession(res)
     const body = await res.json().catch(() => ({}))
     throw new Error(body.detail || `${res.status} ${res.statusText}`)
   }
@@ -118,6 +164,7 @@ async function post(path, params = {}) {
   const qs = new URLSearchParams(params).toString()
   const res = await fetch(`${BASE}${path}?${qs}`, { method: 'POST', headers: authHeaders() })
   if (!res.ok) {
+    checkSession(res)
     const body = await res.json().catch(() => ({}))
     throw new Error(body.detail || `${res.status} ${res.statusText}`)
   }
@@ -131,6 +178,8 @@ async function postJson(path, body) {
     body: JSON.stringify(body),
   })
   if (!res.ok) {
+    // a wrong password at the sign-in form is not a lost session
+    if (path !== '/auth/login') checkSession(res)
     const errBody = await res.json().catch(() => ({}))
     // status rides along so a caller can tell failures apart (the login page
     // needs 400 "entity required" vs 401 "wrong password").
@@ -146,6 +195,7 @@ async function patchJson(path, body) {
     body: JSON.stringify(body),
   })
   if (!res.ok) {
+    checkSession(res)
     const errBody = await res.json().catch(() => ({}))
     throw Object.assign(new Error(errBody.detail || `${res.status} ${res.statusText}`), { status: res.status })
   }
@@ -159,6 +209,7 @@ async function postFile(path, file) {
   form.append('file', file)
   const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: authHeaders(), body: form })
   if (!res.ok) {
+    checkSession(res)
     const errBody = await res.json().catch(() => ({}))
     throw Object.assign(new Error(errBody.detail || `${res.status} ${res.statusText}`), { status: res.status })
   }
@@ -168,6 +219,7 @@ async function postFile(path, file) {
 async function fetchBlob(path, filename) {
   const res = await fetch(`${BASE}${path}`, { headers: authHeaders() })
   if (!res.ok) {
+    checkSession(res)
     const errBody = await res.json().catch(() => ({}))
     throw new Error(errBody.detail || `${res.status} ${res.statusText}`)
   }
@@ -184,6 +236,7 @@ async function fetchBlob(path, filename) {
 async function del(path) {
   const res = await fetch(`${BASE}${path}`, { method: 'DELETE', headers: authHeaders() })
   if (!res.ok) {
+    checkSession(res)
     const body = await res.json().catch(() => ({}))
     throw new Error(body.detail || `${res.status} ${res.statusText}`)
   }

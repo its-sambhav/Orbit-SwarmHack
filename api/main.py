@@ -14,17 +14,19 @@ predicts delay risk, it doesn't detect anything that already happened).
 import base64
 import json
 import math
+import os
 import re
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from typing import Literal
 
 import numpy as np
 import pandas as pd
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.data import get_store, SCOPES, SCOPE_LABELS, GEO_DIR
 from api.narrative import generate_narrative
@@ -71,9 +73,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="MPLADS Anomaly Review API", lifespan=lifespan)
 
+# the Vite dev server by default; a deployment serving the frontend from
+# another origin lists it in CORS_ORIGINS (comma-separated)
+CORS_ORIGINS = [o.strip() for o in os.environ.get(
+    "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # prototype - single local demo, not multi-tenant
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -97,6 +103,33 @@ def clean(obj):
     if obj is pd.NaT:
         return None
     return obj
+
+
+@lru_cache(maxsize=4096)
+def _mp_seats(mp_name: str) -> tuple[frozenset, frozenset]:
+    """(states, constituency ids) an MP's works sit in, over every tenure."""
+    sp = get_store().spine
+    rows = sp[sp["MP_NAME"].str.casefold() == mp_name.strip().casefold()]
+    states = frozenset(rows["STATE_NAME"].dropna().str.strip().str.casefold())
+    seats = frozenset(rows["CONSTITUENCY_ID"].dropna().astype("Int64").astype(str))
+    return states, seats
+
+
+def allowed_states(claims: dict) -> set[str] | None:
+    """The states (casefolded) a session may see place-level data for; None
+    means every state (MoSPI). A district sees its own state's places, an MP
+    the states its seats are in, and an agency - which has no geography of
+    its own - none."""
+    role, entity = claims["role"], (claims.get("entity") or "").strip()
+    if role == "mospi":
+        return None
+    if role == "state":
+        return {entity.casefold()}
+    if role == "district":
+        return {entity.split("|", 1)[0].strip().casefold()}
+    if role == "mp":
+        return set(_mp_seats(entity)[0])
+    return set()
 
 
 def stage_counts(sp: pd.DataFrame) -> dict:
@@ -201,23 +234,32 @@ def category_breakdown(sp: pd.DataFrame, wr: pd.DataFrame) -> list[dict]:
 
 class LoginRequest(BaseModel):
     role: Literal["mospi", "state", "district", "agency", "mp"]
-    password: str
-    entity: str | None = None  # e.g. a state name, "State|District", an MP name, an agency name - None for mospi
+    password: str = Field(max_length=200)
+    entity: str | None = Field(default=None, max_length=300)  # e.g. a state name, "State|District", an MP name, an agency name - None for mospi
 
 
 @app.post("/api/auth/login")
-def login(body: LoginRequest):
+def login(body: LoginRequest, request: Request):
+    client = request.client.host if request.client else "unknown"
+    auth.check_login_allowed(client, body.role)
     if not auth.verify_password(body.role, body.password):
+        auth.record_login_failure(client, body.role)
         raise HTTPException(401, "incorrect password")
+    auth.clear_login_failures(client, body.role)
     if body.role != "mospi" and not (body.entity or "").strip():
-        raise HTTPException(400, "entity is required for this role")
+        # the password was right, but this role still has to pick which
+        # state/district/MP/agency it is - a short-lived picker token reads
+        # just that role's pick list, nothing else
+        return {"needs_entity": True, "role": body.role,
+                "picker_token": auth.issue_token(body.role, None, purpose="picker"),
+                "expires_in_seconds": auth.PICKER_TTL_SECONDS}
     entity = None if body.role == "mospi" else body.entity.strip()
     token = auth.issue_token(body.role, entity)
     return {"token": token, "role": body.role, "entity": entity, "expires_in_seconds": auth.TOKEN_TTL_SECONDS}
 
 
 @app.get("/api/meta")
-def get_meta():
+def get_meta(claims: dict = Depends(auth.get_current_claims)):
     s = get_store()
     in_scope_spine = s.spine[s.spine["SCOPE_TENURE"].isin(s.demo_scopes)]
     in_scope_flagged = s.work_risk[s.work_risk["in_demo_scope"] & s.work_risk["is_substantive"]]
@@ -249,7 +291,8 @@ def get_meta():
 
 
 @app.get("/api/funnel")
-def get_funnel(scope: str = Query("all"), date_from: str | None = None, date_to: str | None = None):
+def get_funnel(scope: str = Query("all"), date_from: str | None = None, date_to: str | None = None,
+               claims: dict = Depends(auth.require_mospi)):
     s = get_store()
     sp, wr, *_ = s.risk_tables(scope, date_from, date_to)
     # total_amount = best-known value per work (sanctioned amount once sanctioned,
@@ -296,7 +339,8 @@ def get_funnel(scope: str = Query("all"), date_from: str | None = None, date_to:
 
 
 @app.get("/api/analytics")
-def get_analytics(scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None):
+def get_analytics(scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None,
+                  claims: dict = Depends(auth.require_mospi)):
     """Aggregate finding counts for the MoSPI landing page's analytics charts -
     severity/tag/stage distributions plus the top states by risk. Every number
     is a live groupby over the in-memory findings/state_risk tables, nothing
@@ -324,9 +368,12 @@ def get_analytics(scope: str = Query("18th Lok Sabha"), date_from: str | None = 
 
 
 @app.get("/api/constituencies")
-def get_constituencies(scope: str = Query("all")):
+def get_constituencies(scope: str = Query("all"), claims: dict = Depends(auth.get_current_claims)):
     s = get_store()
     cr = s.constituency_risk_for_scope(scope)
+    states = allowed_states(claims)
+    if states is not None:
+        cr = cr[cr["state"].fillna("").str.strip().str.casefold().isin(states)]
     out = []
     for _, row in cr.iterrows():
         cid = str(int(row["CONSTITUENCY_ID"]))
@@ -378,8 +425,9 @@ def get_queue(
     max_amount: float | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    claims: dict = Depends(auth.require_mospi),
 ):
     s = get_store()
     wr = s.work_risk if scope == "all" else s.work_risk[s.work_risk["scope_tenure"] == scope]
@@ -658,7 +706,7 @@ class PredictRiskRequest(BaseModel):
 
 
 @app.post("/api/predict_risk")
-def post_predict_risk(body: PredictRiskRequest):
+def post_predict_risk(body: PredictRiskRequest, claims: dict = Depends(auth.get_current_claims)):
     """Standalone, model-only endpoint - the raw predictive signal for any
     hypothetical (amount, state, activity, month[, district]), independent
     of any one real work. Mirrors the /api/work/{n}/ai_assessment inputs so a
@@ -711,13 +759,21 @@ def get_work_ai_assessment(
 
 
 @app.get("/api/constituency/{constituency_id}")
-def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None):
+def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha"), date_from: str | None = None, date_to: str | None = None,
+                     claims: dict = Depends(auth.get_current_claims)):
     s = get_store()
     spine, wr_all, _, _, cr = s.risk_tables(scope, date_from, date_to)
     row = cr[cr["CONSTITUENCY_ID"].astype("Int64").astype(str) == constituency_id]
     if row.empty:
         raise HTTPException(404, f"no constituency {constituency_id} in scope {scope}")
     row = row.iloc[0]
+    # a state/district desk may open any seat in its own state, an MP only
+    # its own seats, and an agency none (it has no geography of its own)
+    states = allowed_states(claims)
+    if states is not None and (row["state"] or "").strip().casefold() not in states:
+        raise HTTPException(403, "this token is not scoped to that constituency")
+    if claims["role"] == "mp" and constituency_id not in _mp_seats(claims["entity"])[1]:
+        raise HTTPException(403, "this token is not scoped to that constituency")
 
     sp = spine[spine["CONSTITUENCY_ID"].astype("Int64").astype(str) == constituency_id]
     completion_rate = float(sp["has_completed"].sum() / sp["has_sanctioned"].sum() * 100) if sp["has_sanctioned"].sum() else None
@@ -786,10 +842,12 @@ def get_constituency(constituency_id: str, scope: str = Query("18th Lok Sabha"),
 
 
 @app.get("/api/states")
-def get_states(scope: str = Query("all"), date_from: str | None = None, date_to: str | None = None):
+def get_states(scope: str = Query("all"), date_from: str | None = None, date_to: str | None = None,
+               claims: dict = Depends(auth.session_or_picker("states"))):
     """State Nodal Authority role picker + the state-breakdown table on the
     MoSPI dashboard. Covers all 4 scopes uniformly (STATE_NAME is populated
     regardless of house, unlike CONSTITUENCY - see docs/SCHEMA.md)."""
+    auth.require_picker_or_mospi(claims)
     s = get_store()
     _, _, sr, _, _ = s.risk_tables(scope, date_from, date_to)
     sr = sr.sort_values("risk_score", ascending=False)
@@ -898,11 +956,13 @@ def get_mps(
     scope: str = Query("all"),
     status: str | None = None,
     q: str | None = None,
-    limit: int = 2000,
-    offset: int = 0,
+    limit: int = Query(2000, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    claims: dict = Depends(auth.session_or_picker("mps")),
 ):
     """MP Audits directory - every (MP_NAME, SCOPE_TENURE) on record, real
     aggregate stats per MP, filterable by tenure/status/free-text search."""
+    auth.require_picker_or_mospi(claims)
     s = get_store()
     df = s.mp_directory
     if scope != "all":
@@ -1040,9 +1100,15 @@ def get_mp(
 
 
 @app.get("/api/districts")
-def get_districts(state: str, scope: str = Query("all")):
+def get_districts(state: str, scope: str = Query("all"), claims: dict = Depends(auth.session_or_picker("districts"))):
     """District Authority role picker, scoped to one state (a District
-    Authority sits under one State Nodal Authority)."""
+    Authority sits under one State Nodal Authority). Signed in, a state or
+    district desk reads only its own state's districts."""
+    if not auth.is_picker(claims):
+        states = allowed_states(claims)
+        if claims["role"] not in ("mospi", "state", "district") or (
+                states is not None and state.strip().casefold() not in states):
+            raise HTTPException(403, "this token is not scoped to that state")
     s = get_store()
     dr = s.district_risk_for_scope(scope)
     rows = dr[dr["state"].str.casefold() == state.casefold()].sort_values("risk_score", ascending=False)
@@ -1218,13 +1284,16 @@ def get_district(
 
 
 @app.get("/api/agencies")
-def get_agencies(scope: str = Query("all"), q: str | None = None, limit: int = 25, offset: int = 0):
+def get_agencies(scope: str = Query("all"), q: str | None = None,
+                 limit: int = Query(25, ge=1, le=500), offset: int = Query(0, ge=0),
+                 claims: dict = Depends(auth.session_or_picker("agencies"))):
     """Implementing Agency role picker + search. Unlike state/district/MP,
     an agency has no geographic parent to cascade through - agency identity
     is a name only (exp_top_ia, whitespace/case-normalised but never
     fuzzy-clustered - see docs/SCHEMA.md), and there are ~6,000-13,000 of
     them depending on scope, so this always requires a free-text query
     (or a hard-capped limit) rather than ever listing them all."""
+    auth.require_picker_or_mospi(claims)
     s = get_store()
     df = s.agency_risk_for_scope(scope)
     if q:
@@ -1338,32 +1407,53 @@ class ReportCreate(BaseModel):
     district: str | None = None
     agency: str | None = None
     summary: dict
-    pdf_base64: str | None = None  # data captured from the screen at generation time
+    # data captured from the screen at generation time; capped (~15 MB of PDF)
+    # so one request can't fill the disk
+    pdf_base64: str | None = Field(default=None, max_length=20_000_000)
+
+
+def _owns_report(claims: dict, record: dict) -> bool:
+    """MoSPI sees every report; any other desk only the ones it made."""
+    if claims["role"] == "mospi":
+        return True
+    by = record.get("created_by") or {}
+    return by.get("role") == claims["role"] and \
+        (by.get("entity") or "").casefold() == (claims.get("entity") or "").casefold()
 
 
 @app.get("/api/reports")
-def get_reports():
-    return clean({"items": reports_store.list_reports()})
+def get_reports(claims: dict = Depends(auth.get_current_claims)):
+    return clean({"items": [r for r in reports_store.list_reports() if _owns_report(claims, r)]})
 
 
 @app.post("/api/reports")
-def post_report(body: ReportCreate):
+def post_report(body: ReportCreate, claims: dict = Depends(auth.get_current_claims)):
     fields = body.model_dump(exclude={"pdf_base64"})
-    pdf_bytes = base64.b64decode(body.pdf_base64) if body.pdf_base64 else None
+    fields["created_by"] = {"role": claims["role"], "entity": claims.get("entity")}
+    pdf_bytes = None
+    if body.pdf_base64:
+        try:
+            pdf_bytes = base64.b64decode(body.pdf_base64, validate=True)
+        except ValueError:
+            raise HTTPException(400, "pdf_base64 is not valid base64")
+        if not pdf_bytes.startswith(b"%PDF-"):
+            raise HTTPException(400, "pdf_base64 is not a PDF")
     return clean(reports_store.create_report(fields, pdf_bytes))
 
 
 @app.delete("/api/reports/{report_id}")
-def remove_report(report_id: str):
-    if not reports_store.delete_report(report_id):
+def remove_report(report_id: str, claims: dict = Depends(auth.get_current_claims)):
+    record = reports_store.get_report(report_id)
+    if not record or not _owns_report(claims, record):
         raise HTTPException(404, f"no report '{report_id}'")
+    reports_store.delete_report(report_id)
     return {"deleted": report_id}
 
 
 @app.get("/api/reports/{report_id}/pdf")
-def get_report_pdf(report_id: str):
+def get_report_pdf(report_id: str, claims: dict = Depends(auth.get_current_claims)):
     record = reports_store.get_report(report_id)
-    if not record or not record.get("has_pdf"):
+    if not record or not record.get("has_pdf") or not _owns_report(claims, record):
         raise HTTPException(404, f"no report pdf for '{report_id}'")
     path = reports_store.pdf_path(report_id)
     if not path.exists():
@@ -1385,14 +1475,33 @@ class FindingStatusUpdate(BaseModel):
     note: str | None = None
 
 
+def _can_open_work(claims: dict, work: dict | None) -> bool:
+    if work is None:
+        return False
+    try:
+        auth.check_work_access(claims, work)
+    except HTTPException:
+        return False
+    return True
+
+
 @app.get("/api/findings/status")
-def get_finding_statuses():
-    return clean({"items": finding_status_store.list_statuses()})
+def get_finding_statuses(claims: dict = Depends(auth.get_current_claims)):
+    items = finding_status_store.list_statuses()
+    if claims["role"] != "mospi":
+        s = get_store()
+        items = [i for i in items
+                 if _can_open_work(claims, s.work(i["work_number"], i["scope_house"], i["scope_tenure"]))]
+    return clean({"items": items})
 
 
 @app.post("/api/findings/{finding_id}/status")
-def set_finding_status(finding_id: str, body: FindingStatusUpdate):
+def set_finding_status(finding_id: str, body: FindingStatusUpdate, claims: dict = Depends(auth.get_current_claims)):
     s = get_store()
+    work = s.work(body.work_number, body.scope_house, body.scope_tenure)
+    if work is None:
+        raise HTTPException(404, f"no work {body.work_number} in {body.scope_house}/{body.scope_tenure}")
+    auth.check_work_access(claims, work)
     findings = s.findings_for_work(body.work_number, body.scope_house, body.scope_tenure)
     if not any(f["finding_id"] == finding_id for f in findings):
         raise HTTPException(404, f"no finding '{finding_id}' on work {body.work_number}")
@@ -1405,12 +1514,31 @@ def set_finding_status(finding_id: str, body: FindingStatusUpdate):
     ))
 
 
+def _scoped_digest(digest: dict, claims: dict) -> dict:
+    """The national digest cut down to the caller's own jurisdiction: a state
+    desk gets its state's section, a district desk only its district's
+    findings from it, and an MP or agency (no state to key off) nothing."""
+    if claims["role"] == "mospi":
+        return digest
+    sections = []
+    if claims["role"] in ("state", "district"):
+        state, _, district = (claims.get("entity") or "").partition("|")
+        sections = [sec for sec in digest["by_state"]
+                    if (sec.get("state") or "").strip().casefold() == state.strip().casefold()]
+        if claims["role"] == "district":
+            sections = [{"state": sec["state"], "top_findings": [
+                f for f in sec["top_findings"]
+                if (f.get("district") or "").strip().casefold() == district.strip().casefold()]} for sec in sections]
+    national = {"new_high_severity_count": None, "total_financial_exposure": None, "tag_counts": {}, "top_findings": []}
+    return {**digest, "total_findings_this_run": None, "national": national, "by_state": sections}
+
+
 @app.get("/api/alerts/latest")
-def get_latest_alert_digest():
+def get_latest_alert_digest(claims: dict = Depends(auth.get_current_claims)):
     digest = alerts_store.get_latest_digest()
     if digest is None:
         raise HTTPException(404, "no alert digest yet - run `python -m engine.export` at least once")
-    return clean(digest)
+    return clean(_scoped_digest(digest, claims))
 
 
 # Comment mentions as alerts. A comment mentioning a desk alerts the office of

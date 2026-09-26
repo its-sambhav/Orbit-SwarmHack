@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { api, setAuthToken } from '../api'
+import { useCallback, useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { api, setAuthToken, setPickerToken } from '../api'
 import { Loading } from '../components/StateViews'
 import { useLanguage } from '../i18n'
 
@@ -9,21 +9,31 @@ import { useLanguage } from '../i18n'
 const DEFAULT_SCOPE = '18th Lok Sabha'
 
 // auth is one shared password per ROLE (api/auth.py), not per-person
-// accounts - so the login "username" is the role's id. The passwords are the
-// demo ones from config/auth.yaml (plaintext there on purpose, see that
-// file's header) - keep the two in sync; they feed the credentials table.
+// accounts - so the login "username" is the role's id.
 const ROLES = [
-  { id: 'mospi', label: 'MoSPI', password: 'mospi-2026' },
-  { id: 'state', label: 'State Nodal Authority', password: 'state-2026' },
-  { id: 'district', label: 'District Authority', password: 'district-2026' },
-  { id: 'agency', label: 'Implementing Agency', password: 'agency-2026' },
-  { id: 'mp', label: 'Member of Parliament', password: 'mp-2026' },
+  { id: 'mospi', label: 'MoSPI' },
+  { id: 'state', label: 'State Nodal Authority' },
+  { id: 'district', label: 'District Authority' },
+  { id: 'agency', label: 'Implementing Agency' },
+  { id: 'mp', label: 'Member of Parliament' },
 ]
 const ROLE_LABEL = Object.fromEntries(ROLES.map((r) => [r.id, r.label]))
+
+// The demo passwords from config/auth.yaml (keep the two in sync) feed the
+// credentials table, shown on purpose so an evaluator can sign in to every
+// role. A build made with VITE_HIDE_DEMO_CREDENTIALS=true compiles both the
+// table and the passwords out of the bundle - a password shipped in the
+// page's JavaScript is readable by anyone who opens it.
+const SHOW_DEMO_CREDENTIALS = import.meta.env.VITE_HIDE_DEMO_CREDENTIALS !== 'true'
+const DEMO_PASSWORDS = SHOW_DEMO_CREDENTIALS
+  ? { mospi: 'mospi-2026', state: 'state-2026', district: 'district-2026', agency: 'agency-2026', mp: 'mp-2026' }
+  : {}
 
 // same wording for an unknown username and a wrong password, so the form
 // doesn't say which of the two was off.
 const BAD_CREDENTIALS = 'Incorrect username or password.'
+const TOO_MANY_ATTEMPTS = 'Too many failed attempts. Try again in a few minutes.'
+const SIGN_IN_EXPIRED = 'Your sign-in expired. Please sign in again.'
 
 const iconProps = {
   width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
@@ -50,6 +60,7 @@ const EyeIcon = ({ off }) => (
 
 export function RoleSelector() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { t, td } = useLanguage()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -65,19 +76,39 @@ export function RoleSelector() {
   const [agencyQuery, setAgencyQuery] = useState('')
   const [agencies, setAgencies] = useState(null)
   const [selectedState, setSelectedState] = useState('')
-  const [authError, setAuthError] = useState(null)
+  // api.js sends a lost session back here with ?expired=1
+  const [authError, setAuthError] = useState(() => (searchParams.get('expired') ? t(SIGN_IN_EXPIRED) : null))
   const [authLoading, setAuthLoading] = useState(false)
+
+  const backToLogin = useCallback(() => {
+    setPickerToken(null)
+    setRole(null)
+    setPassword('')
+    setShowPassword(false)
+    setAuthError(null)
+    setSelectedState('')
+    setDistricts(null)
+    setAgencyQuery('')
+    setAgencies(null)
+  }, [])
+
+  // the picker token lasts ten minutes; a pick list that fails after that
+  // starts the sign-in over rather than leaving an empty list
+  const pickerFailed = useCallback(() => {
+    backToLogin()
+    setAuthError(t(SIGN_IN_EXPIRED))
+  }, [backToLogin, t])
 
   useEffect(() => {
     if (role === 'state' || role === 'district') {
-      api.states({ scope: DEFAULT_SCOPE }).then((d) => setStates(d.items))
+      api.states({ scope: DEFAULT_SCOPE }).then((d) => setStates(d.items)).catch(pickerFailed)
     }
     // by MP name, not constituency - one constituency can have a different
     // MP across tenures, and /api/mp/{name} is name-keyed like MP Audits.
     if (role === 'mp') {
-      api.mps({ scope: DEFAULT_SCOPE }).then((d) => setMps(d.items))
+      api.mps({ scope: DEFAULT_SCOPE }).then((d) => setMps(d.items)).catch(pickerFailed)
     }
-  }, [role])
+  }, [role, pickerFailed])
 
   // agencies have no geographic parent to cascade through and there are
   // thousands of them, so unlike the other 3 roles this always searches
@@ -85,17 +116,23 @@ export function RoleSelector() {
   useEffect(() => {
     if (role !== 'agency') return
     const handle = setTimeout(() => {
-      api.agencies({ scope: DEFAULT_SCOPE, q: agencyQuery, limit: 25 }).then((d) => setAgencies(d.items))
+      api.agencies({ scope: DEFAULT_SCOPE, q: agencyQuery, limit: 25 }).then((d) => setAgencies(d.items)).catch(pickerFailed)
     }, 300)
     return () => clearTimeout(handle)
-  }, [role, agencyQuery])
+  }, [role, agencyQuery, pickerFailed])
 
   useEffect(() => {
     if (role === 'district' && selectedState) {
       setDistricts(null)
-      api.districts(selectedState, DEFAULT_SCOPE).then((d) => setDistricts(d.items))
+      api.districts(selectedState, DEFAULT_SCOPE).then((d) => setDistricts(d.items)).catch(pickerFailed)
     }
-  }, [role, selectedState])
+  }, [role, selectedState, pickerFailed])
+
+  function loginError(err) {
+    if (err.status === 401) return t(BAD_CREDENTIALS)
+    if (err.status === 429) return t(TOO_MANY_ATTEMPTS)
+    return err.message
+  }
 
   async function submitLogin(e) {
     e.preventDefault()
@@ -105,16 +142,18 @@ export function RoleSelector() {
     if (!ROLE_LABEL[id]) { setAuthError(t(BAD_CREDENTIALS)); return }
     setAuthLoading(true)
     try {
-      // only mospi needs no entity, so it's the only role this succeeds for
       const res = await api.login(id, password, null)
+      // only mospi needs no entity; every other role gets a picker token and
+      // still has to pick which state/district/MP/agency it is signing in as
+      if (res.needs_entity) {
+        setPickerToken(res.picker_token)
+        setRole(id)
+        return
+      }
       setAuthToken(res.token, res.role, res.entity)
       navigate('/mospi')
     } catch (err) {
-      // /api/auth/login checks the password before it checks for an entity,
-      // so a 400 means the password was right and this role still has to
-      // pick which state/district/MP/agency it is signing in as.
-      if (err.status === 400) setRole(id)
-      else setAuthError(err.status === 401 ? t(BAD_CREDENTIALS) : err.message)
+      setAuthError(loginError(err))
     } finally {
       setAuthLoading(false)
     }
@@ -130,7 +169,7 @@ export function RoleSelector() {
       setAuthToken(res.token, res.role, res.entity)
       navigate(navigateTo)
     } catch (err) {
-      setAuthError(err.message)
+      setAuthError(loginError(err))
     } finally {
       setAuthLoading(false)
     }
@@ -139,17 +178,6 @@ export function RoleSelector() {
   const goDistrict = (state, district) => signInAs(`${state}|${district}`, `/district-authority/${encodeURIComponent(state)}/${encodeURIComponent(district)}`)
   const goMp = (mpName, scopeTenure) => signInAs(mpName, `/mp/${encodeURIComponent(mpName)}?scope=${encodeURIComponent(scopeTenure)}`)
   const goAgency = (agency) => signInAs(agency, `/agency/${encodeURIComponent(agency)}`)
-
-  function backToLogin() {
-    setRole(null)
-    setPassword('')
-    setShowPassword(false)
-    setAuthError(null)
-    setSelectedState('')
-    setDistricts(null)
-    setAgencyQuery('')
-    setAgencies(null)
-  }
 
   return (
     <div className="login-page">
@@ -209,32 +237,34 @@ export function RoleSelector() {
 
             </form>
 
-            <section className="login-creds">
-              <button
-                type="button" className="login-creds-toggle" aria-expanded={showCreds} aria-controls="login-creds-table"
-                onClick={() => setShowCreds((v) => !v)}
-              >
-                {t('Demo credentials')}
-                <span className="login-creds-state">{t(showCreds ? 'Hide' : 'Show')}</span>
-                <ChevronIcon />
-              </button>
-              <div className="login-creds-wrap" id="login-creds-table" hidden={!showCreds}>
-                <table className="login-creds-table">
-                  <thead>
-                    <tr><th scope="col">{t('Dashboard')}</th><th scope="col">{t('Username')}</th><th scope="col">{t('Password')}</th></tr>
-                  </thead>
-                  <tbody>
-                    {ROLES.map((r) => (
-                      <tr key={r.id}>
-                        <th scope="row">{t(r.label)}</th>
-                        <td><code>{r.id}</code></td>
-                        <td><code>{r.password}</code></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+            {SHOW_DEMO_CREDENTIALS && (
+              <section className="login-creds">
+                <button
+                  type="button" className="login-creds-toggle" aria-expanded={showCreds} aria-controls="login-creds-table"
+                  onClick={() => setShowCreds((v) => !v)}
+                >
+                  {t('Demo credentials')}
+                  <span className="login-creds-state">{t(showCreds ? 'Hide' : 'Show')}</span>
+                  <ChevronIcon />
+                </button>
+                <div className="login-creds-wrap" id="login-creds-table" hidden={!showCreds}>
+                  <table className="login-creds-table">
+                    <thead>
+                      <tr><th scope="col">{t('Dashboard')}</th><th scope="col">{t('Username')}</th><th scope="col">{t('Password')}</th></tr>
+                    </thead>
+                    <tbody>
+                      {ROLES.map((r) => (
+                        <tr key={r.id}>
+                          <th scope="row">{t(r.label)}</th>
+                          <td><code>{r.id}</code></td>
+                          <td><code>{DEMO_PASSWORDS[r.id]}</code></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
 
             <aside className="login-callout">
               <InfoIcon />

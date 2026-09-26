@@ -16,7 +16,9 @@ import hashlib
 import hmac
 import json
 import os
+import threading
 import time
+from collections import deque
 
 import yaml
 from dotenv import load_dotenv
@@ -28,6 +30,15 @@ load_dotenv(ROOT / ".env")
 
 AUTH_CONFIG_PATH = CONFIG_DIR / "auth.yaml"
 TOKEN_TTL_SECONDS = 8 * 60 * 60  # one shift, no refresh flow
+# a picker token proves the role password was right, but names no entity
+# yet - it only unlocks the one list that role picks its entity from
+PICKER_TTL_SECONDS = 10 * 60
+# role -> the picker lists it may read (a district picks a state first)
+PICKER_LISTS = {"state": {"states"}, "district": {"states", "districts"}, "mp": {"mps"}, "agency": {"agencies"}}
+
+# failed logins per client and role inside the window before it locks
+LOGIN_MAX_FAILURES = 5
+LOGIN_WINDOW_SECONDS = 5 * 60
 
 
 def _secret() -> bytes:
@@ -41,9 +52,12 @@ def _secret() -> bytes:
 
 
 def load_role_passwords() -> dict[str, str]:
+    """config/auth.yaml's demo passwords, each overridable by an
+    AUTH_PASSWORD_<ROLE> environment variable - a deployment sets its own
+    there instead of shipping the committed demo ones."""
     with open(AUTH_CONFIG_PATH, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
-    return cfg["roles"]
+    return {role: os.environ.get(f"AUTH_PASSWORD_{role.upper()}") or pw for role, pw in cfg["roles"].items()}
 
 
 def verify_password(role: str, password: str) -> bool:
@@ -61,8 +75,43 @@ def _b64decode(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
 
 
-def issue_token(role: str, entity: str | None) -> str:
-    payload = {"role": role, "entity": entity, "exp": int(time.time()) + TOKEN_TTL_SECONDS}
+_failures: dict[tuple[str, str], deque] = {}
+_failures_lock = threading.Lock()
+
+
+def _recent_failures(key: tuple[str, str], now: float) -> deque:
+    q = _failures.setdefault(key, deque())
+    while q and q[0] <= now - LOGIN_WINDOW_SECONDS:
+        q.popleft()
+    return q
+
+
+def check_login_allowed(client: str, role: str) -> None:
+    """429 once a client has failed LOGIN_MAX_FAILURES times for a role in
+    the window - the role passwords are short and shared, so unthrottled
+    guessing is the cheapest way in."""
+    now = time.time()
+    with _failures_lock:
+        q = _recent_failures((client, role), now)
+        if len(q) >= LOGIN_MAX_FAILURES:
+            retry = int(q[0] + LOGIN_WINDOW_SECONDS - now) + 1
+            raise HTTPException(429, "too many failed sign-in attempts - try again later",
+                                headers={"Retry-After": str(retry)})
+
+
+def record_login_failure(client: str, role: str) -> None:
+    with _failures_lock:
+        _recent_failures((client, role), time.time()).append(time.time())
+
+
+def clear_login_failures(client: str, role: str) -> None:
+    with _failures_lock:
+        _failures.pop((client, role), None)
+
+
+def issue_token(role: str, entity: str | None, purpose: str = "session") -> str:
+    ttl = PICKER_TTL_SECONDS if purpose == "picker" else TOKEN_TTL_SECONDS
+    payload = {"role": role, "entity": entity, "purpose": purpose, "exp": int(time.time()) + ttl}
     payload_b64 = _b64encode(json.dumps(payload).encode("utf-8"))
     sig = hmac.new(_secret(), payload_b64.encode("ascii"), hashlib.sha256).hexdigest()
     return f"{payload_b64}.{sig}"
@@ -84,10 +133,50 @@ def _decode_token(token: str) -> dict:
         raise HTTPException(401, "invalid or expired session - please sign in again")
 
 
-def get_current_claims(authorization: str | None = Header(default=None)) -> dict:
+def _bearer_claims(authorization: str | None) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "sign in required")
     return _decode_token(authorization[len("Bearer "):])
+
+
+def get_current_claims(authorization: str | None = Header(default=None)) -> dict:
+    """A signed-in session: a picker token is refused here, and so is any
+    non-MoSPI token that names no entity (there'd be nothing to scope it to)."""
+    claims = _bearer_claims(authorization)
+    if claims.get("purpose", "session") != "session":
+        raise HTTPException(401, "sign in required")
+    if claims["role"] != "mospi" and not claims.get("entity"):
+        raise HTTPException(401, "sign in required")
+    return claims
+
+
+def require_mospi(claims: dict = Depends(get_current_claims)) -> dict:
+    if claims["role"] != "mospi":
+        raise HTTPException(403, "this endpoint requires the 'mospi' role")
+    return claims
+
+
+def is_picker(claims: dict) -> bool:
+    return claims.get("purpose") == "picker"
+
+
+def session_or_picker(list_name: str):
+    """Dependency factory for the entity-picker lists: any signed-in session
+    (the endpoint decides which roles it serves), or a picker token whose
+    role picks its entity from this list."""
+    def _dependency(authorization: str | None = Header(default=None)) -> dict:
+        claims = _bearer_claims(authorization)
+        if is_picker(claims):
+            if list_name not in PICKER_LISTS.get(claims["role"], set()):
+                raise HTTPException(403, "this sign-in step can't read that list")
+            return claims
+        return get_current_claims(authorization)
+    return _dependency
+
+
+def require_picker_or_mospi(claims: dict) -> None:
+    if not is_picker(claims) and claims["role"] != "mospi":
+        raise HTTPException(403, "this endpoint requires the 'mospi' role")
 
 
 def require_role(role: str):
