@@ -130,7 +130,7 @@ def _call_openrouter(prompt: str) -> tuple[str, str]:
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "X-Title": "MPLADS Review",   # OpenRouter's optional app-identification header
+            "X-Title": "MPLADS Ecosystem",   # OpenRouter's optional app-identification header
         },
         json={
             "model": MODEL,

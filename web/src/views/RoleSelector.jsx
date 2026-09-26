@@ -195,7 +195,7 @@ export function RoleSelector() {
         <img src="/parliament.jpg" alt="" />
         <div className="login-hero-caption">
           <span className="login-hero-rule" aria-hidden="true" />
-          <div className="login-hero-title">MPLADS Review</div>
+          <div className="login-hero-title">MPLADS Ecosystem</div>
           <div className="login-hero-sub">{t('Anomaly review & oversight dashboard')}</div>
         </div>
       </div>

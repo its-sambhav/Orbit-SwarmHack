@@ -124,7 +124,7 @@ def _call_openrouter(texts: list[str], lang: str) -> list[str]:
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "X-Title": "MPLADS Review",
+            "X-Title": "MPLADS Ecosystem",
         },
         json={
             "model": MODEL,

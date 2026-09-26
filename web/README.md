@@ -1,4 +1,4 @@
-# MPLADS Review - frontend
+# MPLADS Ecosystem - frontend
 
 React 19 + Vite + Leaflet. The full setup, roles and API are in the [root README](../README.md).
 

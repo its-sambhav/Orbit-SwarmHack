@@ -1,4 +1,4 @@
-# MPLADS Review
+# MPLADS Ecosystem
 
 An oversight and anomaly-detection platform for the **Members of Parliament Local Area Development Scheme (MPLADS)**, built for Smart India Hackathon problem statement **SIH26102**.
 

@@ -226,7 +226,7 @@ export function MospiNav({
         </Link>
 
         <div className="mospi-nav-brand">
-          <div className="mospi-nav-title">MPLADS Review</div>
+          <div className="mospi-nav-title">MPLADS Ecosystem</div>
           <div className="mospi-nav-subtitle">{subtitle}</div>
         </div>
 
