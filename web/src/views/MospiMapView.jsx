@@ -6,7 +6,7 @@ import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip } from '../components/Chips'
-import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
+import { DateRangeFilter, GenerateReportButton, ReportToolbar } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 import { useLanguage } from '../i18n'
@@ -197,14 +197,14 @@ export function MospiMapView() {
               <Breadcrumb items={[{ label: 'India' }]} />
               <div className="mospi-header-row">
                 <h1 className="mospi-page-title">{t('India risk map')}</h1>
-                <div className="report-toolbar">
+                <ReportToolbar>
                   <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
                   <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
                   <GenerateReportButton
                     level="india" scope={scope} dateFrom={dateFrom} dateTo={dateTo}
                     title={`India — ${scopeLabel(scope)}`} summary={funnel}
                   />
-                </div>
+                </ReportToolbar>
               </div>
             </>
           ) : (
@@ -212,14 +212,14 @@ export function MospiMapView() {
               <Breadcrumb items={[{ label: 'India', onClick: backToIndia }, { label: selectedState }]} />
               <div className="mospi-header-row">
                 <h1 className="mospi-page-title">{td(selectedState)}</h1>
-                <div className="report-toolbar">
+                <ReportToolbar>
                   <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
                   <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
                   <GenerateReportButton
                     level="state" scope={scope} dateFrom={dateFrom} dateTo={dateTo} state={selectedState}
                     title={`${selectedState} — ${scopeLabel(scope)}`} summary={stateDetail?.scorecard}
                   />
-                </div>
+                </ReportToolbar>
               </div>
             </>
           )}

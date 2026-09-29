@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Children, useEffect, useRef, useState } from 'react'
 import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
 import { api, formatDate } from '../api'
@@ -235,6 +235,63 @@ async function captureReportPdf({ title, scope, dateFrom, dateTo, t }) {
   }
 
   return pdf
+}
+
+// the row of controls that sits beside a page's title: the scope tabs, the
+// date range, and the report button. On a phone all three no longer fit
+// beside the title, so the two filters move behind one control and the
+// report button keeps the row. Above 600px .toolbar-filters is
+// display:contents (app.css), which makes its children direct flex items of
+// .report-toolbar again - the desktop row lays out exactly as it did before
+// this wrapper existed.
+//
+// Convention: the last child is the row's action and stays on the row;
+// everything before it is a filter and goes behind the control. Every caller
+// already ends with <GenerateReportButton>.
+export function ReportToolbar({ children }) {
+  const { t } = useLanguage()
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  const items = Children.toArray(children)
+  const filters = items.slice(0, -1)
+  const action = items[items.length - 1]
+
+  useEffect(() => {
+    function onDocClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDocClick)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [])
+
+  // rendered after the action so the phone reads [Generate report] [filters]
+  // - on desktop it is display:none, so its position there changes nothing.
+  const control = (
+    <button
+      type="button" className="toolbar-filters-btn" onClick={() => setOpen((o) => !o)}
+      aria-expanded={open} aria-label={t('Filters')} title={t('Filters')}
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+        <path d="M4 7h16M7 12h10M10 17h4" />
+      </svg>
+    </button>
+  )
+
+  return (
+    <div className="report-toolbar" ref={ref}>
+      <div className={open ? 'toolbar-filters open' : 'toolbar-filters'}>{filters}</div>
+      {action}
+      {control}
+    </div>
+  )
 }
 
 // snapshots the current page (level/entity/scope/date-range + its headline

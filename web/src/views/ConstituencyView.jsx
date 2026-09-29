@@ -6,7 +6,7 @@ import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { ScorecardCell } from '../components/Scorecard'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip } from '../components/Chips'
-import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
+import { DateRangeFilter, GenerateReportButton, ReportToolbar } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 import { useLanguage } from '../i18n'
@@ -175,7 +175,7 @@ export function ConstituencyView() {
         <Breadcrumb items={breadcrumbItems} />
         <div className="mospi-header-row">
           <h1 style={{ margin: 0 }}>{data ? td(data.constituency) : t('Loading…')}</h1>
-          <div className="report-toolbar">
+          <ReportToolbar>
             <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
             <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
             {data && (
@@ -184,7 +184,7 @@ export function ConstituencyView() {
                 title={`${data.constituency} — ${scope}`} summary={scorecard}
               />
             )}
-          </div>
+          </ReportToolbar>
         </div>
       </div>
 

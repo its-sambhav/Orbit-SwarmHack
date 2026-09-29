@@ -8,7 +8,7 @@ import { TagBreakdownCard } from '../components/TagBreakdownCard'
 import { EntityRiskPanel } from '../components/EntityRiskPanel'
 import { StatCard } from '../components/StatCard'
 import { kpiCards } from '../kpiCards'
-import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
+import { DateRangeFilter, GenerateReportButton, ReportToolbar } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView } from '../components/StateViews'
 import { useLanguage } from '../i18n'
@@ -107,14 +107,14 @@ export function StateView() {
         <div className="map-drill-header" style={{ marginBottom: 18 }}>
           <div className="mospi-header-row">
             <h1 style={{ margin: 0 }}>{td(data.state)}</h1>
-            <div className="report-toolbar">
+            <ReportToolbar>
               <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
               <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
               <GenerateReportButton
                 level="state" scope={scope} dateFrom={dateFrom} dateTo={dateTo} state={data.state}
                 title={`${data.state} — ${scopeLabel(scope)}`} summary={data.scorecard}
               />
-            </div>
+            </ReportToolbar>
           </div>
         </div>
 

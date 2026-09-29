@@ -18,6 +18,14 @@ function ResizeHandler() {
   return null
 }
 
+// Leaflet floors fitBounds to whole zoom levels, so a small box can end up
+// drawing the shape at a fraction of the room it has - a single state filled
+// about a quarter of the map on a phone. Fractional zoom lets the fit use the
+// box. Matched to app.css's 600px breakpoint, and read from the viewport
+// rather than the map box because the desktop map column is itself under
+// 600px wide.
+const PHONE = window.matchMedia('(max-width: 600px)')
+
 // fit the map to a feature (or the whole collection) whenever the target changes
 function FitBounds({ geojson, keyProp, focusKey }) {
   const map = useMap()
@@ -29,7 +37,19 @@ function FitBounds({ geojson, keyProp, focusKey }) {
     const target = feature ? { type: 'FeatureCollection', features: [feature] } : geojson
     const layer = L.geoJSON(target)
     const bounds = layer.getBounds()
-    if (bounds.isValid()) map.fitBounds(bounds, { padding: [24, 24] })
+    if (!bounds.isValid()) return
+    const fit = () => {
+      map.fitBounds(bounds, { padding: [24, 24] })
+    }
+    fit()
+    // On first paint the container is still at its pre-layout size, so that
+    // first fit is computed against the wrong box - the shape landed
+    // off-centre and past the right edge until something else nudged the map
+    // (most visible on a phone, where the box is smallest). ResizeHandler's
+    // invalidateSize() makes Leaflet emit 'resize'; refit on it so the view
+    // is correct as soon as the real size is known.
+    map.on('resize', fit)
+    return () => map.off('resize', fit)
   }, [geojson, keyProp, focusKey, map])
   return null
 }
@@ -212,6 +232,7 @@ export function IndiaMap({ geojson, keyProp, nameProp, dataByKey, focusKey, onSe
       center={[22.5, 80]}
       zoom={4.4}
       minZoom={3.5}
+      zoomSnap={PHONE.matches ? 0 : 1}
       maxZoom={10}
       style={{ height: '100%', width: '100%', background: 'var(--bg)' }}
       scrollWheelZoom

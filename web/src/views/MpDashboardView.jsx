@@ -7,7 +7,7 @@ import { PipelineCard } from '../components/PipelineCard'
 import { TagBreakdownCard } from '../components/TagBreakdownCard'
 import { StatCard } from '../components/StatCard'
 import { kpiCards } from '../kpiCards'
-import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
+import { DateRangeFilter, GenerateReportButton, ReportToolbar } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView } from '../components/StateViews'
 import { useLanguage } from '../i18n'
@@ -105,14 +105,14 @@ export function MpDashboardView() {
         <div className="map-drill-header" style={{ marginBottom: 18 }}>
           <div className="mospi-header-row">
             <h1 style={{ margin: 0 }}>{td(data.mp_name)}</h1>
-            <div className="report-toolbar">
+            <ReportToolbar>
               <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
               <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
               <GenerateReportButton
                 level="mp" scope={scope} dateFrom={dateFrom} dateTo={dateTo}
                 title={`${data.mp_name} — ${scopeLabel(scope)}`} summary={scorecard}
               />
-            </div>
+            </ReportToolbar>
           </div>
           <div className="mospi-header-meta">
             {td(data.constituency)}, {td(data.state)} · {t(scopeLabel(scope))} · {t(data.status)}

@@ -301,7 +301,7 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 
 /* analytics as 4 distinct cards with real gaps between them, not one merged
    panel - each gets a full grid cell's worth of room */
-.mospi-charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+.mospi-charts-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin-bottom: 24px; }
 .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px 22px; display: flex; flex-direction: column; }
 .chart-card h3 { margin: 0 0 14px; font-size: 15.5px; font-weight: 600; color: var(--ink-muted); }
 
@@ -614,6 +614,11 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  /* auto table layout floors a <table> at its columns' min-content width, so
+     the width:1px above never applied to the chart data tables - they stayed
+     ~650px and stretched the document past the viewport on a phone. Fixed
+     layout makes the declared width the used one; semantics are untouched. */
+  table-layout: fixed;
 }
 
 .states-panel-empty { padding: 16px 4px; font-size: 15px; color: var(--ink-muted); }
@@ -635,7 +640,9 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 
 /* ---------- map legend ---------- */
 .map-legend {
-  position: absolute; bottom: 12px; left: 12px; z-index: 10;
+  /* above Leaflet's own panes (overlay 400, control 800) - at z-index 10
+     the choropleth painted straight over the legend's text. */
+  position: absolute; bottom: 12px; left: 12px; z-index: 1000;
   background: var(--surface); border-radius: var(--radius-md); box-shadow: var(--shadow-float);
   padding: 10px 12px; font-size: 14px; color: var(--ink-muted); width: 150px;
 }
@@ -675,6 +682,11 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 
 /* ---------- date-range filter + report generation ---------- */
 .report-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+/* ReportToolbar wraps the scope + date controls so a phone can collapse them
+   behind one button. display:contents dissolves that wrapper here, so above
+   600px they are direct flex items of .report-toolbar exactly as before. */
+.toolbar-filters { display: contents; }
+.toolbar-filters-btn { display: none; }
 .date-filter { position: relative; }
 .date-filter-btn {
   display: flex; align-items: center; gap: 8px; font-family: inherit; cursor: pointer;
@@ -1035,7 +1047,14 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
   border: 1px solid var(--border); background: var(--surface); color: var(--ink); flex: none;
 }
 
-.map-drill-map { position: relative; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+/* isolation: Leaflet numbers its own panes 200-700 and its controls 800,
+   an order of magnitude above this app's whole z-index scale (the fixed nav
+   is 30). Without a stacking context here those panes out-rank the nav
+   outright, and the choropleth painted straight over the header as soon as
+   the page scrolled the map under it - visible on a phone, where the page
+   scrolls normally instead of the map body having its own scroll box.
+   Isolating keeps Leaflet's numbers meaningful only inside this box. */
+.map-drill-map { position: relative; isolation: isolate; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
 
 .scorecard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
 .scorecard-cell {
@@ -1117,7 +1136,7 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
   .timeline-horizontal .timeline-rail { flex-direction: column; width: 20px; margin-bottom: 0; }
   .timeline-horizontal .timeline-connector { width: 1px; height: auto; min-height: 28px; flex: 1; margin-top: 4px; }
   .timeline-horizontal .timeline-body { padding: 0 0 26px 12px; }
-  .mospi-charts-grid { grid-template-columns: 1fr; }
+  .mospi-charts-grid { grid-template-columns: minmax(0, 1fr); }
   .mospi-stats { grid-template-columns: 1fr 1fr; }
   .mospi-nav-subtitle { display: none; }
   /* no room left in the actions cluster once search sits alongside the
@@ -1505,3 +1524,143 @@ button.finding-card-top {
 .status-page-action.secondary { background: var(--surface); color: var(--accent); }
 .status-page-action.secondary:hover { background: var(--accent-wash); }
 .status-page-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ===================================================================
+   PHONES (max-width: 600px)
+
+   Everything above assumes a working surface at least ~900px wide: a
+   nav cluster that never shrinks, multi-column grids, and toolbars
+   that sit beside a heading. Below 600px each of those gives up width
+   in a defined order rather than all at once - the nav brand
+   ellipsises so the alerts and account buttons stay on screen, page
+   controls go full-width so they stay thumb-sized, and the headline
+   numbers step down to fit their column instead of wrapping mid-value.
+
+   Layout only. No colour, type family or component structure changes -
+   a phone gets the same dashboard, not a different one.
+   =================================================================== */
+@media (max-width: 600px) {
+  /* nav: the brand is the only part that can afford to lose width, so
+     it is the only flex item allowed to shrink. */
+  .mospi-nav { gap: 10px; padding: 0 12px; }
+  .mospi-nav-brand { flex: 1 1 auto; }
+  .mospi-nav-title {
+    display: block; font-size: 18px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mospi-nav-actions { gap: 2px; }
+
+  /* 24px of gutter on each side costs 12% of a 390px screen */
+  .mospi-body { padding: 88px 16px 32px; }
+  .mospi-map-page-body { padding: 88px 16px 24px; }
+  .map-drill-view { padding: 16px; }
+
+  /* the page title and the report button share one row; the scope tabs and
+     the date range move behind the filters control, which opens them as a
+     sheet the full width of the page gutter. */
+  .mospi-header-row { align-items: center; gap: 10px; }
+  .mospi-page-title { font-size: 24px; min-width: 0; }
+  .report-toolbar { position: relative; justify-content: flex-end; gap: 8px; margin-bottom: 12px; }
+  .toolbar-filters-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; flex: none; padding: 0; cursor: pointer;
+    font-family: inherit; color: var(--ink-muted);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  }
+  .toolbar-filters-btn[aria-expanded="true"] {
+    border-color: var(--accent); background: var(--accent-wash); color: var(--accent);
+  }
+  .toolbar-filters-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* anchored to the page gutter, not to the toolbar - the toolbar is only as
+     wide as its two buttons, far too narrow to hold the scope tabs. */
+  .toolbar-filters {
+    display: none; position: absolute; top: calc(100% + 6px); right: 0; z-index: 40;
+    width: calc(100vw - 32px); max-width: 360px;
+    flex-direction: column; align-items: stretch; gap: 8px; padding: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-md); box-shadow: var(--shadow-float);
+  }
+  .toolbar-filters.open { display: flex; }
+  .toolbar-filters .scope-toggle { width: 100%; }
+  .date-filter-btn { width: 100%; justify-content: center; }
+  .date-filter-pop { width: 100%; right: 0; }
+
+  /* one row of equal shares whatever the scope count, instead of a
+     second row carrying a single orphaned tab */
+  .scope-toggle { flex-wrap: nowrap; }
+  .scope-toggle-btn { flex: 1 1 0; min-width: 0; padding: 10px 6px; text-align: center; }
+  .scope-toggle-sm .scope-toggle-btn { padding: 5px 8px; }
+
+  /* two-up still scans on a phone; 36px did not fit the column, so
+     "Rs 1346.49 Cr" broke across lines mid-number */
+  .mospi-stats { gap: 10px; }
+  .mospi-stat-card { padding: 14px 15px; }
+  .mospi-stat-value { font-size: 22px; letter-spacing: -0.01em; }
+  .mospi-stat-label, .mospi-stat-amount { font-size: 14px; }
+  .scorecard-grid { gap: 8px; }
+  .scorecard-cell .value { font-size: 19px; }
+
+  /* filters read as full-width rows, with the two selects paired */
+  .filters { gap: 6px; }
+  .filters .scope-toggle,
+  .filters input[type="search"] { flex: 1 1 100%; min-width: 0; }
+  .filters select { flex: 1 1 calc(50% - 3px); min-width: 0; }
+
+  .chart-card { padding: 16px 14px; }
+  .panel { padding: 14px 15px; }
+  .casefile-title-row { gap: 10px; }
+
+  /* nothing sits on top of the map here. The box keeps a strip along its
+     bottom edge (padding, so the map itself still gets its full 418px) and
+     the legend lies in that strip as one line. */
+  .map-drill-map { height: 470px; padding-bottom: 52px; }
+  .map-legend {
+    bottom: 0; left: 0; right: 0; width: auto;
+    display: flex; flex-wrap: wrap; align-items: center; column-gap: 10px; row-gap: 4px;
+    padding: 8px 12px 0; font-size: 12.5px;
+    background: none; box-shadow: none; border-radius: 0;
+  }
+  .map-legend-ramp { width: 84px; flex: none; margin-bottom: 0; }
+  .map-legend-labels { flex: none; gap: 8px; margin-bottom: 0; }
+  .map-legend-swatch { flex: none; }
+
+  /* the entity tabs size to their own labels instead of splitting the row in
+     half - "Constituencies (5)" does not fit an equal share. */
+  .mospi-page-sub-row .scope-toggle { flex: 0 1 auto; }
+  .mospi-page-sub-row .scope-toggle-btn { flex: 0 1 auto; font-size: 12px; padding: 7px 9px; }
+
+  /* a card title and its value-mode toggle no longer collide */
+  .lc-head { flex-wrap: wrap; }
+
+  /* 300px of fixed columns left the name column nothing, so state names
+     broke one letter per line. The two raw counts go; the rate and the
+     score - what the ranking is actually made of - stay. Each row's
+     aria-label still carries every figure. */
+  .entity-head, .entity-row { grid-template-columns: 18px minmax(0, 1fr) 58px 74px; column-gap: 6px; }
+  .entity-head { font-size: 11px; letter-spacing: 0; padding-inline: 2px; }
+  .entity-row { padding-inline: 2px; }
+  .entity-head span:nth-child(3), .entity-head span:nth-child(4),
+  .entity-row .entity-stat:nth-child(3), .entity-row .entity-stat:nth-child(4) { display: none; }
+  .entity-name { font-size: 15px; overflow-wrap: normal; }
+  .heat-chip { min-width: 38px; padding: 3px 6px; }
+
+  /* five sectors x four series is past what 330px can draw legibly.
+     The chart keeps its readable size and pans sideways rather than
+     shrinking its labels into illegibility. */
+  .lc-chart, .pc-chart { overflow-x: auto; overscroll-behavior-x: contain; }
+  .lc-svg { min-width: 480px; }
+
+  /* touch targets */
+  .scope-toggle-btn { font-size: 13.5px; white-space: nowrap; }
+  .scope-toggle-sm .scope-toggle-btn { padding: 8px 10px; }
+  .filters select, .filters input[type="search"], .queue-search-input { padding: 10px 12px; }
+  .generate-report-btn { flex: none; padding: 10px 14px; }
+  /* the round back button is sized by width/height, not padding */
+  .breadcrumb-back { width: 34px; height: 34px; }
+  .breadcrumb-back svg { width: 16px; height: 16px; }
+  .breadcrumb a, .breadcrumb-link { padding-block: 6px; }
+  .discussion-composer label:has(input[type="checkbox"]) { padding-block: 8px; }
+  .tag-more { padding-block: 9px; }
+  .discussion-chip-btn, .discussion-post-btn { padding-top: 8px; padding-bottom: 8px; }
+  .discussion-composer input[type="checkbox"] { width: 18px; height: 18px; }
+}

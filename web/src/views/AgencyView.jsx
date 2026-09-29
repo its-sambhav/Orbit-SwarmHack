@@ -9,7 +9,7 @@ import { StatCard } from '../components/StatCard'
 import { kpiCards } from '../kpiCards'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { SeverityChip, TagChip } from '../components/Chips'
-import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
+import { DateRangeFilter, GenerateReportButton, ReportToolbar } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 import { useLanguage } from '../i18n'
@@ -112,14 +112,14 @@ export function AgencyView() {
             <div className="meta" style={{ color: 'var(--ink-muted)', fontSize: 15.5 }}>
               {t('Implementing Agency · {scope}', { scope: t(scopeLabel(scope)) })}
             </div>
-            <div className="report-toolbar">
+            <ReportToolbar>
               <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
               <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
               <GenerateReportButton
                 level="agency" scope={scope} dateFrom={dateFrom} dateTo={dateTo} agency={data.agency}
                 title={`${data.agency} — ${scopeLabel(scope)}`} summary={data.scorecard}
               />
-            </div>
+            </ReportToolbar>
           </div>
 
           <p className="panel-note" style={{ margin: '0 24px 16px', padding: '10px 14px', background: 'var(--sev-low-bg)', color: 'var(--ink)', borderRadius: 'var(--radius-md)' }}>

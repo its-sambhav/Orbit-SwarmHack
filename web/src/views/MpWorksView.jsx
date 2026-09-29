@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, formatDate, formatRupees } from '../api'
 import { useLanguage } from '../i18n'
 import { MospiNav } from '../components/MospiNav'
-import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
+import { DateRangeFilter, GenerateReportButton, ReportToolbar } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 
@@ -115,14 +115,14 @@ export function MpWorksView() {
         <div className="map-drill-header" style={{ marginBottom: 18 }}>
           <div className="mospi-header-row">
             <h1 style={{ margin: 0 }}>{t('{mp} — works', { mp: td(data.mp_name) })}</h1>
-            <div className="report-toolbar">
+            <ReportToolbar>
               <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
               <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
               <GenerateReportButton
                 level="mp" scope={scope} dateFrom={dateFrom} dateTo={dateTo}
                 title={`${data.mp_name} — ${scopeLabel(scope)}`} summary={data.scorecard}
               />
-            </div>
+            </ReportToolbar>
           </div>
           <div className="mospi-header-meta">
             {td(data.constituency)}, {td(data.state)} · {t(scopeLabel(scope))} · {t(data.status)}

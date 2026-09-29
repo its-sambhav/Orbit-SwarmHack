@@ -5,7 +5,7 @@ import { MospiNav } from '../components/MospiNav'
 import { IndiaMap, MapLegend } from '../components/IndiaMap'
 import { Breadcrumb } from '../components/Breadcrumb'
 import { DonutChart, colorForIndex } from '../components/DonutChart'
-import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
+import { DateRangeFilter, GenerateReportButton, ReportToolbar } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView, EmptyState } from '../components/StateViews'
 import { useLanguage } from '../i18n'
@@ -138,14 +138,14 @@ export function MpMapView() {
                   {td(data.constituency)}, {td(data.state)} · {t(scopeLabel(scope))} · {t(data.status)}
                 </div>
               </div>
-              <div className="report-toolbar">
+              <ReportToolbar>
                 <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
                 <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
                 <GenerateReportButton
                   level="mp" scope={scope} dateFrom={dateFrom} dateTo={dateTo}
                   title={`${data.mp_name} — ${scopeLabel(scope)}`} summary={scorecard}
                 />
-              </div>
+              </ReportToolbar>
             </div>
           </div>
 

@@ -8,7 +8,7 @@ import { TagBreakdownCard } from '../components/TagBreakdownCard'
 import { EntityRiskPanel } from '../components/EntityRiskPanel'
 import { StatCard } from '../components/StatCard'
 import { kpiCards } from '../kpiCards'
-import { DateRangeFilter, GenerateReportButton } from '../components/ReportTools'
+import { DateRangeFilter, GenerateReportButton, ReportToolbar } from '../components/ReportTools'
 import { ScopeToggle } from '../components/ScopeToggle'
 import { Loading, ErrorView } from '../components/StateViews'
 import { useLanguage } from '../i18n'
@@ -124,11 +124,11 @@ export function NationalView() {
       <div className="mospi-body" id="report-capture">
         <div className="mospi-header-row">
           <h1 className="mospi-page-title">{t('India')}</h1>
-          <div className="report-toolbar">
+          <ReportToolbar>
             <ScopeToggle scopes={SCOPES} value={scope} onChange={setScope} />
             <DateRangeFilter dateFrom={dateFrom} dateTo={dateTo} bounds={{ min: meta?.date_min, max: meta?.date_max }} onChange={setRange} />
             <GenerateReportButton level="overview" scope={scope} dateFrom={dateFrom} dateTo={dateTo} title={`Overview — ${scopeLabel(scope)}`} summary={funnel} />
-          </div>
+          </ReportToolbar>
         </div>
 
         <div className="mospi-stats" id="mospi-overview">
