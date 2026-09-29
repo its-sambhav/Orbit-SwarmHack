@@ -640,9 +640,10 @@ button.mospi-stat-card:focus-visible { outline: 2px solid var(--accent); outline
 
 /* ---------- map legend ---------- */
 .map-legend {
-  /* above Leaflet's own panes (overlay 400, control 800) - at z-index 10
-     the choropleth painted straight over the legend's text. */
-  position: absolute; bottom: 12px; left: 12px; z-index: 1000;
+  /* above Leaflet's map pane (400) - at z-index 10 the choropleth painted
+     straight over the legend's text - but below its control corners (1000),
+     so in a narrow map column the zoom buttons stay on top and clickable. */
+  position: absolute; bottom: 12px; left: 12px; z-index: 500;
   background: var(--surface); border-radius: var(--radius-md); box-shadow: var(--shadow-float);
   padding: 10px 12px; font-size: 14px; color: var(--ink-muted); width: 150px;
 }
@@ -1560,7 +1561,10 @@ button.finding-card-top {
      sheet the full width of the page gutter. */
   .mospi-header-row { align-items: center; gap: 10px; }
   .mospi-page-title { font-size: 24px; min-width: 0; }
-  .report-toolbar { position: relative; justify-content: flex-end; gap: 8px; margin-bottom: 12px; }
+  /* margin-left:auto keeps the toolbar at the right edge when a long title
+     wraps it onto its own row - the sheet below opens leftward from there,
+     and from the left edge it would open off the screen. */
+  .report-toolbar { position: relative; justify-content: flex-end; gap: 8px; margin-bottom: 12px; margin-left: auto; }
   .toolbar-filters-btn {
     display: inline-flex; align-items: center; justify-content: center;
     width: 40px; height: 40px; flex: none; padding: 0; cursor: pointer;

@@ -47,9 +47,23 @@ function FitBounds({ geojson, keyProp, focusKey }) {
     // off-centre and past the right edge until something else nudged the map
     // (most visible on a phone, where the box is smallest). ResizeHandler's
     // invalidateSize() makes Leaflet emit 'resize'; refit on it so the view
-    // is correct as soon as the real size is known.
-    map.on('resize', fit)
-    return () => map.off('resize', fit)
+    // is correct as soon as the real size is known. Only until the user
+    // takes the map over, though - a later window resize must not throw away
+    // a zoom or pan they chose.
+    let userMoved = false
+    const refit = () => { if (!userMoved) fit() }
+    const takeOver = () => { userMoved = true }
+    const container = map.getContainer()
+    map.on('resize', refit)
+    container.addEventListener('pointerdown', takeOver)
+    container.addEventListener('wheel', takeOver, { passive: true })
+    container.addEventListener('keydown', takeOver)
+    return () => {
+      map.off('resize', refit)
+      container.removeEventListener('pointerdown', takeOver)
+      container.removeEventListener('wheel', takeOver)
+      container.removeEventListener('keydown', takeOver)
+    }
   }, [geojson, keyProp, focusKey, map])
   return null
 }

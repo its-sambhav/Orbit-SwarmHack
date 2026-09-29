@@ -247,13 +247,15 @@ async function captureReportPdf({ title, scope, dateFrom, dateTo, t }) {
 //
 // Convention: the last child is the row's action and stays on the row;
 // everything before it is a filter and goes behind the control. Every caller
-// already ends with <GenerateReportButton>.
+// already ends with <GenerateReportButton>. Split before Children.toArray,
+// which drops a `{data && <GenerateReportButton />}` that is still false -
+// the date filter would otherwise be taken for the action while loading.
 export function ReportToolbar({ children }) {
   const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
-  const items = Children.toArray(children)
-  const filters = items.slice(0, -1)
+  const items = [].concat(children)
+  const filters = Children.toArray(items.slice(0, -1))
   const action = items[items.length - 1]
 
   useEffect(() => {
